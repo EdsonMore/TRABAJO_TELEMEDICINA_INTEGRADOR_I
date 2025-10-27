@@ -1,0 +1,10 @@
+{
+  "entryPoints": ["./app", "./components", "./hooks", "./lib", "./contexts"],
+  "out": "docs",
+  "exclude": ["**/node_modules/**", "**/.next/**"],
+  "theme": "default",
+  "includeVersion": true,
+  "skipErrorChecking": true,
+  "excludeNotDocumented": false,
+  "entryPointStrategy": "expand"
+}
