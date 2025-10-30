@@ -1,23 +1,11 @@
 // components/medico/gestion-cita-medico-modal.tsx
-// Modal específico para médicos - Permite completar diagnóstico, tratamiento, etc.
+// VERSIÓN CORREGIDA CON ESTILOS CONSISTENTES
 
 "use client";
 
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/auth-context";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
+import { useToast } from "@/hooks/use-toast";
 import {
   Calendar,
   Clock,
@@ -36,21 +24,35 @@ import {
   Thermometer,
   Weight,
   Ruler,
+  BadgeCheck,
 } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
-interface GestionCitaMedicoModal {
+interface GestionCitaMedicoModalProps {
   isOpen: boolean;
   onClose: () => void;
   cita: any;
   onCitaActualizada: () => void;
+}
+
+interface PacienteData {
+  nombre: string;
+  apellido: string;
+  dni: string;
+  telefono: string;
+  fecha_nacimiento: string;
+  tipo_sangre: string;
+  alergias: string;
+  edad?: number;
+}
+
+interface CitaData {
+  id: string;
+  fecha_cita: string;
+  hora_cita: string;
+  tipo_cita: string;
+  estado: string;
+  motivo_consulta: string;
+  observaciones_paciente: string;
 }
 
 export function GestionCitaMedicoModal({
@@ -58,7 +60,7 @@ export function GestionCitaMedicoModal({
   onClose,
   cita,
   onCitaActualizada,
-}: GestionCitaMedicoModal) {
+}: GestionCitaMedicoModalProps) {
   const { token } = useAuth();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
@@ -81,9 +83,30 @@ export function GestionCitaMedicoModal({
     estado: "completada",
   });
 
+  const [pacienteData, setPacienteData] = useState<PacienteData>({
+    nombre: "",
+    apellido: "",
+    dni: "",
+    telefono: "",
+    fecha_nacimiento: "",
+    tipo_sangre: "",
+    alergias: "",
+  });
+
+  const [citaData, setCitaData] = useState<CitaData>({
+    id: "",
+    fecha_cita: "",
+    hora_cita: "",
+    tipo_cita: "presencial",
+    estado: "programada",
+    motivo_consulta: "",
+    observaciones_paciente: "",
+  });
+
   // Cargar datos de la cita cuando se abre el modal
   useEffect(() => {
     if (cita && isOpen) {
+      // Cargar datos del formulario
       setFormData({
         diagnostico: cita.diagnostico || "",
         tratamiento: cita.tratamiento || "",
@@ -97,14 +120,19 @@ export function GestionCitaMedicoModal({
         saturacion_oxigeno: cita.saturacion_oxigeno || "",
         estado: cita.estado || "completada",
       });
+
+      // Cargar datos del paciente
+      const pacienteInfo = getPacienteData(cita);
+      setPacienteData(pacienteInfo);
+
+      // Cargar datos de la cita
+      const citaInfo = getCitaData(cita);
+      setCitaData(citaInfo);
     }
   }, [cita, isOpen]);
 
-  if (!cita) return null;
-
-  // Función para obtener los datos del paciente desde la estructura de la BD
-  const getPacienteData = () => {
-    // Intentar obtener datos desde diferentes estructuras posibles
+  // Función para obtener los datos del paciente
+  const getPacienteData = (cita: any): PacienteData => {
     if (cita.paciente) {
       return {
         nombre: cita.paciente.nombre || "",
@@ -114,6 +142,7 @@ export function GestionCitaMedicoModal({
         fecha_nacimiento: cita.paciente.fecha_nacimiento || "",
         tipo_sangre: cita.paciente.tipo_sangre || "",
         alergias: cita.paciente.alergias || "",
+        edad: calcularEdad(cita.paciente.fecha_nacimiento),
       };
     } else if (cita.nombre_paciente) {
       return {
@@ -124,6 +153,7 @@ export function GestionCitaMedicoModal({
         fecha_nacimiento: cita.fecha_nacimiento || "",
         tipo_sangre: cita.tipo_sangre || "",
         alergias: cita.alergias || "",
+        edad: calcularEdad(cita.fecha_nacimiento),
       };
     } else {
       return {
@@ -139,7 +169,7 @@ export function GestionCitaMedicoModal({
   };
 
   // Función para obtener datos de la cita
-  const getCitaData = () => {
+  const getCitaData = (cita: any): CitaData => {
     return {
       id: cita.id || cita.cita_id || "",
       fecha_cita: cita.fecha_cita || cita.fecha || "",
@@ -152,11 +182,8 @@ export function GestionCitaMedicoModal({
     };
   };
 
-  const pacienteData = getPacienteData();
-  const citaData = getCitaData();
-
   // Calcular edad a partir de la fecha de nacimiento
-  const calcularEdad = (fechaNacimiento: string) => {
+  const calcularEdad = (fechaNacimiento: string): number | null => {
     if (!fechaNacimiento) return null;
     const nacimiento = new Date(fechaNacimiento);
     const hoy = new Date();
@@ -167,8 +194,6 @@ export function GestionCitaMedicoModal({
     }
     return edad;
   };
-
-  const edad = calcularEdad(pacienteData.fecha_nacimiento);
 
   // Guardar datos médicos
   const guardarDatosMedicos = async () => {
@@ -195,7 +220,6 @@ export function GestionCitaMedicoModal({
           tratamiento: formData.tratamiento,
           observaciones_medico: formData.observaciones_medico,
           costo: parseFloat(formData.costo) || 80.0,
-          // Signos vitales
           presion_arterial: formData.presion_arterial,
           frecuencia_cardiaca: formData.frecuencia_cardiaca,
           temperatura: formData.temperatura,
@@ -207,12 +231,12 @@ export function GestionCitaMedicoModal({
 
       if (response.ok) {
         toast({
-          title: "✅ Datos médicos guardados",
+          title: "✅ Expediente médico guardado",
           description:
             "La información de la consulta ha sido actualizada exitosamente.",
         });
         onCitaActualizada();
-        onClose();
+        handleClose();
       } else {
         const errorData = await response.json();
         throw new Error(errorData.error || "Error al guardar datos médicos");
@@ -273,16 +297,34 @@ export function GestionCitaMedicoModal({
     const configs: any = {
       programada: {
         label: "Programada",
-        color: "bg-yellow-100 text-yellow-800",
+        color: "bg-yellow-100 text-yellow-800 border-yellow-200",
       },
-      confirmada: { label: "Confirmada", color: "bg-blue-100 text-blue-800" },
-      en_curso: { label: "En Curso", color: "bg-orange-100 text-orange-800" },
-      completada: { label: "Completada", color: "bg-green-100 text-green-800" },
-      cancelada: { label: "Cancelada", color: "bg-red-100 text-red-800" },
-      no_asistio: { label: "No Asistió", color: "bg-gray-100 text-gray-800" },
+      confirmada: {
+        label: "Confirmada",
+        color: "bg-blue-100 text-blue-800 border-blue-200",
+      },
+      en_curso: {
+        label: "En Curso",
+        color: "bg-orange-100 text-orange-800 border-orange-200",
+      },
+      completada: {
+        label: "Completada",
+        color: "bg-green-100 text-green-800 border-green-200",
+      },
+      cancelada: {
+        label: "Cancelada",
+        color: "bg-red-100 text-red-800 border-red-200",
+      },
+      no_asistio: {
+        label: "No Asistió",
+        color: "bg-gray-100 text-gray-800 border-gray-200",
+      },
     };
     return (
-      configs[estado] || { label: estado, color: "bg-gray-100 text-gray-800" }
+      configs[estado] || {
+        label: estado,
+        color: "bg-gray-100 text-gray-800 border-gray-200",
+      }
     );
   };
 
@@ -296,153 +338,190 @@ export function GestionCitaMedicoModal({
     return `${horaNum.toString().padStart(2, "0")}:00`;
   };
 
-  return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl max-h-[95vh] overflow-y-auto rounded-lg sm:rounded-2xl">
-        {/* HEADER */}
-        <DialogHeader className="pb-4 border-b">
-          <DialogTitle className="flex items-center text-xl sm:text-2xl font-bold">
-            <Stethoscope className="w-5 h-5 sm:w-6 sm:h-6 mr-2 sm:mr-3 text-blue-600" />
-            Consulta Médica - Expediente
-          </DialogTitle>
-        </DialogHeader>
+  const handleClose = () => {
+    setFormData({
+      diagnostico: "",
+      tratamiento: "",
+      observaciones_medico: "",
+      costo: "80.00",
+      presion_arterial: "",
+      frecuencia_cardiaca: "",
+      temperatura: "",
+      peso: "",
+      altura: "",
+      saturacion_oxigeno: "",
+      estado: "completada",
+    });
+    onClose();
+  };
 
-        <div className="space-y-6">
-          {/* INFORMACIÓN PRINCIPAL DE LA CITA */}
-          <Card className="bg-blue-50 border-blue-200">
-            <CardContent className="p-6">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                {/* Información del Paciente */}
-                <div className="space-y-2">
-                  <h3 className="font-semibold text-gray-900 text-lg">
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg max-w-6xl w-full max-h-[95vh] overflow-y-auto">
+        <div className="p-6">
+          {/* HEADER */}
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-2xl font-bold text-gray-800 flex items-center">
+              <Stethoscope className="w-6 h-6 mr-3 text-blue-600" />
+              Gestión de Consulta Médica
+            </h2>
+            <button
+              onClick={handleClose}
+              className="text-gray-500 hover:text-gray-700 text-2xl transition-colors"
+              disabled={isSaving}
+            >
+              ✕
+            </button>
+          </div>
+
+          {/* INFORMACIÓN DEL PACIENTE - ESTILO MEJORADO */}
+          <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg mb-6">
+            <h3 className="font-semibold text-blue-800 mb-3 flex items-center">
+              <span className="mr-2">👤</span>
+              Información del Paciente
+            </h3>
+            <div className="space-y-2">
+              <div className="flex flex-wrap gap-4">
+                <div>
+                  <span className="font-medium text-blue-900 text-lg">
                     {pacienteData.nombre} {pacienteData.apellido}
-                  </h3>
-                  <div className="space-y-1 text-sm text-gray-600">
-                    {pacienteData.dni && <p>DNI: {pacienteData.dni}</p>}
-                    {edad && <p>Edad: {edad} años</p>}
+                  </span>
+                </div>
+                <div className="text-sm text-blue-700 space-y-1">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <span>DNI: {pacienteData.dni || "No disponible"}</span>
+                    <span>
+                      Edad:{" "}
+                      {pacienteData.edad
+                        ? `${pacienteData.edad} años`
+                        : "No disponible"}
+                    </span>
                     {pacienteData.tipo_sangre && (
-                      <p>Grupo Sanguíneo: {pacienteData.tipo_sangre}</p>
+                      <span>Grupo: {pacienteData.tipo_sangre}</span>
                     )}
+                    <span
+                      className={`px-2 py-1 rounded-full text-xs font-medium ${estadoConfig.color} border`}
+                    >
+                      {estadoConfig.label}
+                    </span>
                   </div>
                 </div>
-
-                {/* Detalles de la Cita */}
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Badge className={estadoConfig.color}>
-                      {estadoConfig.label}
-                    </Badge>
-                    <Badge variant="outline" className="capitalize">
-                      {citaData.tipo_cita}
-                    </Badge>
-                  </div>
-                  <p className="text-sm text-gray-600">
-                    <Calendar className="w-4 h-4 inline mr-1" />
+              </div>
+              <div className="text-xs text-blue-600 bg-blue-100 p-2 rounded">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  <div>
+                    <strong>Cita:</strong>{" "}
                     {new Date(citaData.fecha_cita).toLocaleDateString("es-PE", {
                       weekday: "long",
                       year: "numeric",
                       month: "long",
                       day: "numeric",
                     })}
-                  </p>
-                  <p className="text-sm text-gray-600">
-                    <Clock className="w-4 h-4 inline mr-1" />
-                    {formatHora(citaData.hora_cita)} horas
-                  </p>
+                  </div>
+                  <div>
+                    <strong>Hora:</strong> {formatHora(citaData.hora_cita)}{" "}
+                    horas
+                  </div>
+                  <div>
+                    <strong>Tipo:</strong> {citaData.tipo_cita}
+                  </div>
                 </div>
-
-                {/* Acciones Rápidas */}
-                <div className="space-y-2">
-                  <Label>Cambiar Estado:</Label>
-                  <Select
-                    value={formData.estado}
-                    onValueChange={(value) => cambiarEstadoCita(value)}
-                    disabled={isLoading}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="en_curso">En Curso</SelectItem>
-                      <SelectItem value="completada">Completada</SelectItem>
-                      <SelectItem value="no_asistio">No Asistió</SelectItem>
-                      <SelectItem value="cancelada">Cancelada</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                {citaData.motivo_consulta && (
+                  <div className="mt-1">
+                    <strong>Motivo:</strong> {citaData.motivo_consulta}
+                  </div>
+                )}
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
 
           {/* CONTENIDO PRINCIPAL */}
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-            {/* COLUMNA IZQUIERDA - INFORMACIÓN DEL PACIENTE */}
-            <div className="xl:col-span-1 space-y-6">
-              {/* HISTORIAL MÉDICO */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center text-lg">
+          <div className="space-y-6">
+            {/* SELECTOR DE ESTADO */}
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Cambiar Estado de la Cita
+              </label>
+              <select
+                value={formData.estado}
+                onChange={(e) => cambiarEstadoCita(e.target.value)}
+                disabled={isLoading}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base 
+text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 
+focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              >
+                <option value="en_curso">En Curso</option>
+                <option value="completada">Completada</option>
+                <option value="no_asistio">No Asistió</option>
+                <option value="cancelada">Cancelada</option>
+              </select>
+            </div>
+
+            {/* GRID PRINCIPAL */}
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+              {/* COLUMNA IZQUIERDA - INFORMACIÓN CLÍNICA */}
+              <div className="xl:col-span-1 space-y-6">
+                {/* HISTORIAL MÉDICO */}
+                <div className="border border-gray-200 rounded-lg p-4 bg-white">
+                  <h4 className="font-semibold text-gray-800 mb-3 flex items-center">
                     <FileText className="w-5 h-5 mr-2 text-blue-600" />
                     Historial Médico
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
+                  </h4>
+
                   {pacienteData.alergias ? (
-                    <div>
-                      <Label className="text-sm font-semibold">
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
                         Alergias Conocidas
-                      </Label>
-                      <p className="text-sm text-gray-700 mt-1 bg-yellow-50 p-2 rounded">
+                      </label>
+                      <div className="text-sm text-gray-700 bg-yellow-50 p-3 rounded border border-yellow-200">
                         {pacienteData.alergias}
-                      </p>
+                      </div>
                     </div>
                   ) : (
-                    <div className="text-center py-4 text-gray-500">
+                    <div className="text-center py-4 text-gray-500 bg-gray-50 rounded border">
                       <AlertCircle className="w-8 h-8 mx-auto mb-2" />
                       <p className="text-sm">No hay alergias registradas</p>
                     </div>
                   )}
 
                   {/* Motivo de Consulta */}
-                  <div>
-                    <Label className="text-sm font-semibold">
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
                       Motivo de Consulta
-                    </Label>
-                    <p className="text-sm text-gray-700 mt-1 bg-gray-50 p-2 rounded whitespace-pre-wrap">
-                      {citaData.motivo_consulta}
-                    </p>
+                    </label>
+                    <div className="text-sm text-gray-700 bg-gray-50 p-3 rounded border border-gray-200 whitespace-pre-wrap">
+                      {citaData.motivo_consulta || "No especificado"}
+                    </div>
                   </div>
 
                   {/* Observaciones del Paciente */}
                   {citaData.observaciones_paciente && (
                     <div>
-                      <Label className="text-sm font-semibold">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
                         Observaciones del Paciente
-                      </Label>
-                      <p className="text-sm text-gray-700 mt-1 bg-blue-50 p-2 rounded whitespace-pre-wrap">
+                      </label>
+                      <div className="text-sm text-gray-700 bg-blue-50 p-3 rounded border border-blue-200 whitespace-pre-wrap">
                         {citaData.observaciones_paciente}
-                      </p>
+                      </div>
                     </div>
                   )}
-                </CardContent>
-              </Card>
+                </div>
 
-              {/* SIGNOS VITALES */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center text-lg">
+                {/* SIGNOS VITALES - ESTILOS CORREGIDOS */}
+                <div className="border border-gray-200 rounded-lg p-4 bg-white">
+                  <h4 className="font-semibold text-gray-800 mb-3 flex items-center">
                     <Heart className="w-5 h-5 mr-2 text-red-600" />
                     Signos Vitales
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+                  </h4>
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <Label htmlFor="presion_arterial" className="text-sm">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
                         Presión Arterial
-                      </Label>
-                      <Input
-                        id="presion_arterial"
+                      </label>
+                      <input
+                        type="text"
                         value={formData.presion_arterial}
                         onChange={(e) =>
                           setFormData((prev) => ({
@@ -451,15 +530,17 @@ export function GestionCitaMedicoModal({
                           }))
                         }
                         placeholder="120/80"
-                        className="h-9 text-sm"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base 
+text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 
+focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                       />
                     </div>
                     <div>
-                      <Label htmlFor="frecuencia_cardiaca" className="text-sm">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
                         Frec. Cardíaca
-                      </Label>
-                      <Input
-                        id="frecuencia_cardiaca"
+                      </label>
+                      <input
+                        type="text"
                         value={formData.frecuencia_cardiaca}
                         onChange={(e) =>
                           setFormData((prev) => ({
@@ -467,16 +548,18 @@ export function GestionCitaMedicoModal({
                             frecuencia_cardiaca: e.target.value,
                           }))
                         }
-                        placeholder="72"
-                        className="h-9 text-sm"
+                        placeholder="72 lpm"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base 
+text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 
+focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                       />
                     </div>
                     <div>
-                      <Label htmlFor="temperatura" className="text-sm">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
                         Temperatura (°C)
-                      </Label>
-                      <Input
-                        id="temperatura"
+                      </label>
+                      <input
+                        type="text"
                         value={formData.temperatura}
                         onChange={(e) =>
                           setFormData((prev) => ({
@@ -485,15 +568,17 @@ export function GestionCitaMedicoModal({
                           }))
                         }
                         placeholder="36.5"
-                        className="h-9 text-sm"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base 
+text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 
+focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                       />
                     </div>
                     <div>
-                      <Label htmlFor="saturacion_oxigeno" className="text-sm">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
                         Sat. O₂ (%)
-                      </Label>
-                      <Input
-                        id="saturacion_oxigeno"
+                      </label>
+                      <input
+                        type="text"
                         value={formData.saturacion_oxigeno}
                         onChange={(e) =>
                           setFormData((prev) => ({
@@ -502,15 +587,17 @@ export function GestionCitaMedicoModal({
                           }))
                         }
                         placeholder="98"
-                        className="h-9 text-sm"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base 
+text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 
+focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                       />
                     </div>
                     <div>
-                      <Label htmlFor="peso" className="text-sm">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
                         Peso (kg)
-                      </Label>
-                      <Input
-                        id="peso"
+                      </label>
+                      <input
+                        type="text"
                         value={formData.peso}
                         onChange={(e) =>
                           setFormData((prev) => ({
@@ -519,15 +606,17 @@ export function GestionCitaMedicoModal({
                           }))
                         }
                         placeholder="70"
-                        className="h-9 text-sm"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base 
+text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 
+focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                       />
                     </div>
                     <div>
-                      <Label htmlFor="altura" className="text-sm">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
                         Altura (cm)
-                      </Label>
-                      <Input
-                        id="altura"
+                      </label>
+                      <input
+                        type="text"
                         value={formData.altura}
                         onChange={(e) =>
                           setFormData((prev) => ({
@@ -536,27 +625,25 @@ export function GestionCitaMedicoModal({
                           }))
                         }
                         placeholder="170"
-                        className="h-9 text-sm"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base 
+text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 
+focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                       />
                     </div>
                   </div>
-                </CardContent>
-              </Card>
-            </div>
+                </div>
+              </div>
 
-            {/* COLUMNA DERECHA - FORMULARIO MÉDICO */}
-            <div className="xl:col-span-2 space-y-6">
-              {/* DIAGNÓSTICO */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center text-lg">
+              {/* COLUMNA DERECHA - FORMULARIO MÉDICO */}
+              <div className="xl:col-span-2 space-y-6">
+                {/* DIAGNÓSTICO */}
+                <div className="border border-gray-200 rounded-lg p-4 bg-white">
+                  <h4 className="font-semibold text-gray-800 mb-3 flex items-center">
                     <Stethoscope className="w-5 h-5 mr-2 text-green-600" />
-                    Diagnóstico
+                    Diagnóstico Principal
                     <span className="text-red-500 ml-1">*</span>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <Textarea
+                  </h4>
+                  <textarea
                     value={formData.diagnostico}
                     onChange={(e) =>
                       setFormData((prev) => ({
@@ -566,25 +653,23 @@ export function GestionCitaMedicoModal({
                     }
                     placeholder="Ingrese el diagnóstico del paciente..."
                     rows={4}
-                    className="resize-none text-sm"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base 
+text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 
+focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                     required
                   />
-                  <p className="text-xs text-gray-500 mt-2">
+                  <p className="text-sm text-gray-500 mt-2">
                     {formData.diagnostico.length}/1000 caracteres
                   </p>
-                </CardContent>
-              </Card>
+                </div>
 
-              {/* TRATAMIENTO */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center text-lg">
+                {/* TRATAMIENTO */}
+                <div className="border border-gray-200 rounded-lg p-4 bg-white">
+                  <h4 className="font-semibold text-gray-800 mb-3 flex items-center">
                     <Pill className="w-5 h-5 mr-2 text-blue-600" />
-                    Tratamiento y Receta
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <Textarea
+                    Tratamiento y Receta Médica
+                  </h4>
+                  <textarea
                     value={formData.tratamiento}
                     onChange={(e) =>
                       setFormData((prev) => ({
@@ -594,24 +679,22 @@ export function GestionCitaMedicoModal({
                     }
                     placeholder="Describa el tratamiento, medicamentos, dosis, frecuencia, duración..."
                     rows={5}
-                    className="resize-none text-sm"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base 
+text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 
+focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                   />
-                  <p className="text-xs text-gray-500 mt-2">
+                  <p className="text-sm text-gray-500 mt-2">
                     {formData.tratamiento.length}/1500 caracteres
                   </p>
-                </CardContent>
-              </Card>
+                </div>
 
-              {/* OBSERVACIONES MÉDICAS */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center text-lg">
+                {/* OBSERVACIONES MÉDICAS */}
+                <div className="border border-gray-200 rounded-lg p-4 bg-white">
+                  <h4 className="font-semibold text-gray-800 mb-3 flex items-center">
                     <Eye className="w-5 h-5 mr-2 text-purple-600" />
                     Observaciones Médicas
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <Textarea
+                  </h4>
+                  <textarea
                     value={formData.observaciones_medico}
                     onChange={(e) =>
                       setFormData((prev) => ({
@@ -621,29 +704,26 @@ export function GestionCitaMedicoModal({
                     }
                     placeholder="Observaciones adicionales, recomendaciones, seguimiento requerido..."
                     rows={3}
-                    className="resize-none text-sm"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base 
+text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 
+focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                   />
-                  <p className="text-xs text-gray-500 mt-2">
+                  <p className="text-sm text-gray-500 mt-2">
                     {formData.observaciones_medico.length}/500 caracteres
                   </p>
-                </CardContent>
-              </Card>
+                </div>
 
-              {/* INFORMACIÓN DE COSTO */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">
+                {/* INFORMACIÓN DE COSTO */}
+                <div className="border border-gray-200 rounded-lg p-4 bg-white">
+                  <h4 className="font-semibold text-gray-800 mb-3">
                     Información de Costo
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
+                  </h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <Label htmlFor="costo" className="text-sm font-semibold">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
                         Costo de la Consulta (S/)
-                      </Label>
-                      <Input
-                        id="costo"
+                      </label>
+                      <input
                         type="number"
                         step="0.01"
                         min="0"
@@ -654,43 +734,39 @@ export function GestionCitaMedicoModal({
                             costo: e.target.value,
                           }))
                         }
-                        className="h-9"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base 
+text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 
+focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                       />
                     </div>
                     <div className="flex items-end">
-                      <Button variant="outline" className="w-full h-9">
-                        Generar Receta
-                      </Button>
+                      <button
+                        type="button"
+                        className="w-full border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center text-base"
+                      >
+                        <FileText className="w-4 h-4 mr-2" />
+                        Generar Receta Formal
+                      </button>
                     </div>
                   </div>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-
-          {/* FOOTER CON ACCIONES */}
-          <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-6 border-t">
-            <div className="text-sm text-gray-500">
-              <p>
-                Consulta con {pacienteData.nombre} {pacienteData.apellido}
-              </p>
-              <p>{new Date().toLocaleDateString("es-PE")}</p>
+                </div>
+              </div>
             </div>
 
-            <div className="flex gap-3">
-              <Button
-                variant="outline"
-                onClick={onClose}
-                className="min-w-24 h-11"
+            {/* BOTONES DE ACCIÓN */}
+            <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">
+              <button
+                type="button"
+                onClick={handleClose}
+                disabled={isSaving}
+                className="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors text-base"
               >
-                <X className="w-4 h-4 mr-2" />
                 Cancelar
-              </Button>
-
-              <Button
+              </button>
+              <button
                 onClick={guardarDatosMedicos}
                 disabled={isSaving || !formData.diagnostico.trim()}
-                className="min-w-24 h-11 bg-green-600 hover:bg-green-700"
+                className="px-8 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center text-base"
               >
                 {isSaving ? (
                   <>
@@ -699,15 +775,15 @@ export function GestionCitaMedicoModal({
                   </>
                 ) : (
                   <>
-                    <Save className="w-4 h-4 mr-2" />
+                    <BadgeCheck className="w-4 h-4 mr-2" />
                     Guardar Expediente
                   </>
                 )}
-              </Button>
+              </button>
             </div>
           </div>
         </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </div>
   );
 }

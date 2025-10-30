@@ -1,4 +1,4 @@
-// components/medico/ModalCrearReceta.tsx - VERSIÓN LIMPIA
+// components/medico/ModalCrearReceta.tsx - CON BÚSQUEDA CIE-10
 import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { useAuth } from "@/contexts/auth-context";
@@ -26,6 +26,7 @@ interface EnfermedadCIE10 {
   nombre: string;
   descripcion?: string;
   categoria?: string;
+  capitulo?: string;
 }
 
 interface MedicamentoCatalogo {
@@ -52,6 +53,8 @@ interface PacienteCompleto {
   fecha_nacimiento?: string;
   sexo?: string;
   tipo_sangre?: string;
+  alergias?: string[];
+  enfermedades_cronicas?: string[];
 }
 
 export default function ModalCrearReceta({
@@ -68,6 +71,12 @@ export default function ModalCrearReceta({
   const [enfermedadesCIE10, setEnfermedadesCIE10] = useState<EnfermedadCIE10[]>(
     []
   );
+  const [enfermedadesFiltradas, setEnfermedadesFiltradas] = useState<
+    EnfermedadCIE10[]
+  >([]);
+  const [tratamientosRecomendados, setTratamientosRecomendados] = useState<
+    any[]
+  >([]);
   const [cargando, setCargando] = useState(false);
   const [cargandoCatalogos, setCargandoCatalogos] = useState(false);
   const [datosPaciente, setDatosPaciente] = useState<PacienteCompleto | null>(
@@ -77,6 +86,8 @@ export default function ModalCrearReceta({
   const [medicamentoSeleccionado, setMedicamentoSeleccionado] = useState<{
     [key: number]: MedicamentoCatalogo | null;
   }>({});
+  const [busquedaCIE10, setBusquedaCIE10] = useState("");
+  const [mostrarDropdownCIE10, setMostrarDropdownCIE10] = useState(false);
 
   const {
     register,
@@ -91,6 +102,9 @@ export default function ModalCrearReceta({
       diagnosticos_secundarios: [],
     },
   });
+
+  // Watch para diagnóstico principal para filtrar tratamientos recomendados
+  const diagnosticoPrincipalId = watch("diagnostico_principal_id");
 
   const obtenerToken = (): string => {
     if (!token) {
@@ -108,10 +122,37 @@ export default function ModalCrearReceta({
       setMedicamentos([]);
       setError(null);
       setMedicamentoSeleccionado({});
+      setBusquedaCIE10("");
+      setMostrarDropdownCIE10(false);
       setValue("id_cita", cita.id);
       cargarDatosIniciales();
     }
   }, [isOpen, cita, reset, setValue]);
+
+  // Efecto para cargar tratamientos recomendados cuando cambia el diagnóstico
+  useEffect(() => {
+    if (diagnosticoPrincipalId) {
+      cargarTratamientosRecomendados(diagnosticoPrincipalId);
+    } else {
+      setTratamientosRecomendados([]);
+    }
+  }, [diagnosticoPrincipalId]);
+
+  // Efecto para filtrar enfermedades cuando cambia la búsqueda
+  useEffect(() => {
+    if (busquedaCIE10.trim() === "") {
+      setEnfermedadesFiltradas(enfermedadesCIE10.slice(0, 10)); // Mostrar solo las primeras 10
+    } else {
+      const filtradas = enfermedadesCIE10.filter(
+        (enf) =>
+          enf.codigo.toLowerCase().includes(busquedaCIE10.toLowerCase()) ||
+          enf.nombre.toLowerCase().includes(busquedaCIE10.toLowerCase()) ||
+          (enf.categoria &&
+            enf.categoria.toLowerCase().includes(busquedaCIE10.toLowerCase()))
+      );
+      setEnfermedadesFiltradas(filtradas.slice(0, 15)); // Limitar a 15 resultados
+    }
+  }, [busquedaCIE10, enfermedadesCIE10]);
 
   const cargarDatosIniciales = async () => {
     setCargandoCatalogos(true);
@@ -136,11 +177,28 @@ export default function ModalCrearReceta({
     try {
       if (!cita || !cita.paciente) return;
 
-      const pacienteInfo = cita.paciente;
-      const pacienteId = cita.id;
+      const token = obtenerToken();
+      if (!token) return;
 
+      // Cargar datos completos del paciente desde la BD
+      const response = await fetch(`/api/pacientes/${cita.paciente.id}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.paciente) {
+          setDatosPaciente(data.paciente);
+          return;
+        }
+      }
+
+      // Fallback a datos básicos de la cita
+      const pacienteInfo = cita.paciente;
       const pacienteData: PacienteCompleto = {
-        id: pacienteId,
+        id: cita.id_paciente || cita.paciente.id,
         nombre: pacienteInfo.nombre || "No disponible",
         apellido: pacienteInfo.apellido || "No disponible",
         dni: pacienteInfo.dni || "No disponible",
@@ -150,11 +208,13 @@ export default function ModalCrearReceta({
         telefono: pacienteInfo.telefono || "",
         email: pacienteInfo.email || "",
         fecha_nacimiento: pacienteInfo.fecha_nacimiento || "",
+        alergias: pacienteInfo.alergias || [],
+        enfermedades_cronicas: pacienteInfo.enfermedades_cronicas || [],
       };
 
       setDatosPaciente(pacienteData);
     } catch (error) {
-      // No bloquear la UI por este error
+      console.error("Error cargando datos paciente:", error);
     }
   };
 
@@ -206,8 +266,10 @@ export default function ModalCrearReceta({
         const data = await response.json();
         if (data.enfermedades && Array.isArray(data.enfermedades)) {
           setEnfermedadesCIE10(data.enfermedades);
+          setEnfermedadesFiltradas(data.enfermedades.slice(0, 10));
         } else if (data && Array.isArray(data)) {
           setEnfermedadesCIE10(data);
+          setEnfermedadesFiltradas(data.slice(0, 10));
         } else {
           setError("Formato de datos CIE-10 no reconocido");
         }
@@ -220,6 +282,47 @@ export default function ModalCrearReceta({
     } catch (error) {
       setError("Error de conexión al cargar códigos CIE-10");
     }
+  };
+
+  const cargarTratamientosRecomendados = async (cie10Id: number) => {
+    try {
+      const token = obtenerToken();
+      if (!token) return;
+
+      const response = await fetch(
+        `/api/tratamientos-recomendados?cie10_id=${cie10Id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setTratamientosRecomendados(data.tratamientos || []);
+      }
+    } catch (error) {
+      console.error("Error cargando tratamientos recomendados:", error);
+    }
+  };
+
+  const seleccionarEnfermedad = (enfermedad: EnfermedadCIE10) => {
+    setValue("diagnostico_principal_id", enfermedad.id);
+    setBusquedaCIE10(`${enfermedad.codigo} - ${enfermedad.nombre}`);
+    setMostrarDropdownCIE10(false);
+
+    // También actualizar el texto del diagnóstico principal
+    const textoActual = watch("diagnostico_principal_texto") || "";
+    if (!textoActual.trim()) {
+      setValue("diagnostico_principal_texto", enfermedad.nombre);
+    }
+  };
+
+  const limpiarSeleccionCIE10 = () => {
+    setValue("diagnostico_principal_id", "");
+    setBusquedaCIE10("");
+    setMostrarDropdownCIE10(false);
   };
 
   const agregarMedicamento = () => {
@@ -238,6 +341,48 @@ export default function ModalCrearReceta({
       instrucciones_especiales: "",
     };
     setMedicamentos([...medicamentos, nuevoMedicamento]);
+  };
+
+  const agregarMedicamentoRecomendado = (tratamiento: any) => {
+    if (medicamentos.length >= 15) {
+      setError("Máximo 15 medicamentos por receta");
+      return;
+    }
+
+    const medicamentoCatalogo = catalogoMedicamentos.find(
+      (m) => m.id === tratamiento.medicamento_id
+    );
+
+    if (!medicamentoCatalogo) {
+      setError("Medicamento recomendado no encontrado en catálogo");
+      return;
+    }
+
+    const nuevoMedicamento: MedicamentoForm = {
+      medicamento_id: tratamiento.medicamento_id,
+      cantidad: 1,
+      dosis:
+        tratamiento.dosis_recomendada ||
+        medicamentoCatalogo.concentracion ||
+        "",
+      frecuencia: "Según indicación médica",
+      duracion_dias: tratamiento.duracion_tratamiento
+        ? parseInt(tratamiento.duracion_tratamiento)
+        : 7,
+      via_administracion: obtenerViaAdministracion(
+        medicamentoCatalogo.forma_farmaceutica
+      ),
+      instrucciones_especiales: tratamiento.observaciones || "",
+    };
+
+    setMedicamentos([...medicamentos, nuevoMedicamento]);
+
+    // Actualizar selección
+    const nuevoIndex = medicamentos.length;
+    setMedicamentoSeleccionado((prev) => ({
+      ...prev,
+      [nuevoIndex]: medicamentoCatalogo,
+    }));
   };
 
   const removerMedicamento = (index: number) => {
@@ -272,7 +417,7 @@ export default function ModalCrearReceta({
       setMedicamentoSeleccionado((prev) => ({ ...prev, [index]: medicamento }));
       actualizarMedicamento(index, "medicamento_id", medicamento.id);
 
-      if (medicamento.concentracion) {
+      if (medicamento.concentracion && !medicamentos[index].dosis) {
         actualizarMedicamento(index, "dosis", medicamento.concentracion);
       }
 
@@ -395,6 +540,9 @@ export default function ModalCrearReceta({
     setDatosPaciente(null);
     setError(null);
     setMedicamentoSeleccionado({});
+    setTratamientosRecomendados([]);
+    setBusquedaCIE10("");
+    setMostrarDropdownCIE10(false);
     onClose();
   };
 
@@ -452,6 +600,13 @@ export default function ModalCrearReceta({
                     </div>
                   </div>
                 </div>
+                {datosPaciente.alergias &&
+                  datosPaciente.alergias.length > 0 && (
+                    <div className="text-xs text-red-600 bg-red-100 p-2 rounded">
+                      <strong>⚠ Alergias:</strong>{" "}
+                      {datosPaciente.alergias.join(", ")}
+                    </div>
+                  )}
                 <div className="text-xs text-blue-600 bg-blue-100 p-2 rounded">
                   <strong>Cita:</strong>{" "}
                   {new Date(cita.fecha_cita).toLocaleDateString("es-PE")}
@@ -483,6 +638,7 @@ export default function ModalCrearReceta({
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             <input type="hidden" {...register("id_cita")} />
+            <input type="hidden" {...register("diagnostico_principal_id")} />
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="lg:col-span-2">
@@ -494,7 +650,7 @@ export default function ModalCrearReceta({
                     required: true,
                   })}
                   rows={3}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                   placeholder="Describa el diagnóstico principal del paciente..."
                 />
                 {errors.diagnostico_principal_texto && (
@@ -504,25 +660,69 @@ export default function ModalCrearReceta({
                 )}
               </div>
 
-              <div>
+              <div className="relative">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Código CIE-10 (Opcional)
                 </label>
-                <select
-                  {...register("diagnostico_principal_id", {
-                    valueAsNumber: true,
-                  })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Seleccionar código CIE-10...</option>
-                  {enfermedadesCIE10.map((enf) => (
-                    <option key={enf.id} value={enf.id}>
-                      {enf.codigo} - {enf.nombre}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={busquedaCIE10}
+                    onChange={(e) => {
+                      setBusquedaCIE10(e.target.value);
+                      setMostrarDropdownCIE10(true);
+                    }}
+                    onFocus={() => setMostrarDropdownCIE10(true)}
+                    placeholder="Buscar por código o nombre..."
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white pr-10"
+                  />
+                  {busquedaCIE10 && (
+                    <button
+                      type="button"
+                      onClick={limpiarSeleccionCIE10}
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                {mostrarDropdownCIE10 && enfermedadesFiltradas.length > 0 && (
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    {enfermedadesFiltradas.map((enf) => (
+                      <button
+                        key={enf.id}
+                        type="button"
+                        onClick={() => seleccionarEnfermedad(enf)}
+                        className="w-full px-4 py-2 text-left hover:bg-blue-50 border-b border-gray-100 last:border-b-0"
+                      >
+                        <div className="font-medium text-gray-800">
+                          {enf.codigo} - {enf.nombre}
+                        </div>
+                        {enf.categoria && (
+                          <div className="text-xs text-gray-500 mt-1">
+                            {enf.categoria}
+                          </div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {mostrarDropdownCIE10 &&
+                  enfermedadesFiltradas.length === 0 &&
+                  busquedaCIE10 && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg">
+                      <div className="px-4 py-3 text-center text-gray-500">
+                        No se encontraron resultados para "{busquedaCIE10}"
+                      </div>
+                    </div>
+                  )}
+
                 <p className="text-xs text-gray-500 mt-1">
                   {enfermedadesCIE10.length} códigos disponibles en BD
+                  {busquedaCIE10 &&
+                    ` - ${enfermedadesFiltradas.length} resultados`}
                 </p>
               </div>
 
@@ -534,13 +734,59 @@ export default function ModalCrearReceta({
                   type="date"
                   {...register("fecha_vencimiento")}
                   min={new Date().toISOString().split("T")[0]}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   Por defecto: 30 días desde hoy
                 </p>
               </div>
             </div>
+
+            {/* Tratamientos Recomendados */}
+            {tratamientosRecomendados.length > 0 && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                <h3 className="font-semibold text-green-800 mb-3 flex items-center">
+                  <span className="mr-2">💡</span>
+                  Tratamientos Recomendados para este Diagnóstico
+                </h3>
+                <div className="space-y-2">
+                  {tratamientosRecomendados.map((tratamiento, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between p-3 bg-white rounded border"
+                    >
+                      <div className="flex-1">
+                        <p className="font-medium text-gray-800">
+                          {
+                            catalogoMedicamentos.find(
+                              (m) => m.id === tratamiento.medicamento_id
+                            )?.nombre_comercial
+                          }
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          {tratamiento.dosis_recomendada} •{" "}
+                          {tratamiento.duracion_tratamiento}
+                        </p>
+                        {tratamiento.observaciones && (
+                          <p className="text-xs text-gray-500 mt-1">
+                            {tratamiento.observaciones}
+                          </p>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          agregarMedicamentoRecomendado(tratamiento)
+                        }
+                        className="ml-4 bg-green-500 text-white px-3 py-1 rounded text-sm hover:bg-green-600 transition-colors"
+                      >
+                        Agregar
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -549,7 +795,7 @@ export default function ModalCrearReceta({
               <textarea
                 {...register("observaciones")}
                 rows={2}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                 placeholder="Indicaciones adicionales, recomendaciones, etc."
               />
             </div>
@@ -608,7 +854,7 @@ export default function ModalCrearReceta({
                             parseInt(e.target.value)
                           )
                         }
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                         required
                       >
                         <option value="">Seleccionar del catálogo...</option>
@@ -659,7 +905,7 @@ export default function ModalCrearReceta({
                           actualizarMedicamento(index, "dosis", e.target.value)
                         }
                         placeholder="Ej: 500mg, 1 tableta"
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                         required
                       />
                     </div>
@@ -679,7 +925,7 @@ export default function ModalCrearReceta({
                           )
                         }
                         placeholder="Ej: Cada 8 horas"
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                         required
                       />
                     </div>
@@ -698,7 +944,7 @@ export default function ModalCrearReceta({
                             parseInt(e.target.value) || 7
                           )
                         }
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                         min="1"
                         max="365"
                       />
@@ -718,7 +964,7 @@ export default function ModalCrearReceta({
                             parseInt(e.target.value) || 1
                           )
                         }
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                         min="1"
                         max="999"
                         required
@@ -740,7 +986,7 @@ export default function ModalCrearReceta({
                           )
                         }
                         placeholder="Ej: Oral, Tópica"
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                       />
                     </div>
 
@@ -759,7 +1005,7 @@ export default function ModalCrearReceta({
                         }
                         placeholder="Ej: Tomar con alimentos, Evitar manejar, etc."
                         rows={2}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                       />
                     </div>
                   </div>

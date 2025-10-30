@@ -1,26 +1,20 @@
-const { createServer } = require('http');
-const { parse } = require('url');
-const next = require('next');
-const WebRTCSignalingServer = require('./lib/websocket-server');
+// scripts/start-websocket.js - Debe usar WebRTCSignalingServer
+const { createServer } = require("http");
+const WebRTCSignalingServer = require("../lib/websocket-server");
 
-const dev = process.env.NODE_ENV !== 'production';
-const app = next({ dev });
-const handle = app.getRequestHandler();
+const PORT = process.env.WS_PORT || 3002;
 
-const PORT = process.env.PORT || 3001;
+// Crear servidor HTTP para WebSocket
+const server = createServer((req, res) => {
+  res.writeHead(200, { "Content-Type": "text/plain" });
+  res.end("WebSocket Server Running");
+});
 
-app.prepare().then(() => {
-    const server = createServer((req, res) => {
-        const parsedUrl = parse(req.url, true);
-        handle(req, res, parsedUrl);
-    });
+// Inicializar WebSocket Server
+new WebRTCSignalingServer(server);
 
-    // Inicializar WebSocket Server
-    const signalingServer = new WebRTCSignalingServer(server);
-
-    server.listen(PORT, (err) => {
-        if (err) throw err;
-        console.log(`🚀 Servidor listo en http://localhost:${PORT}`);
-        console.log(`📡 WebSocket Signaling Server activo en puerto ${PORT}`);
-    });
+server.listen(PORT, (err) => {
+  if (err) throw err;
+  console.log(`🚀 WebSocket Server ejecutándose en puerto ${PORT}`);
+  console.log(`✅ WebSocket Server listo en puerto ${PORT}`);
 });

@@ -1,11 +1,11 @@
-// app/api/recetas/[id]/route.ts
+// app/api/recetas/[id]/route.ts - VERSIÓN CORREGIDA
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/database";
 import { verificarToken } from "@/lib/auth";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> } // ✅ Cambiado a Promise
 ) {
   let client;
   try {
@@ -16,7 +16,9 @@ export async function GET(
       return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
     }
 
-    if (!params.id) {
+    const { id } = await params; // ✅ AWAIT aquí
+
+    if (!id) {
       return NextResponse.json(
         { error: "ID de receta requerido" },
         { status: 400 }
@@ -82,7 +84,7 @@ export async function GET(
       WHERE r.id = $1
       GROUP BY r.id, p.id, up.id, m.id, um.id, e.id, cie.id, f.id
       `,
-      [params.id]
+      [id] // ✅ Usar la variable desestructurada
     );
 
     if (result.rows.length === 0) {

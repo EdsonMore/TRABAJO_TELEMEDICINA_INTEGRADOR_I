@@ -1,4 +1,4 @@
-// app/api/recetas/route.ts
+// app/api/recetas/route.ts - VERSIÓN CORREGIDA
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/database";
 import { verificarToken } from "@/lib/auth";
@@ -54,12 +54,19 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // 2. Generar código único para la receta
-      const codigoReceta = `REC-${Date.now()}-${Math.random()
-        .toString(36)
-        .substr(2, 5)}`.toUpperCase();
+      // 2. Generar código único para la receta (MÁXIMO 20 CARACTERES)
+      const timestamp = Date.now().toString().slice(-8); // Últimos 8 dígitos
+      const random = Math.random().toString(36).substr(2, 4).toUpperCase(); // 4 caracteres
+      const codigoReceta = `REC-${timestamp}${random}`; // Máximo 20 caracteres
 
-      // 3. Insertar receta principal (USANDO CAMPOS REALES)
+      console.log(
+        "📝 Código receta generado:",
+        codigoReceta,
+        "Longitud:",
+        codigoReceta.length
+      );
+
+      // 3. Insertar receta principal
       const recetaResult = await client.query(
         `INSERT INTO recetas (
           id_cita, codigo_receta, diagnostico_principal_id, 
@@ -77,14 +84,14 @@ export async function POST(request: NextRequest) {
             : null,
           observaciones,
           new Date(),
-          fecha_vencimiento || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 días por defecto
+          fecha_vencimiento || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
           "activa",
         ]
       );
 
       const recetaId = recetaResult.rows[0].id;
 
-      // 4. Insertar medicamentos en receta_detalle (TABLA REAL)
+      // 4. Insertar medicamentos en receta_detalle
       for (const med of medicamentos) {
         await client.query(
           `INSERT INTO receta_detalle (
@@ -124,6 +131,13 @@ export async function POST(request: NextRequest) {
     if (error.code === "23503") {
       return NextResponse.json(
         { error: "Referencia inválida (cita o medicamento no existe)" },
+        { status: 400 }
+      );
+    }
+
+    if (error.code === "22001") {
+      return NextResponse.json(
+        { error: "Error: código de receta demasiado largo" },
         { status: 400 }
       );
     }

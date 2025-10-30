@@ -1,7 +1,8 @@
-// components/medico/recetas-medico-section.tsx
+// components/medico/recetas-medico-section.tsx - VERSIÓN CORREGIDA
 "use client";
 
 import { useState, useEffect } from "react";
+import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -25,49 +26,42 @@ import {
   QrCode,
   Download,
   Eye,
-  Trash2,
   Pill,
   User,
   Calendar,
   Clock,
-  CheckCircle,
   Search,
+  Loader2,
+  AlertCircle,
+  Users,
+  Filter,
 } from "lucide-react";
 import ModalCrearReceta from "./ModalCrearReceta";
 
-interface MedicamentoReceta {
-  id_medicamento?: number;
-  nombre_medicamento: string;
-  dosis: string;
-  frecuencia: string;
-  duracion_dias: number;
-  instrucciones_especiales: string;
-  cantidad: number;
-}
-
+// Usar las interfaces desde types/receta.ts
 interface Receta {
   id: string;
   codigo_receta: string;
-  codigo_qr: string;
+  diagnostico_principal_texto: string;
   fecha_emision: string;
   fecha_vencimiento: string;
-  diagnostico: string;
-  estado: "pendiente" | "completada" | "expirada";
-  observaciones_generales: string;
+  observaciones?: string;
+  estado: "activa" | "dispensada" | "vencida" | "cancelada";
   paciente_nombre: string;
   paciente_apellido: string;
-  paciente_edad: number;
   paciente_dni: string;
-  total_medicamentos: number;
+  paciente_edad: number;
   medico_nombre: string;
   medico_apellido: string;
   especialidad: string;
-  pdf_path?: string;
+  total_medicamentos: number;
+  sello_temporal: string;
+  paciente_id: string;
 }
 
 interface Cita {
-  id: number;
-  paciente_id: number;
+  id: string;
+  paciente_id: string;
   paciente_nombre: string;
   paciente_apellido: string;
   paciente_dni: string;
@@ -75,34 +69,58 @@ interface Cita {
   fecha_cita: string;
   motivo_consulta: string;
   estado: string;
+  tipo_cita: string;
+  sexo?: string;
+  tipo_sangre?: string;
+}
+
+interface Paciente {
+  id: string;
+  nombre: string;
+  apellido: string;
+  dni: string;
+  edad: number;
+  tipo_sangre?: string;
+  total_recetas: number;
 }
 
 export function RecetasMedicoSection() {
+  const { token } = useAuth();
   const [recetas, setRecetas] = useState<Receta[]>([]);
   const [recetasFiltradas, setRecetasFiltradas] = useState<Receta[]>([]);
+  const [pacientes, setPacientes] = useState<Paciente[]>([]);
   const [busqueda, setBusqueda] = useState("");
   const [filtroEstado, setFiltroEstado] = useState<string>("todas");
+  const [filtroPaciente, setFiltroPaciente] = useState<string>("todos");
   const [mostrarModalCrear, setMostrarModalCrear] = useState(false);
   const [recetaSeleccionada, setRecetaSeleccionada] = useState<Receta | null>(
     null
   );
   const [mostrarDetalles, setMostrarDetalles] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [cargandoPacientes, setCargandoPacientes] = useState(false);
   const [citasDisponibles, setCitasDisponibles] = useState<Cita[]>([]);
   const [citaSeleccionada, setCitaSeleccionada] = useState<Cita | null>(null);
+  const [detallesCompletos, setDetallesCompletos] = useState<any>(null);
+  const [descargandoPDF, setDescargandoPDF] = useState<string | null>(null);
 
   useEffect(() => {
-    cargarRecetas();
-    cargarCitasDisponibles();
-  }, []);
+    if (token) {
+      cargarRecetas();
+      cargarPacientes();
+      cargarCitasDisponibles();
+    }
+  }, [token]);
 
   useEffect(() => {
     filtrarRecetas();
-  }, [recetas, busqueda, filtroEstado]);
+  }, [recetas, busqueda, filtroEstado, filtroPaciente]);
 
   const cargarRecetas = async () => {
+    if (!token) return;
+
     try {
-      const token = localStorage.getItem("token");
+      setIsLoading(true);
       const response = await fetch("/api/recetas/medico", {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -111,6 +129,7 @@ export function RecetasMedicoSection() {
 
       if (response.ok) {
         const data = await response.json();
+        console.log("📋 Recetas cargadas:", data.recetas);
         setRecetas(data.recetas || []);
       } else {
         console.error("Error cargando recetas:", await response.text());
@@ -122,9 +141,34 @@ export function RecetasMedicoSection() {
     }
   };
 
-  const cargarCitasDisponibles = async () => {
+  const cargarPacientes = async () => {
+    if (!token) return;
+
     try {
-      const token = localStorage.getItem("token");
+      setCargandoPacientes(true);
+      const response = await fetch("/api/paciente/medico", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setPacientes(data.pacientes || []);
+      } else {
+        console.error("Error cargando pacientes:", await response.text());
+      }
+    } catch (error) {
+      console.error("Error cargando pacientes:", error);
+    } finally {
+      setCargandoPacientes(false);
+    }
+  };
+
+  const cargarCitasDisponibles = async () => {
+    if (!token) return;
+
+    try {
       const response = await fetch("/api/citas/medico?estado=completada", {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -140,34 +184,74 @@ export function RecetasMedicoSection() {
     }
   };
 
+  const cargarDetallesReceta = async (recetaId: string) => {
+    if (!token) return null;
+
+    try {
+      const response = await fetch(`/api/recetas/${recetaId}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return data.receta;
+      }
+    } catch (error) {
+      console.error("Error cargando detalles de receta:", error);
+    }
+    return null;
+  };
+
+  // ✅ FUNCIÓN CORREGIDA - Validar campos antes de usar .includes()
   const filtrarRecetas = () => {
     let filtradas = recetas;
 
-    if (busqueda) {
-      filtradas = filtradas.filter(
-        (receta) =>
-          receta.paciente_nombre
-            .toLowerCase()
-            .includes(busqueda.toLowerCase()) ||
-          receta.paciente_apellido
-            .toLowerCase()
-            .includes(busqueda.toLowerCase()) ||
-          receta.paciente_dni.includes(busqueda) ||
-          receta.diagnostico.toLowerCase().includes(busqueda.toLowerCase()) ||
-          receta.codigo_receta.toLowerCase().includes(busqueda.toLowerCase())
-      );
+    // Filtro por búsqueda - CON VALIDACIONES
+    if (busqueda.trim()) {
+      const busquedaLower = busqueda.toLowerCase().trim();
+
+      filtradas = filtradas.filter((receta) => {
+        // Validar y convertir a string seguro
+        const nombre = (receta.paciente_nombre || "").toLowerCase();
+        const apellido = (receta.paciente_apellido || "").toLowerCase();
+        const dni = (receta.paciente_dni || "").toString();
+        const diagnostico = (
+          receta.diagnostico_principal_texto || ""
+        ).toLowerCase();
+        const codigo = (receta.codigo_receta || "").toLowerCase();
+
+        return (
+          nombre.includes(busquedaLower) ||
+          apellido.includes(busquedaLower) ||
+          dni.includes(busqueda) || // DNI sin lowercase para números
+          diagnostico.includes(busquedaLower) ||
+          codigo.includes(busquedaLower)
+        );
+      });
     }
 
+    // Filtro por estado
     if (filtroEstado !== "todas") {
       filtradas = filtradas.filter((receta) => receta.estado === filtroEstado);
+    }
+
+    // Filtro por paciente
+    if (filtroPaciente !== "todos") {
+      filtradas = filtradas.filter(
+        (receta) => receta.paciente_id === filtroPaciente
+      );
     }
 
     setRecetasFiltradas(filtradas);
   };
 
   const descargarPDF = async (receta: Receta) => {
+    if (!token) return;
+
+    setDescargandoPDF(receta.id);
     try {
-      const token = localStorage.getItem("token");
       const response = await fetch(`/api/recetas/${receta.id}/pdf`, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -175,51 +259,87 @@ export function RecetasMedicoSection() {
       });
 
       if (response.ok) {
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `receta_${receta.codigo_receta}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
+        const data = await response.json();
+        // Para implementación real de PDF:
+        if (response.headers.get("content-type")?.includes("application/pdf")) {
+          const blob = await response.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `receta_${receta.codigo_receta}.pdf`;
+          document.body.appendChild(a);
+          a.click();
+          window.URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+        } else {
+          alert(data.message || "PDF generado exitosamente");
+        }
       } else {
-        console.error("Error generando PDF");
         alert("Error al generar el PDF de la receta");
       }
     } catch (error) {
       console.error("Error descargando PDF:", error);
       alert("Error al descargar el PDF");
+    } finally {
+      setDescargandoPDF(null);
     }
   };
 
+  const verDetallesReceta = async (receta: Receta) => {
+    setRecetaSeleccionada(receta);
+    const detalles = await cargarDetallesReceta(receta.id);
+    setDetallesCompletos(detalles);
+    setMostrarDetalles(true);
+  };
+
   const verCodigoQR = (receta: Receta) => {
-    // Aquí puedes implementar la visualización del QR
     alert(
-      `Código QR de la receta: ${receta.codigo_qr}\n\nPuedes implementar un visor de QR aquí.`
+      `Código QR para la receta: ${receta.codigo_receta}\n\nURL: /recetas/verificar/${receta.codigo_receta}`
     );
   };
 
   const getEstadoBadge = (estado: string) => {
-    switch (estado) {
-      case "pendiente":
-        return <Badge className="bg-yellow-500">Pendiente</Badge>;
-      case "completada":
-        return <Badge className="bg-green-500">Completada</Badge>;
-      case "expirada":
-        return <Badge variant="destructive">Expirada</Badge>;
-      default:
-        return <Badge variant="outline">{estado}</Badge>;
-    }
+    const configs = {
+      activa: {
+        label: "Activa",
+        className: "bg-green-100 text-green-800 border-green-200",
+      },
+      dispensada: {
+        label: "Dispensada",
+        className: "bg-blue-100 text-blue-800 border-blue-200",
+      },
+      vencida: {
+        label: "Vencida",
+        className: "bg-red-100 text-red-800 border-red-200",
+      },
+      cancelada: {
+        label: "Cancelada",
+        className: "bg-gray-100 text-gray-800 border-gray-200",
+      },
+    };
+
+    const config = configs[estado as keyof typeof configs] || {
+      label: estado,
+      className: "bg-gray-100 text-gray-800 border-gray-200",
+    };
+
+    return (
+      <Badge variant="outline" className={config.className}>
+        {config.label}
+      </Badge>
+    );
   };
 
   const formatearFecha = (fecha: string) => {
-    return new Date(fecha).toLocaleDateString("es-PE", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
+    try {
+      return new Date(fecha).toLocaleDateString("es-PE", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
+    } catch (error) {
+      return "Fecha inválida";
+    }
   };
 
   const handleRecetaCreada = () => {
@@ -228,16 +348,11 @@ export function RecetasMedicoSection() {
     setCitaSeleccionada(null);
   };
 
-  const seleccionarCitaParaReceta = (cita: Cita) => {
-    setCitaSeleccionada(cita);
-    setMostrarModalCrear(true);
-  };
-
   if (isLoading) {
     return (
-      <div className="text-center py-8">
-        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-        <p className="text-muted-foreground">Cargando recetas...</p>
+      <div className="text-center py-12">
+        <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+        <p className="text-gray-600">Cargando recetas médicas...</p>
       </div>
     );
   }
@@ -245,63 +360,164 @@ export function RecetasMedicoSection() {
   return (
     <div className="space-y-6">
       {/* Header con controles */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold">Gestión de Recetas Médicas</h2>
-          <p className="text-muted-foreground">
+          <h2 className="text-2xl font-bold text-gray-800">
+            Gestión de Recetas Médicas
+          </h2>
+          <p className="text-gray-600 mt-1">
             Cree y gestione recetas electrónicas para sus pacientes
           </p>
         </div>
-        <div className="flex items-center space-x-3">
-          <Button
-            onClick={() => setMostrarModalCrear(true)}
-            className="bg-primary hover:bg-primary/90"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Nueva Receta
-          </Button>
-        </div>
+        <Button
+          onClick={() => setMostrarModalCrear(true)}
+          className="bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+        >
+          <Plus className="w-4 h-4 mr-2" />
+          Nueva Receta
+        </Button>
       </div>
 
-      {/* Filtros y búsqueda */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+      {/* Filtros y búsqueda MEJORADOS */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Búsqueda general */}
+        <div className="relative">
+          <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
           <Input
-            placeholder="Buscar por paciente, DNI, diagnóstico o código..."
+            placeholder="Buscar en recetas..."
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
-            className="pl-10"
+            className="pl-10 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
           />
         </div>
+
+        {/* Filtro por paciente */}
+        <Select value={filtroPaciente} onValueChange={setFiltroPaciente}>
+          <SelectTrigger className="border-gray-300 focus:border-blue-500 focus:ring-blue-500">
+            <SelectValue
+              placeholder={
+                cargandoPacientes
+                  ? "Cargando pacientes..."
+                  : "Filtrar por paciente"
+              }
+            />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="todos">Todos los pacientes</SelectItem>
+            {pacientes.map((paciente) => (
+              <SelectItem key={paciente.id} value={paciente.id}>
+                {paciente.nombre} {paciente.apellido} - {paciente.dni} (
+                {paciente.total_recetas} recetas)
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Filtro por estado */}
         <Select value={filtroEstado} onValueChange={setFiltroEstado}>
-          <SelectTrigger className="w-48">
+          <SelectTrigger className="border-gray-300 focus:border-blue-500 focus:ring-blue-500">
             <SelectValue placeholder="Filtrar por estado" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="todas">Todas las recetas</SelectItem>
-            <SelectItem value="pendiente">Pendientes</SelectItem>
-            <SelectItem value="completada">Completadas</SelectItem>
-            <SelectItem value="expirada">Expiradas</SelectItem>
+            <SelectItem value="todas">Todos los estados</SelectItem>
+            <SelectItem value="activa">Activas</SelectItem>
+            <SelectItem value="dispensada">Dispensadas</SelectItem>
+            <SelectItem value="vencida">Vencidas</SelectItem>
+            <SelectItem value="cancelada">Canceladas</SelectItem>
           </SelectContent>
         </Select>
+      </div>
+
+      {/* Estadísticas rápidas ACTUALIZADAS */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card className="bg-white border border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">
+                  Total Recetas
+                </p>
+                <p className="text-2xl font-bold text-gray-800">
+                  {recetas.length}
+                </p>
+              </div>
+              <FileText className="w-8 h-8 text-blue-600" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-white border border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">
+                  Pacientes Atendidos
+                </p>
+                <p className="text-2xl font-bold text-green-600">
+                  {[...new Set(recetas.map((r) => r.paciente_id))].length}
+                </p>
+              </div>
+              <Users className="w-8 h-8 text-green-600" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-white border border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">
+                  Recetas Activas
+                </p>
+                <p className="text-2xl font-bold text-blue-600">
+                  {recetas.filter((r) => r.estado === "activa").length}
+                </p>
+              </div>
+              <Pill className="w-8 h-8 text-blue-600" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-white border border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">
+                  Medicamentos Total
+                </p>
+                <p className="text-2xl font-bold text-purple-600">
+                  {recetas.reduce(
+                    (total, r) => total + (r.total_medicamentos || 0),
+                    0
+                  )}
+                </p>
+              </div>
+              <Filter className="w-8 h-8 text-purple-600" />
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Lista de recetas */}
       <div className="grid gap-4">
         {recetasFiltradas.length === 0 ? (
-          <Card className="text-center py-12">
+          <Card className="text-center py-12 border-2 border-dashed border-gray-300 bg-gray-50">
             <CardContent>
-              <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">No hay recetas</h3>
-              <p className="text-muted-foreground mb-4">
-                {busqueda || filtroEstado !== "todas"
-                  ? "No se encontraron recetas con los filtros aplicados"
-                  : "Aún no ha creado ninguna receta"}
+              <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-gray-700 mb-2">
+                {busqueda ||
+                filtroEstado !== "todas" ||
+                filtroPaciente !== "todos"
+                  ? "No se encontraron recetas"
+                  : "No hay recetas registradas"}
+              </h3>
+              <p className="text-gray-500 mb-6">
+                {busqueda ||
+                filtroEstado !== "todas" ||
+                filtroPaciente !== "todos"
+                  ? "Intenta ajustar los filtros de búsqueda"
+                  : "Comienza creando tu primera receta médica"}
               </p>
               <Button
                 onClick={() => setMostrarModalCrear(true)}
-                className="bg-primary hover:bg-primary/90"
+                className="bg-blue-600 text-white hover:bg-blue-700"
               >
                 <Plus className="w-4 h-4 mr-2" />
                 Crear Primera Receta
@@ -312,73 +528,75 @@ export function RecetasMedicoSection() {
           recetasFiltradas.map((receta) => (
             <Card
               key={receta.id}
-              className="medical-shadow hover:shadow-lg transition-shadow cursor-pointer"
-              onClick={() => {
-                setRecetaSeleccionada(receta);
-                setMostrarDetalles(true);
-              }}
+              className="bg-white border border-gray-200 hover:border-blue-300 transition-colors cursor-pointer hover:shadow-md"
+              onClick={() => verDetallesReceta(receta)}
             >
               <CardContent className="p-6">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <div className="flex items-center space-x-3 mb-2">
-                      <h3 className="font-semibold text-lg">
-                        {receta.paciente_nombre} {receta.paciente_apellido}
-                      </h3>
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-lg text-gray-800">
+                          {receta.paciente_nombre || "N/A"}{" "}
+                          {receta.paciente_apellido || ""}
+                        </h3>
+                        <p className="text-sm text-gray-600">
+                          DNI: {receta.paciente_dni || "No disponible"}
+                        </p>
+                      </div>
                       {getEstadoBadge(receta.estado)}
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-3">
-                      <div className="flex items-center text-sm text-muted-foreground">
-                        <User className="w-4 h-4 mr-2" />
-                        <span>DNI: {receta.paciente_dni}</span>
-                      </div>
-                      <div className="flex items-center text-sm text-muted-foreground">
-                        <Calendar className="w-4 h-4 mr-2" />
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                      <div className="flex items-center text-sm text-gray-600">
+                        <Calendar className="w-4 h-4 mr-2 text-gray-400" />
                         <span>
                           Emisión: {formatearFecha(receta.fecha_emision)}
                         </span>
                       </div>
-                      <div className="flex items-center text-sm text-muted-foreground">
-                        <Clock className="w-4 h-4 mr-2" />
+                      <div className="flex items-center text-sm text-gray-600">
+                        <Clock className="w-4 h-4 mr-2 text-gray-400" />
                         <span>
                           Vence: {formatearFecha(receta.fecha_vencimiento)}
                         </span>
                       </div>
-                      <div className="flex items-center text-sm text-muted-foreground">
-                        <Pill className="w-4 h-4 mr-2" />
-                        <span>{receta.total_medicamentos} medicamento(s)</span>
+                      <div className="flex items-center text-sm text-gray-600">
+                        <Pill className="w-4 h-4 mr-2 text-gray-400" />
+                        <span>
+                          {receta.total_medicamentos || 0} medicamento(s)
+                        </span>
+                      </div>
+                      <div className="flex items-center text-sm text-gray-600">
+                        <FileText className="w-4 h-4 mr-2 text-gray-400" />
+                        <span className="font-mono">
+                          {receta.codigo_receta || "Sin código"}
+                        </span>
                       </div>
                     </div>
 
-                    <p className="font-medium text-sm mb-2">
-                      Diagnóstico: {receta.diagnostico}
-                    </p>
-
-                    {receta.observaciones_generales && (
-                      <p className="text-sm text-muted-foreground line-clamp-2">
-                        Observaciones: {receta.observaciones_generales}
+                    <div className="space-y-2">
+                      <p className="font-medium text-sm text-gray-800">
+                        Diagnóstico:{" "}
+                        {receta.diagnostico_principal_texto ||
+                          "No especificado"}
                       </p>
-                    )}
-
-                    <div className="flex items-center mt-3">
-                      <Badge variant="outline" className="text-xs">
-                        Código: {receta.codigo_receta}
-                      </Badge>
+                      {receta.observaciones && (
+                        <p className="text-sm text-gray-600 line-clamp-2">
+                          Observaciones: {receta.observaciones}
+                        </p>
+                      )}
                     </div>
                   </div>
 
                   <div
-                    className="flex items-center space-x-2 ml-4"
+                    className="flex items-center gap-2 ml-4"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => {
-                        setRecetaSeleccionada(receta);
-                        setMostrarDetalles(true);
-                      }}
+                      onClick={() => verDetallesReceta(receta)}
+                      className="border-gray-300 text-gray-700 hover:bg-gray-50"
                     >
                       <Eye className="w-4 h-4" />
                     </Button>
@@ -386,13 +604,20 @@ export function RecetasMedicoSection() {
                       variant="outline"
                       size="sm"
                       onClick={() => descargarPDF(receta)}
+                      disabled={descargandoPDF === receta.id}
+                      className="border-gray-300 text-gray-700 hover:bg-gray-50"
                     >
-                      <Download className="w-4 h-4" />
+                      {descargandoPDF === receta.id ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Download className="w-4 h-4" />
+                      )}
                     </Button>
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => verCodigoQR(receta)}
+                      className="border-gray-300 text-gray-700 hover:bg-gray-50"
                     >
                       <QrCode className="w-4 h-4" />
                     </Button>
@@ -408,8 +633,8 @@ export function RecetasMedicoSection() {
       <ModalCrearReceta
         cita={
           citaSeleccionada || {
-            id: 0,
-            paciente_id: 0,
+            id: "",
+            paciente_id: "",
             paciente_nombre: "",
             paciente_apellido: "",
             paciente_dni: "",
@@ -417,6 +642,7 @@ export function RecetasMedicoSection() {
             fecha_cita: new Date().toISOString(),
             motivo_consulta: "",
             estado: "completada",
+            tipo_cita: "presencial",
           }
         }
         isOpen={mostrarModalCrear}
@@ -429,49 +655,49 @@ export function RecetasMedicoSection() {
 
       {/* Modal de detalles de receta */}
       <Dialog open={mostrarDetalles} onOpenChange={setMostrarDetalles}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center">
-              <FileText className="w-5 h-5 mr-2" />
-              Detalles de la Receta
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-white">
+          <DialogHeader className="border-b border-gray-200 pb-4">
+            <DialogTitle className="flex items-center text-xl font-bold text-gray-800">
+              <FileText className="w-6 h-6 mr-3 text-blue-600" />
+              Detalles de Receta Médica
             </DialogTitle>
           </DialogHeader>
 
           {recetaSeleccionada && (
-            <div className="space-y-6">
+            <div className="space-y-6 py-4">
               {/* Información del paciente */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center text-lg">
+              <Card className="bg-blue-50 border-blue-200">
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center text-lg text-blue-800">
                     <User className="w-5 h-5 mr-2" />
                     Información del Paciente
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     <div>
-                      <label className="text-sm text-muted-foreground">
+                      <label className="text-sm font-medium text-blue-700">
                         Nombre Completo
                       </label>
-                      <p className="font-medium">
-                        {recetaSeleccionada.paciente_nombre}{" "}
-                        {recetaSeleccionada.paciente_apellido}
+                      <p className="font-semibold text-blue-900">
+                        {recetaSeleccionada.paciente_nombre || "N/A"}{" "}
+                        {recetaSeleccionada.paciente_apellido || ""}
                       </p>
                     </div>
                     <div>
-                      <label className="text-sm text-muted-foreground">
+                      <label className="text-sm font-medium text-blue-700">
                         DNI
                       </label>
-                      <p className="font-medium">
-                        {recetaSeleccionada.paciente_dni}
+                      <p className="font-semibold text-blue-900">
+                        {recetaSeleccionada.paciente_dni || "No disponible"}
                       </p>
                     </div>
                     <div>
-                      <label className="text-sm text-muted-foreground">
+                      <label className="text-sm font-medium text-blue-700">
                         Edad
                       </label>
-                      <p className="font-medium">
-                        {recetaSeleccionada.paciente_edad} años
+                      <p className="font-semibold text-blue-900">
+                        {recetaSeleccionada.paciente_edad || 0} años
                       </p>
                     </div>
                   </div>
@@ -479,111 +705,197 @@ export function RecetasMedicoSection() {
               </Card>
 
               {/* Información de la receta */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center text-lg">
-                    <FileText className="w-5 h-5 mr-2" />
+              <Card className="bg-white border-gray-200">
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center text-lg text-gray-800">
+                    <FileText className="w-5 h-5 mr-2 text-gray-600" />
                     Información de la Receta
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="text-sm text-muted-foreground">
+                      <label className="text-sm font-medium text-gray-700">
                         Código de Receta
                       </label>
-                      <p className="font-mono text-sm bg-muted p-2 rounded">
-                        {recetaSeleccionada.codigo_receta}
+                      <p className="font-mono text-sm bg-gray-100 p-2 rounded border text-gray-800">
+                        {recetaSeleccionada.codigo_receta || "Sin código"}
                       </p>
                     </div>
                     <div>
-                      <label className="text-sm text-muted-foreground">
-                        Código QR
-                      </label>
-                      <p className="font-mono text-sm bg-muted p-2 rounded">
-                        {recetaSeleccionada.codigo_qr}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-sm text-muted-foreground">
-                      Diagnóstico
-                    </label>
-                    <p className="font-medium bg-muted p-3 rounded">
-                      {recetaSeleccionada.diagnostico}
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-sm text-muted-foreground">
-                        Fecha de Emisión
-                      </label>
-                      <p className="font-medium">
-                        {formatearFecha(recetaSeleccionada.fecha_emision)}
-                      </p>
-                    </div>
-                    <div>
-                      <label className="text-sm text-muted-foreground">
-                        Fecha de Vencimiento
-                      </label>
-                      <p className="font-medium">
-                        {formatearFecha(recetaSeleccionada.fecha_vencimiento)}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-sm text-muted-foreground">
+                      <label className="text-sm font-medium text-gray-700">
                         Estado
                       </label>
                       <div className="mt-1">
                         {getEstadoBadge(recetaSeleccionada.estado)}
                       </div>
                     </div>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">
+                      Diagnóstico Principal
+                    </label>
+                    <p className="bg-gray-100 p-3 rounded border text-gray-800 font-medium">
+                      {recetaSeleccionada.diagnostico_principal_texto ||
+                        "No especificado"}
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="text-sm text-muted-foreground">
-                        Total de Medicamentos
+                      <label className="text-sm font-medium text-gray-700">
+                        Fecha de Emisión
                       </label>
-                      <p className="font-medium">
-                        {recetaSeleccionada.total_medicamentos}
+                      <p className="text-gray-800 font-medium">
+                        {formatearFecha(recetaSeleccionada.fecha_emision)}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">
+                        Fecha de Vencimiento
+                      </label>
+                      <p className="text-gray-800 font-medium">
+                        {formatearFecha(recetaSeleccionada.fecha_vencimiento)}
                       </p>
                     </div>
                   </div>
 
-                  {recetaSeleccionada.observaciones_generales && (
+                  {recetaSeleccionada.observaciones && (
                     <div>
-                      <label className="text-sm text-muted-foreground">
+                      <label className="text-sm font-medium text-gray-700">
                         Observaciones Generales
                       </label>
-                      <p className="font-medium bg-muted p-3 rounded">
-                        {recetaSeleccionada.observaciones_generales}
+                      <p className="bg-gray-100 p-3 rounded border text-gray-800 whitespace-pre-wrap">
+                        {recetaSeleccionada.observaciones}
                       </p>
                     </div>
                   )}
                 </CardContent>
               </Card>
 
+              {/* Medicamentos */}
+              {detallesCompletos?.medicamentos &&
+                detallesCompletos.medicamentos.length > 0 && (
+                  <Card className="bg-white border-gray-200">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="flex items-center text-lg text-gray-800">
+                        <Pill className="w-5 h-5 mr-2 text-gray-600" />
+                        Medicamentos Recetados (
+                        {detallesCompletos.medicamentos.length})
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-4">
+                        {detallesCompletos.medicamentos.map(
+                          (med: any, index: number) => (
+                            <div
+                              key={med.id || index}
+                              className="border border-gray-200 rounded-lg p-4 bg-gray-50"
+                            >
+                              <div className="flex justify-between items-start mb-3">
+                                <div>
+                                  <h4 className="font-semibold text-gray-800 text-lg">
+                                    {med.nombre_comercial ||
+                                      "Medicamento no especificado"}
+                                  </h4>
+                                  <p className="text-sm text-gray-600">
+                                    {med.nombre_generico || ""}
+                                  </p>
+                                </div>
+                                <Badge
+                                  variant={
+                                    med.dispensado ? "default" : "outline"
+                                  }
+                                  className={
+                                    med.dispensado
+                                      ? "bg-green-100 text-green-800 border-green-200"
+                                      : "bg-yellow-100 text-yellow-800 border-yellow-200"
+                                  }
+                                >
+                                  {med.dispensado ? "Dispensado" : "Pendiente"}
+                                </Badge>
+                              </div>
+
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-3">
+                                <div>
+                                  <span className="font-medium text-gray-700">
+                                    Dosis:
+                                  </span>
+                                  <p className="text-gray-800">
+                                    {med.dosis || "No especificada"}
+                                  </p>
+                                </div>
+                                <div>
+                                  <span className="font-medium text-gray-700">
+                                    Frecuencia:
+                                  </span>
+                                  <p className="text-gray-800">
+                                    {med.frecuencia || "No especificada"}
+                                  </p>
+                                </div>
+                                <div>
+                                  <span className="font-medium text-gray-700">
+                                    Duración:
+                                  </span>
+                                  <p className="text-gray-800">
+                                    {med.duracion_dias || 0} días
+                                  </p>
+                                </div>
+                                <div>
+                                  <span className="font-medium text-gray-700">
+                                    Cantidad:
+                                  </span>
+                                  <p className="text-gray-800">
+                                    {med.cantidad || 0} unidades
+                                  </p>
+                                </div>
+                              </div>
+
+                              {med.instrucciones_especiales && (
+                                <div>
+                                  <span className="font-medium text-gray-700">
+                                    Instrucciones Especiales:
+                                  </span>
+                                  <p className="text-gray-800 mt-1">
+                                    {med.instrucciones_especiales}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
               {/* Acciones */}
-              <div className="flex justify-end space-x-3 pt-4 border-t">
+              <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">
                 <Button
                   variant="outline"
                   onClick={() => setMostrarDetalles(false)}
+                  className="border-gray-300 text-gray-700 hover:bg-gray-50"
                 >
                   Cerrar
                 </Button>
                 <Button
                   variant="outline"
                   onClick={() => descargarPDF(recetaSeleccionada)}
+                  disabled={descargandoPDF === recetaSeleccionada.id}
+                  className="border-gray-300 text-gray-700 hover:bg-gray-50"
                 >
-                  <Download className="w-4 h-4 mr-2" />
+                  {descargandoPDF === recetaSeleccionada.id ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4 mr-2" />
+                  )}
                   Descargar PDF
                 </Button>
                 <Button
                   variant="outline"
                   onClick={() => verCodigoQR(recetaSeleccionada)}
+                  className="border-gray-300 text-gray-700 hover:bg-gray-50"
                 >
                   <QrCode className="w-4 h-4 mr-2" />
                   Ver QR

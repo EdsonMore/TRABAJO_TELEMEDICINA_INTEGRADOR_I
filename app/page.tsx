@@ -14,7 +14,6 @@ import {
 import {
   Heart,
   Users,
-  MapPin,
   Shield,
   Clock,
   Star,
@@ -76,9 +75,6 @@ export default function HomePage() {
               <Button asChild>
                 <Link href="/auth/register">Registrarse</Link>
               </Button>
-              <Button variant="outline" asChild>
-                <Link href="/mapa-salud">Mapa de Salud</Link>
-              </Button>
             </div>
 
             {/* Mobile Menu Button */}
@@ -107,13 +103,6 @@ export default function HomePage() {
                 </Button>
                 <Button className="w-full justify-start" asChild>
                   <Link href="/auth/register">Registrarse</Link>
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start"
-                  asChild
-                >
-                  <Link href="/mapa-salud">Mapa de Salud</Link>
                 </Button>
               </div>
             </div>
@@ -159,14 +148,6 @@ export default function HomePage() {
             >
               <Link href="/auth/login">Iniciar Sesión</Link>
             </Button>
-            <Button
-              size="lg"
-              variant="outline"
-              className="text-base sm:text-lg px-6 sm:px-8 py-5 sm:py-6 w-full sm:w-auto bg-transparent"
-              asChild
-            >
-              <Link href="/mapa-salud">Ver Mapa de Salud</Link>
-            </Button>
           </div>
         </div>
       </section>
@@ -199,25 +180,12 @@ export default function HomePage() {
 
           <Card className="medical-shadow">
             <CardHeader>
-              <MapPin className="w-8 h-8 sm:w-10 sm:h-10 text-primary mb-2" />
-              <CardTitle className="text-lg sm:text-xl">
-                Mapa de Salud Comunitaria
-              </CardTitle>
-              <CardDescription className="text-sm sm:text-base">
-                Visualiza alertas de salud en tu zona y mantente informado sobre
-                brotes y campañas de prevención
-              </CardDescription>
-            </CardHeader>
-          </Card>
-
-          <Card className="medical-shadow">
-            <CardHeader>
               <Clock className="w-8 h-8 sm:w-10 sm:h-10 text-primary mb-2" />
               <CardTitle className="text-lg sm:text-xl">
                 Citas Inteligentes
               </CardTitle>
               <CardDescription className="text-sm sm:text-base">
-                Agenda citas presenciales o virtuales con recordatorios
+                Agenda citas presenciales o virtuales with recordatorios
                 automáticos y seguimiento completo
               </CardDescription>
             </CardHeader>
