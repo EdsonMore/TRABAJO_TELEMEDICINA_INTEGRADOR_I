@@ -1,5 +1,5 @@
 // app/dashboard/citas/page.tsx
-// Página completa para agendar citas - Diseño responsivo y eficiente
+// Página completa para agendar citas con sistema de pagos integrado
 
 "use client";
 
@@ -40,8 +40,11 @@ import {
   Shield,
   Award,
   Clock4,
+  CreditCard,
+  Smartphone,
+  Building,
+  QrCode,
 } from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface Medico {
   id: string;
@@ -64,6 +67,7 @@ interface HorarioDisponible {
   disponible: boolean;
   formato_12h: string;
   formato_24h: string;
+  esPasado: boolean;
 }
 
 interface FiltrosMedicos {
@@ -75,6 +79,17 @@ interface FiltrosMedicos {
   tipoConsulta: string;
 }
 
+interface DatosPago {
+  metodo_pago: string;
+  numero_tarjeta?: string;
+  fecha_vencimiento?: string;
+  cvv?: string;
+  numero_telefono?: string;
+  codigo_operacion?: string;
+  banco?: string;
+  numero_operacion?: string;
+}
+
 export default function AgendarCitaPage() {
   const router = useRouter();
   const { token, usuario } = useAuth();
@@ -84,6 +99,7 @@ export default function AgendarCitaPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMedicos, setIsLoadingMedicos] = useState(false);
   const [isLoadingHorarios, setIsLoadingHorarios] = useState(false);
+  const [isProcessingPago, setIsProcessingPago] = useState(false);
 
   const [medicos, setMedicos] = useState<Medico[]>([]);
   const [medicosFiltrados, setMedicosFiltrados] = useState<Medico[]>([]);
@@ -114,6 +130,14 @@ export default function AgendarCitaPage() {
     urgencia: "normal",
   });
 
+  const [pagoData, setPagoData] = useState<DatosPago>({
+    metodo_pago: "tarjeta",
+  });
+
+  const [citaCreada, setCitaCreada] = useState<any>(null);
+  const [errores, setErrores] = useState<Record<string, string>>({});
+  const [erroresPago, setErroresPago] = useState<Record<string, string>>({});
+
   // Cargar médicos al montar el componente
   useEffect(() => {
     cargarMedicos();
@@ -132,6 +156,46 @@ export default function AgendarCitaPage() {
       setHorariosDisponibles([]);
     }
   }, [formData.medico_id, formData.fecha_cita]);
+
+  // Validar formulario en tiempo real
+  useEffect(() => {
+    validarFormulario();
+  }, [formData]);
+
+  // Validar datos de pago en tiempo real
+  useEffect(() => {
+    if (pasoActual === 4) {
+      validarDatosPago();
+    }
+  }, [pagoData]);
+
+  // Función para obtener fecha y hora actual en Lima/Perú
+  const getFechaHoraActual = () => {
+    const ahora = new Date();
+    // Ajustar a zona horaria de Perú (UTC-5)
+    const offset = -5 * 60; // UTC-5 en minutos
+    const fechaPeru = new Date(ahora.getTime() + offset * 60 * 1000);
+    return fechaPeru;
+  };
+
+  // Función para formatear fecha como YYYY-MM-DD
+  const formatFechaInput = (fecha: Date): string => {
+    return fecha.toISOString().split("T")[0];
+  };
+
+  // Función para verificar si una fecha/hora es en el pasado
+  const esFechaHoraPasada = (fecha: string, hora: number): boolean => {
+    const ahora = getFechaHoraActual();
+    const fechaCita = new Date(fecha);
+    fechaCita.setHours(hora, 0, 0, 0);
+
+    // Ajustar a UTC-5 para comparación correcta
+    const offset = -5 * 60 * 60 * 1000;
+    const fechaCitaPeru = new Date(fechaCita.getTime() + offset);
+    const ahoraPeru = new Date(ahora.getTime() + offset);
+
+    return fechaCitaPeru < ahoraPeru;
+  };
 
   const cargarMedicos = async () => {
     setIsLoadingMedicos(true);
@@ -172,26 +236,29 @@ export default function AgendarCitaPage() {
       );
     }
 
-    // ✅ FILTRO DE ESPECIALIDAD CORREGIDO
+    // Filtro de especialidad
     if (filtros.especialidad && filtros.especialidad !== "todas") {
       filtered = filtered.filter(
         (medico) => medico.especialidad === filtros.especialidad
       );
     }
 
-    // ... resto de filtros sin cambios
+    // Filtro de precio
     filtered = filtered.filter(
       (medico) => medico.tarifa_consulta <= filtros.precioMax
     );
 
+    // Filtro de seguro
     if (filtros.seguro) {
       filtered = filtered.filter((medico) => medico.acepta_seguro);
     }
 
+    // Filtro de experiencia
     filtered = filtered.filter(
       (medico) => medico.anos_experiencia >= filtros.experienciaMin
     );
 
+    // Filtro de calificación
     filtered = filtered.filter(
       (medico) => medico.calificacion_promedio >= filtros.calificacionMin
     );
@@ -215,11 +282,17 @@ export default function AgendarCitaPage() {
 
       if (response.ok) {
         const data = await response.json();
-        const horariosFormateados = (data.data || []).map((hora: any) => ({
-          ...hora,
-          formato_12h: formatHora12h(hora.hora),
-          formato_24h: `${hora.hora.toString().padStart(2, "0")}:00`,
-        }));
+        const horariosFormateados = (data.data || []).map((hora: any) => {
+          const esPasado = esFechaHoraPasada(formData.fecha_cita, hora.hora);
+          return {
+            ...hora,
+            formato_12h: formatHora12h(hora.hora),
+            formato_24h: `${hora.hora.toString().padStart(2, "0")}:00`,
+            esPasado,
+            // Si es pasado, forzar como no disponible
+            disponible: hora.disponible && !esPasado,
+          };
+        });
         setHorariosDisponibles(horariosFormateados);
       } else {
         throw new Error("Error al cargar horarios");
@@ -242,88 +315,324 @@ export default function AgendarCitaPage() {
     return `${hora12}:00 ${ampm}`;
   };
 
+  const validarFormulario = (): boolean => {
+    const nuevosErrores: Record<string, string> = {};
+
+    // Validar médico seleccionado
+    if (!formData.medico_id) {
+      nuevosErrores.medico_id = "Debes seleccionar un médico";
+    }
+
+    // Validar fecha
+    if (!formData.fecha_cita) {
+      nuevosErrores.fecha_cita = "Debes seleccionar una fecha";
+    } else {
+      const fechaSeleccionada = new Date(formData.fecha_cita);
+      const hoy = getFechaHoraActual();
+      hoy.setHours(0, 0, 0, 0);
+
+      if (fechaSeleccionada < hoy) {
+        nuevosErrores.fecha_cita = "No puedes seleccionar una fecha pasada";
+      }
+    }
+
+    // Validar hora
+    if (!formData.hora_cita) {
+      nuevosErrores.hora_cita = "Debes seleccionar una hora";
+    } else if (formData.fecha_cita) {
+      const horaSeleccionada = parseInt(formData.hora_cita);
+      const esPasado = esFechaHoraPasada(formData.fecha_cita, horaSeleccionada);
+      if (esPasado) {
+        nuevosErrores.hora_cita = "No puedes seleccionar una hora pasada";
+      }
+    }
+
+    // Validar motivo de consulta
+    if (!formData.motivo_consulta.trim()) {
+      nuevosErrores.motivo_consulta =
+        "Debes describir el motivo de la consulta";
+    } else if (formData.motivo_consulta.length < 10) {
+      nuevosErrores.motivo_consulta =
+        "La descripción debe tener al menos 10 caracteres";
+    } else if (formData.motivo_consulta.length > 500) {
+      nuevosErrores.motivo_consulta =
+        "La descripción no puede exceder 500 caracteres";
+    }
+
+    // Validar síntomas si se proporcionan
+    if (formData.sintomas && formData.sintomas.length > 1000) {
+      nuevosErrores.sintomas = "Los síntomas no pueden exceder 1000 caracteres";
+    }
+
+    setErrores(nuevosErrores);
+    return Object.keys(nuevosErrores).length === 0;
+  };
+
+  const validarDatosPago = (): boolean => {
+    const nuevosErrores: Record<string, string> = {};
+
+    // Validar método de pago seleccionado
+    if (!pagoData.metodo_pago) {
+      nuevosErrores.metodo_pago = "Debes seleccionar un método de pago";
+    }
+
+    // Validaciones específicas por método de pago
+    switch (pagoData.metodo_pago) {
+      case "tarjeta":
+        if (
+          !pagoData.numero_tarjeta ||
+          pagoData.numero_tarjeta.replace(/\s/g, "").length !== 16
+        ) {
+          nuevosErrores.numero_tarjeta =
+            "Número de tarjeta inválido (16 dígitos requeridos)";
+        }
+        if (
+          !pagoData.fecha_vencimiento ||
+          !/^\d{2}\/\d{2}$/.test(pagoData.fecha_vencimiento)
+        ) {
+          nuevosErrores.fecha_vencimiento =
+            "Fecha de vencimiento inválida (MM/AA)";
+        }
+        if (!pagoData.cvv || pagoData.cvv.length !== 3) {
+          nuevosErrores.cvv = "CVV inválido (3 dígitos requeridos)";
+        }
+        break;
+
+      case "yape":
+      case "plin":
+        if (
+          !pagoData.numero_telefono ||
+          pagoData.numero_telefono.length !== 9
+        ) {
+          nuevosErrores.numero_telefono =
+            "Número de teléfono inválido (9 dígitos requeridos)";
+        }
+        if (!pagoData.codigo_operacion) {
+          nuevosErrores.codigo_operacion = "Código de operación requerido";
+        }
+        break;
+
+      case "transferencia":
+        if (!pagoData.banco) {
+          nuevosErrores.banco = "Debes seleccionar un banco";
+        }
+        if (!pagoData.numero_operacion) {
+          nuevosErrores.numero_operacion = "Número de operación requerido";
+        }
+        break;
+    }
+
+    setErroresPago(nuevosErrores);
+    return Object.keys(nuevosErrores).length === 0;
+  };
+
   const handleMedicoSeleccionado = (medico: Medico) => {
     setMedicoSeleccionado(medico);
-    setFormData((prev) => ({ ...prev, medico_id: medico.id, hora_cita: "" }));
+    setFormData((prev) => ({
+      ...prev,
+      medico_id: medico.id,
+      hora_cita: "",
+      fecha_cita: "", // Resetear fecha al cambiar médico
+    }));
     setPasoActual(2);
+  };
+
+  const handleFechaChange = (fecha: string) => {
+    const hoy = formatFechaInput(getFechaHoraActual());
+
+    // Si la fecha seleccionada es hoy, resetear la hora
+    const nuevaHora = fecha === hoy ? "" : formData.hora_cita;
+
+    setFormData((prev) => ({
+      ...prev,
+      fecha_cita: fecha,
+      hora_cita: nuevaHora,
+    }));
+  };
+
+  const handlePagoMethodChange = (metodo: string) => {
+    setPagoData({
+      metodo_pago: metodo,
+      numero_tarjeta: "",
+      fecha_vencimiento: "",
+      cvv: "",
+      numero_telefono: "",
+      codigo_operacion: "",
+      banco: "",
+      numero_operacion: "",
+    });
+    setErroresPago({});
+  };
+
+  const crearCita = async (): Promise<any> => {
+    const citaData = {
+      medico_id: formData.medico_id,
+      fecha_cita: formData.fecha_cita,
+      hora_cita: formData.hora_cita,
+      tipo_cita: formData.tipo_cita,
+      motivo_consulta: formData.motivo_consulta.trim(),
+      sintomas: formData.sintomas.trim(),
+      urgencia: formData.urgencia,
+    };
+
+    const response = await fetch("/api/citas/paciente", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(citaData),
+    });
+
+    const responseData = await response.json();
+
+    if (!response.ok) {
+      throw new Error(responseData.error || "Error al agendar cita");
+    }
+
+    return responseData.cita;
+  };
+
+  const procesarPago = async (citaId: string) => {
+    // ✅ Usar el monto real de la cita creada (que ya incluye ajustes por tipo)
+    const montoReal = citaCreada?.costo ? parseFloat(citaCreada.costo) : precioFinal;
+
+    const pagoPayload = {
+      tipo_pago: "cita",
+      referencia_id: citaId,
+      monto: montoReal, // ✅ Monto real de la cita (BD), no recalculado
+      metodo_pago: pagoData.metodo_pago,
+      datos_pago: pagoData,
+    };
+
+    console.log("Payload de pago:", pagoPayload);
+
+    // Usar la ruta sandbox para pruebas, en producción usarías "/api/pagos/procesar"
+    const response = await fetch("/api/pagos/procesar-sandbox", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(pagoPayload),
+    });
+
+    const responseData = await response.json();
+
+    if (!response.ok) {
+      throw new Error(responseData.error || "Error al procesar pago");
+    }
+
+    return responseData;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (
-      !formData.medico_id ||
-      !formData.fecha_cita ||
-      !formData.hora_cita ||
-      !formData.motivo_consulta
-    ) {
-      toast({
-        title: "Campos incompletos",
-        description: "Por favor completa todos los campos requeridos",
-        variant: "destructive",
-      });
+    // En el paso 3, solo crear la cita y avanzar al pago
+    if (pasoActual === 3) {
+      if (!validarFormulario()) {
+        toast({
+          title: "Error de validación",
+          description: "Por favor corrige los errores en el formulario",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setIsLoading(true);
+      try {
+        const cita = await crearCita();
+        setCitaCreada(cita);
+        setPasoActual(4);
+        toast({
+          title: "Cita creada exitosamente",
+          description: "Ahora procede con el pago para confirmar tu cita",
+        });
+      } catch (error: any) {
+        console.error("Error agendando cita:", error);
+        toast({
+          title: "Error al agendar cita",
+          description:
+            error.message || "No se pudo agendar la cita. Intenta nuevamente.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoading(false);
+      }
       return;
     }
 
-    setIsLoading(true);
-
-    try {
-      const citaData = {
-        medico_id: formData.medico_id,
-        fecha_cita: formData.fecha_cita,
-        hora_cita: formData.hora_cita,
-        tipo_cita: formData.tipo_cita,
-        motivo_consulta: formData.motivo_consulta,
-        sintomas: formData.sintomas,
-        urgencia: formData.urgencia,
-      };
-
-      const response = await fetch("/api/citas/paciente", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(citaData),
-      });
-
-      const responseData = await response.json();
-
-      if (response.ok) {
+    // En el paso 4, procesar el pago
+    if (pasoActual === 4) {
+      if (!validarDatosPago()) {
         toast({
-          title: "✅ ¡Cita agendada exitosamente!",
-          description:
-            "Tu cita ha sido programada. Revisa tu correo para más detalles.",
+          title: "Error en datos de pago",
+          description: "Por favor corrige los errores en el formulario de pago",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setIsProcessingPago(true);
+      try {
+        const resultadoPago = await procesarPago(citaCreada.id);
+
+        toast({
+          title: "✅ ¡Pago procesado exitosamente!",
+          description: `Tu cita ha sido confirmada. Código de pago: ${resultadoPago.pago.numero_transaccion}`,
         });
 
         // Redirigir al dashboard de citas
         setTimeout(() => {
           router.push("/dashboard/paciente?tab=citas");
-        }, 2000);
-      } else {
-        throw new Error(responseData.error || "Error al agendar cita");
+        }, 3000);
+      } catch (error: any) {
+        console.error("Error procesando pago:", error);
+        toast({
+          title: "Error al procesar pago",
+          description:
+            error.message || "No se pudo procesar el pago. Intenta nuevamente.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsProcessingPago(false);
       }
-    } catch (error: any) {
-      console.error("Error agendando cita:", error);
-      toast({
-        title: "Error al agendar cita",
-        description:
-          error.message || "No se pudo agendar la cita. Intenta nuevamente.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
+      return;
     }
   };
 
   const especialidadesUnicas = [...new Set(medicos.map((m) => m.especialidad))];
-  const hoy = new Date();
-  const fechaMinima = hoy.toISOString().split("T")[0];
-  const fechaMaxima = new Date(hoy.setMonth(hoy.getMonth() + 3))
-    .toISOString()
-    .split("T")[0];
 
-  const progreso = (pasoActual / 3) * 100;
+  // Fechas límite para el calendario
+  const hoy = getFechaHoraActual();
+  const fechaMinima = formatFechaInput(hoy);
+  const fechaMaxima = new Date(hoy);
+  fechaMaxima.setMonth(fechaMaxima.getMonth() + 3);
+  const fechaMaximaStr = formatFechaInput(fechaMaxima);
+
+  const progreso = (pasoActual / 4) * 100;
+
+  // Función para determinar si un horario está realmente disponible
+  const estaHorarioDisponible = (hora: HorarioDisponible): boolean => {
+    return hora.disponible && !hora.esPasado;
+  };
+
+  // Calcular precio según tipo de consulta
+  const calcularPrecio = (): number => {
+    if (!medicoSeleccionado) return 0;
+
+    switch (formData.tipo_cita) {
+      case "virtual":
+        return Math.max(medicoSeleccionado.tarifa_consulta - 20, 50);
+      case "domicilio":
+        return medicoSeleccionado.tarifa_consulta + 50;
+      default:
+        return medicoSeleccionado.tarifa_consulta;
+    }
+  };
+
+  const precioFinal = calcularPrecio();
 
   return (
     <ProtectedRoute allowedRoles={["paciente"]}>
@@ -372,7 +681,7 @@ export default function AgendarCitaPage() {
           <div className="max-w-4xl mx-auto">
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm font-medium text-gray-700">
-                Paso {pasoActual} de 3
+                Paso {pasoActual} de 4
               </span>
               <span className="text-sm font-medium text-blue-600">
                 {Math.round(progreso)}%
@@ -383,9 +692,10 @@ export default function AgendarCitaPage() {
             {/* Pasos */}
             <div className="flex justify-between mt-4">
               {[
-                { numero: 1, titulo: "Elegir Médico", activo: pasoActual >= 1 },
-                { numero: 2, titulo: "Fecha y Hora", activo: pasoActual >= 2 },
+                { numero: 1, titulo: "Médico", activo: pasoActual >= 1 },
+                { numero: 2, titulo: "Fecha/Hora", activo: pasoActual >= 2 },
                 { numero: 3, titulo: "Confirmar", activo: pasoActual >= 3 },
+                { numero: 4, titulo: "Pago", activo: pasoActual >= 4 },
               ].map((paso) => (
                 <div key={paso.numero} className="flex flex-col items-center">
                   <div
@@ -735,18 +1045,17 @@ export default function AgendarCitaPage() {
                         <Input
                           type="date"
                           min={fechaMinima}
-                          max={fechaMaxima}
+                          max={fechaMaximaStr}
                           value={formData.fecha_cita}
-                          onChange={(e) =>
-                            setFormData((prev) => ({
-                              ...prev,
-                              fecha_cita: e.target.value,
-                              hora_cita: "",
-                            }))
-                          }
+                          onChange={(e) => handleFechaChange(e.target.value)}
                           required
                           className="h-12 text-lg"
                         />
+                        {errores.fecha_cita && (
+                          <p className="text-red-600 text-sm mt-1">
+                            {errores.fecha_cita}
+                          </p>
+                        )}
                         <p className="text-sm text-gray-600 mt-2">
                           Horarios disponibles para los próximos 3 meses
                         </p>
@@ -766,49 +1075,58 @@ export default function AgendarCitaPage() {
                       </CardHeader>
                       <CardContent>
                         {formData.fecha_cita ? (
-                          <div className="grid grid-cols-3 gap-2 max-h-60 overflow-y-auto">
-                            {horariosDisponibles.map((hora) => (
-                              <Button
-                                key={hora.hora}
-                                type="button"
-                                variant={
-                                  formData.hora_cita === hora.hora.toString()
-                                    ? "default"
-                                    : "outline"
-                                }
-                                disabled={!hora.disponible}
-                                onClick={() =>
-                                  setFormData((prev) => ({
-                                    ...prev,
-                                    hora_cita: hora.hora.toString(),
-                                  }))
-                                }
-                                className="h-12 flex flex-col"
-                              >
-                                <span className="font-bold text-sm">
-                                  {hora.formato_12h}
-                                </span>
-                                <span
-                                  className={`text-xs ${
-                                    hora.disponible
-                                      ? "text-green-600"
-                                      : "text-red-600"
-                                  }`}
+                          <>
+                            <div className="grid grid-cols-3 gap-2 max-h-60 overflow-y-auto">
+                              {horariosDisponibles.map((hora) => (
+                                <Button
+                                  key={hora.hora}
+                                  type="button"
+                                  variant={
+                                    formData.hora_cita === hora.hora.toString()
+                                      ? "default"
+                                      : "outline"
+                                  }
+                                  disabled={!estaHorarioDisponible(hora)}
+                                  onClick={() =>
+                                    setFormData((prev) => ({
+                                      ...prev,
+                                      hora_cita: hora.hora.toString(),
+                                    }))
+                                  }
+                                  className="h-12 flex flex-col"
                                 >
-                                  {hora.disponible ? "Disponible" : "Ocupado"}
-                                </span>
-                              </Button>
-                            ))}
+                                  <span className="font-bold text-sm">
+                                    {hora.formato_12h}
+                                  </span>
+                                  <span
+                                    className={`text-xs ${
+                                      estaHorarioDisponible(hora)
+                                        ? "text-green-600"
+                                        : "text-red-600"
+                                    }`}
+                                  >
+                                    {estaHorarioDisponible(hora)
+                                      ? "Disponible"
+                                      : "No disponible"}
+                                  </span>
+                                </Button>
+                              ))}
 
-                            {horariosDisponibles.length === 0 && (
-                              <div className="col-span-3 text-center py-8 text-gray-500">
-                                <Clock className="w-8 h-8 mx-auto mb-2" />
-                                <p>
-                                  No hay horarios disponibles para esta fecha
-                                </p>
-                              </div>
+                              {horariosDisponibles.length === 0 && (
+                                <div className="col-span-3 text-center py-8 text-gray-500">
+                                  <Clock className="w-8 h-8 mx-auto mb-2" />
+                                  <p>
+                                    No hay horarios disponibles para esta fecha
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                            {errores.hora_cita && (
+                              <p className="text-red-600 text-sm mt-2">
+                                {errores.hora_cita}
+                              </p>
                             )}
-                          </div>
+                          </>
                         ) : (
                           <div className="text-center py-8 text-gray-500">
                             <Calendar className="w-8 h-8 mx-auto mb-2" />
@@ -839,7 +1157,10 @@ export default function AgendarCitaPage() {
                             label: "Consulta Virtual",
                             icon: Video,
                             desc: "Videollamada desde tu casa",
-                            precio: medicoSeleccionado.tarifa_consulta - 20,
+                            precio: Math.max(
+                              medicoSeleccionado.tarifa_consulta - 20,
+                              50
+                            ),
                           },
                           {
                             value: "domicilio",
@@ -903,7 +1224,12 @@ export default function AgendarCitaPage() {
                     <Button
                       type="button"
                       onClick={() => setPasoActual(3)}
-                      disabled={!formData.fecha_cita || !formData.hora_cita}
+                      disabled={
+                        !formData.fecha_cita ||
+                        !formData.hora_cita ||
+                        !!errores.fecha_cita ||
+                        !!errores.hora_cita
+                      }
                     >
                       Continuar a Confirmación →
                     </Button>
@@ -993,7 +1319,7 @@ export default function AgendarCitaPage() {
                             <div>
                               <span className="text-gray-600">Costo:</span>
                               <p className="font-semibold text-green-600 text-lg">
-                                S/ {medicoSeleccionado.tarifa_consulta}
+                                S/ {precioFinal}
                               </p>
                             </div>
                           </div>
@@ -1055,6 +1381,11 @@ export default function AgendarCitaPage() {
                             required
                             className="resize-none"
                           />
+                          {errores.motivo_consulta && (
+                            <p className="text-red-600 text-sm mt-1">
+                              {errores.motivo_consulta}
+                            </p>
+                          )}
                           <p className="text-sm text-gray-600 mt-1">
                             {formData.motivo_consulta.length}/500 caracteres
                           </p>
@@ -1077,6 +1408,14 @@ export default function AgendarCitaPage() {
                             rows={2}
                             className="resize-none"
                           />
+                          {errores.sintomas && (
+                            <p className="text-red-600 text-sm mt-1">
+                              {errores.sintomas}
+                            </p>
+                          )}
+                          <p className="text-sm text-gray-600 mt-1">
+                            {formData.sintomas.length}/1000 caracteres
+                          </p>
                         </div>
 
                         {/* Nivel de Urgencia */}
@@ -1129,27 +1468,29 @@ export default function AgendarCitaPage() {
                         <div>
                           <h4 className="font-bold text-lg">Total a Pagar</h4>
                           <p className="text-2xl font-bold text-green-600">
-                            S/ {medicoSeleccionado.tarifa_consulta}
+                            S/ {precioFinal}
                           </p>
                           <p className="text-sm text-gray-600">
-                            El pago se realizará en el consultorio
+                            El pago se realizará en el siguiente paso
                           </p>
                         </div>
                         <div className="space-y-2">
                           <Button
                             type="submit"
-                            disabled={isLoading}
+                            disabled={
+                              isLoading || Object.keys(errores).length > 0
+                            }
                             className="w-full sm:w-auto bg-green-600 hover:bg-green-700 h-12 px-8 text-lg font-bold"
                           >
                             {isLoading ? (
                               <>
                                 <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                                Confirmando...
+                                Creando Cita...
                               </>
                             ) : (
                               <>
                                 <CheckCircle2 className="w-5 h-5 mr-2" />
-                                Confirmar Cita
+                                Crear Cita y Pagar
                               </>
                             )}
                           </Button>
@@ -1157,6 +1498,412 @@ export default function AgendarCitaPage() {
                             type="button"
                             variant="outline"
                             onClick={() => setPasoActual(2)}
+                            className="w-full sm:w-auto"
+                          >
+                            ← Volver Atrás
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
+              {/* PASO 4: PAGO */}
+              {pasoActual === 4 && citaCreada && medicoSeleccionado && (
+                <div className="max-w-2xl mx-auto space-y-6">
+                  <div className="text-center">
+                    <h2 className="text-2xl font-bold text-gray-900">
+                      Completa tu Pago
+                    </h2>
+                    <p className="text-gray-600 mt-2">
+                      Selecciona tu método de pago preferido
+                    </p>
+                  </div>
+
+                  {/* Resumen de la Cita */}
+                  <Card className="bg-blue-50 border-blue-200">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="font-bold text-lg text-gray-900">
+                            Cita #{citaCreada.id.slice(-8)}
+                          </h3>
+                          <p className="text-blue-700">
+                            {new Date(citaCreada.fecha_cita).toLocaleDateString(
+                              "es-ES"
+                            )}{" "}
+                            - {formatHora12h(parseInt(citaCreada.hora_cita))}
+                          </p>
+                          <p className="text-sm text-gray-600">
+                            Dr. {medicoSeleccionado.nombre}{" "}
+                            {medicoSeleccionado.apellido}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-2xl font-bold text-green-600">
+                            S/ {precioFinal}
+                          </p>
+                          <Badge
+                            variant="outline"
+                            className="bg-yellow-100 text-yellow-800"
+                          >
+                            Pendiente de pago
+                          </Badge>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Métodos de Pago */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Selecciona Método de Pago</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      {/* Tarjeta de Crédito/Débito */}
+                      <div className="space-y-4">
+                        <div
+                          className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                            pagoData.metodo_pago === "tarjeta"
+                              ? "border-blue-500 bg-blue-50"
+                              : "border-gray-200 hover:border-gray-300"
+                          }`}
+                          onClick={() => handlePagoMethodChange("tarjeta")}
+                        >
+                          <div className="flex items-center gap-3">
+                            <CreditCard className="w-6 h-6 text-blue-600" />
+                            <div>
+                              <h4 className="font-semibold">
+                                Tarjeta de Crédito/Débito
+                              </h4>
+                              <p className="text-sm text-gray-600">
+                                Pago seguro con tarjeta
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {pagoData.metodo_pago === "tarjeta" && (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
+                            <div>
+                              <Label htmlFor="numero_tarjeta">
+                                Número de Tarjeta
+                              </Label>
+                              <Input
+                                id="numero_tarjeta"
+                                placeholder="1234 5678 9012 3456"
+                                value={pagoData.numero_tarjeta}
+                                onChange={(e) =>
+                                  setPagoData((prev) => ({
+                                    ...prev,
+                                    numero_tarjeta: e.target.value
+                                      .replace(/\D/g, "")
+                                      .slice(0, 16),
+                                  }))
+                                }
+                                className={
+                                  erroresPago.numero_tarjeta
+                                    ? "border-red-500"
+                                    : ""
+                                }
+                              />
+                              {erroresPago.numero_tarjeta && (
+                                <p className="text-red-600 text-sm mt-1">
+                                  {erroresPago.numero_tarjeta}
+                                </p>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <Label htmlFor="fecha_vencimiento">
+                                  Vencimiento (MM/AA)
+                                </Label>
+                                <Input
+                                  id="fecha_vencimiento"
+                                  placeholder="12/25"
+                                  value={pagoData.fecha_vencimiento}
+                                  onChange={(e) =>
+                                    setPagoData((prev) => ({
+                                      ...prev,
+                                      fecha_vencimiento: e.target.value,
+                                    }))
+                                  }
+                                  className={
+                                    erroresPago.fecha_vencimiento
+                                      ? "border-red-500"
+                                      : ""
+                                  }
+                                />
+                              </div>
+                              <div>
+                                <Label htmlFor="cvv">CVV</Label>
+                                <Input
+                                  id="cvv"
+                                  placeholder="123"
+                                  value={pagoData.cvv}
+                                  onChange={(e) =>
+                                    setPagoData((prev) => ({
+                                      ...prev,
+                                      cvv: e.target.value
+                                        .replace(/\D/g, "")
+                                        .slice(0, 3),
+                                    }))
+                                  }
+                                  className={
+                                    erroresPago.cvv ? "border-red-500" : ""
+                                  }
+                                />
+                              </div>
+                            </div>
+                            {erroresPago.fecha_vencimiento && (
+                              <p className="text-red-600 text-sm col-span-2">
+                                {erroresPago.fecha_vencimiento}
+                              </p>
+                            )}
+                            {erroresPago.cvv && (
+                              <p className="text-red-600 text-sm col-span-2">
+                                {erroresPago.cvv}
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Yape */}
+                      <div className="space-y-4">
+                        <div
+                          className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                            pagoData.metodo_pago === "yape"
+                              ? "border-purple-500 bg-purple-50"
+                              : "border-gray-200 hover:border-gray-300"
+                          }`}
+                          onClick={() => handlePagoMethodChange("yape")}
+                        >
+                          <div className="flex items-center gap-3">
+                            <Smartphone className="w-6 h-6 text-purple-600" />
+                            <div>
+                              <h4 className="font-semibold">Yape</h4>
+                              <p className="text-sm text-gray-600">
+                                Pago rápido con Yape
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {pagoData.metodo_pago === "yape" && (
+                          <div className="grid grid-cols-1 gap-4 p-4 bg-gray-50 rounded-lg">
+                            <div>
+                              <Label htmlFor="yape_telefono">
+                                Número de Teléfono
+                              </Label>
+                              <Input
+                                id="yape_telefono"
+                                placeholder="987654321"
+                                value={pagoData.numero_telefono}
+                                onChange={(e) =>
+                                  setPagoData((prev) => ({
+                                    ...prev,
+                                    numero_telefono: e.target.value
+                                      .replace(/\D/g, "")
+                                      .slice(0, 9),
+                                  }))
+                                }
+                                className={
+                                  erroresPago.numero_telefono
+                                    ? "border-red-500"
+                                    : ""
+                                }
+                              />
+                              {erroresPago.numero_telefono && (
+                                <p className="text-red-600 text-sm mt-1">
+                                  {erroresPago.numero_telefono}
+                                </p>
+                              )}
+                            </div>
+                            <div>
+                              <Label htmlFor="yape_codigo">
+                                Código de Operación
+                              </Label>
+                              <Input
+                                id="yape_codigo"
+                                placeholder="ABC123"
+                                value={pagoData.codigo_operacion}
+                                onChange={(e) =>
+                                  setPagoData((prev) => ({
+                                    ...prev,
+                                    codigo_operacion:
+                                      e.target.value.toUpperCase(),
+                                  }))
+                                }
+                                className={
+                                  erroresPago.codigo_operacion
+                                    ? "border-red-500"
+                                    : ""
+                                }
+                              />
+                              {erroresPago.codigo_operacion && (
+                                <p className="text-red-600 text-sm mt-1">
+                                  {erroresPago.codigo_operacion}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Transferencia Bancaria */}
+                      <div className="space-y-4">
+                        <div
+                          className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                            pagoData.metodo_pago === "transferencia"
+                              ? "border-green-500 bg-green-50"
+                              : "border-gray-200 hover:border-gray-300"
+                          }`}
+                          onClick={() =>
+                            handlePagoMethodChange("transferencia")
+                          }
+                        >
+                          <div className="flex items-center gap-3">
+                            <Building className="w-6 h-6 text-green-600" />
+                            <div>
+                              <h4 className="font-semibold">
+                                Transferencia Bancaria
+                              </h4>
+                              <p className="text-sm text-gray-600">
+                                Transferencia desde tu banco
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {pagoData.metodo_pago === "transferencia" && (
+                          <div className="grid grid-cols-1 gap-4 p-4 bg-gray-50 rounded-lg">
+                            <div>
+                              <Label htmlFor="banco">Banco</Label>
+                              <Select
+                                value={pagoData.banco}
+                                onValueChange={(value) =>
+                                  setPagoData((prev) => ({
+                                    ...prev,
+                                    banco: value,
+                                  }))
+                                }
+                              >
+                                <SelectTrigger
+                                  className={
+                                    erroresPago.banco ? "border-red-500" : ""
+                                  }
+                                >
+                                  <SelectValue placeholder="Selecciona tu banco" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="bcp">BCP</SelectItem>
+                                  <SelectItem value="bbva">BBVA</SelectItem>
+                                  <SelectItem value="interbank">
+                                    Interbank
+                                  </SelectItem>
+                                  <SelectItem value="scotiabank">
+                                    Scotiabank
+                                  </SelectItem>
+                                  <SelectItem value="banbif">BanBif</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              {erroresPago.banco && (
+                                <p className="text-red-600 text-sm mt-1">
+                                  {erroresPago.banco}
+                                </p>
+                              )}
+                            </div>
+                            <div>
+                              <Label htmlFor="transferencia_operacion">
+                                Número de Operación
+                              </Label>
+                              <Input
+                                id="transferencia_operacion"
+                                placeholder="123456789"
+                                value={pagoData.numero_operacion}
+                                onChange={(e) =>
+                                  setPagoData((prev) => ({
+                                    ...prev,
+                                    numero_operacion: e.target.value,
+                                  }))
+                                }
+                                className={
+                                  erroresPago.numero_operacion
+                                    ? "border-red-500"
+                                    : ""
+                                }
+                              />
+                              {erroresPago.numero_operacion && (
+                                <p className="text-red-600 text-sm mt-1">
+                                  {erroresPago.numero_operacion}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Información de Seguridad */}
+                  <Card className="bg-green-50 border-green-200">
+                    <CardContent className="p-4">
+                      <div className="flex items-start gap-3">
+                        <Shield className="w-5 h-5 text-green-600 mt-0.5" />
+                        <div>
+                          <h4 className="font-semibold text-green-800">
+                            Pago 100% Seguro
+                          </h4>
+                          <p className="text-sm text-green-700">
+                            Tus datos están protegidos con encriptación de
+                            última generación. No almacenamos información de tu
+                            tarjeta.
+                          </p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Confirmación de Pago */}
+                  <Card className="bg-gray-50">
+                    <CardContent className="p-6">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
+                        <div>
+                          <h4 className="font-bold text-lg">Total a Pagar</h4>
+                          <p className="text-2xl font-bold text-green-600">
+                            S/ {precioFinal}
+                          </p>
+                          <p className="text-sm text-gray-600">
+                            Método: {pagoData.metodo_pago.toUpperCase()}
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          <Button
+                            type="submit"
+                            disabled={
+                              isProcessingPago ||
+                              Object.keys(erroresPago).length > 0
+                            }
+                            className="w-full sm:w-auto bg-green-600 hover:bg-green-700 h-12 px-8 text-lg font-bold"
+                          >
+                            {isProcessingPago ? (
+                              <>
+                                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                                Procesando Pago...
+                              </>
+                            ) : (
+                              <>
+                                <CreditCard className="w-5 h-5 mr-2" />
+                                Pagar S/ {precioFinal}
+                              </>
+                            )}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setPasoActual(3)}
                             className="w-full sm:w-auto"
                           >
                             ← Volver Atrás

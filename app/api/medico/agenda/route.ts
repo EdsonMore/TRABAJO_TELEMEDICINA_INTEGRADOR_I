@@ -8,11 +8,24 @@ import { verifyToken } from "@/lib/auth"
 export async function GET(request: NextRequest) {
   try {
     const authHeader = request.headers.get("authorization")
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return NextResponse.json({ error: "Token de acceso requerido" }, { status: 401 })
+    // Soporte para token en Authorization Bearer o en cookie `medilink_token`
+    let token: string | null = null
+
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      token = authHeader.substring(7)
+    } else {
+      // Intentar leer token desde cookies (cliente que guarda token en cookie)
+      try {
+        const cookieToken = request.cookies.get("medilink_token")
+        if (cookieToken) token = cookieToken.value
+      } catch (e) {
+        // ignore
+      }
     }
 
-    const token = authHeader.substring(7)
+    if (!token) {
+      return NextResponse.json({ error: "Token de acceso requerido" }, { status: 401 })
+    }
     const payload = verifyToken(token)
 
     if (!payload || payload.rol !== "medico") {

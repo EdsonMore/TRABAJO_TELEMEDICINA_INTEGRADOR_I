@@ -3,7 +3,7 @@
 
 import { type NextRequest, NextResponse } from "next/server"
 import { query } from "@/lib/database"
-import { verifyToken } from "@/lib/auth"
+import { verificarToken } from "@/lib/auth"
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
     }
 
     const token = authHeader.substring(7)
-    const payload = verifyToken(token)
+    const payload = await verificarToken(token)
 
     if (!payload || payload.rol !== "paciente") {
       return NextResponse.json({ error: "Acceso no autorizado" }, { status: 403 })
@@ -52,9 +52,9 @@ export async function GET(request: NextRequest) {
       JOIN especialidades esp ON m.id_especialidad = esp.id
       LEFT JOIN laboratorios lab ON se.id_laboratorio = lab.id
       LEFT JOIN usuarios u_lab ON lab.id_usuario = u_lab.id
-      JOIN solicitud_examenes_detalle sed ON se.id = sed.id_solicitud
+      JOIN examen_detalle sed ON se.id = sed.id_solicitud
       JOIN tipos_examenes te ON sed.id_tipo_examen = te.id
-      LEFT JOIN resultados_laboratorio rl ON sed.id = rl.id_solicitud_detalle
+      LEFT JOIN resultados_laboratorio rl ON sed.id = rl.id_examen_detalle
       WHERE c.id_paciente = $1
       ORDER BY se.fecha_solicitud DESC, te.nombre
     `,

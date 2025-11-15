@@ -149,8 +149,8 @@ export function ResultadosLaboratorioSection() {
 
       {/* Tabs de estado */}
       <Tabs value={tabActiva} onValueChange={setTabActiva}>
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="todos">Todos</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 gap-1">
+          <TabsTrigger className="text-xs sm:text-sm" value="todos">Todos</TabsTrigger>
           <TabsTrigger value="completados">Completados</TabsTrigger>
           <TabsTrigger value="pendientes">Pendientes</TabsTrigger>
           <TabsTrigger value="anormales">Anormales</TabsTrigger>

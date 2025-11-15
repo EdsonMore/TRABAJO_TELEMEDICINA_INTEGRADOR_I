@@ -207,9 +207,9 @@ export async function POST(request: Request) {
 
     const paciente_id = pacienteResult.rows[0].id;
 
-    // ✅ Verificar que el médico existe
+    // ✅ Verificar que el médico existe Y obtener su tarifa
     const medicoResult = await client.query(
-      "SELECT id FROM medicos WHERE id = $1",
+      "SELECT id, tarifa_consulta FROM medicos WHERE id = $1",
       [medico_id]
     );
 
@@ -220,18 +220,32 @@ export async function POST(request: Request) {
       );
     }
 
+    const medicoData = medicoResult.rows[0];
+    let tarifaBase = parseFloat(medicoData.tarifa_consulta) || 80.0;
+
+    // ✅ Calcular costo según tipo de cita
+    let costoFinal = tarifaBase;
+    if (tipoNormalizado === "virtual") {
+      costoFinal = Math.max(tarifaBase - 20, 50); // Descuento de 20, mínimo 50
+    } else if (tipoNormalizado === "domicilio") {
+      costoFinal = tarifaBase + 50; // Recargo de 50
+    }
+    // Si es presencial, mantiene la tarifa base
+
     console.log("Verificaciones completadas:", {
       paciente_id,
       medico_id,
-      medico_existe: medicoResult.rows.length > 0,
+      medico_existe: true,
+      tarifa_base: tarifaBase,
+      tipo_cita: tipoNormalizado,
+      costo_final: costoFinal,
     });
 
     // ✅ Iniciar transacción
     await client.query("BEGIN");
 
     try {
-      // ✅ Insertar cita
-      // ✅ REEMPLAZAR la inserción de cita (línea ~180) con esta versión:
+      // ✅ Insertar cita con costo calculado
       const citaResult = await client.query(
         `INSERT INTO citas (
      id_paciente, id_medico, fecha_cita, hora_cita, tipo_cita, 
@@ -248,7 +262,7 @@ export async function POST(request: Request) {
           motivo_consulta,
           "programada", // ✅ Estado inicial
           false, // ✅ pagado = false (pendiente)
-          80.0, // ✅ Costo por defecto
+          costoFinal, // ✅ Costo real calculado según tipo de consulta
         ]
       );
 

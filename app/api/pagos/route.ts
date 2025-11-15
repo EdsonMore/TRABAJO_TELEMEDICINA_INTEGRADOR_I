@@ -1,5 +1,5 @@
 
-//App/api/procesar-sandbox/route.ts
+//App/api/pagos/route.ts
 // API para gestión de pagos
 // Permite a pacientes realizar pagos y obtener comprobantes
 import { type NextRequest, NextResponse } from "next/server";

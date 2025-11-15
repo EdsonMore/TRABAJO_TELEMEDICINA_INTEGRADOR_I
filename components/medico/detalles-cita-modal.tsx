@@ -4,6 +4,13 @@
 import { useState } from "react";
 import { useAuth } from "@/contexts/auth-context";
 import {
+  puedeUnirseAVideollamada,
+  puedeCrearReceta,
+  puedeSolicitarExamenes,
+  getEtiquetaCita,
+  getDescripcionCita,
+} from "@/lib/cita-utils";
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -31,6 +38,8 @@ interface DetallesCitaModalProps {
   onClose: () => void;
   cita: any;
   onCitaActualizada: () => void;
+  onVerPerfil?: (pacienteId: string) => void;
+  onVerHistorial?: (pacienteId: string) => void;
 }
 
 export function DetallesCitaModalMedico({
@@ -38,6 +47,8 @@ export function DetallesCitaModalMedico({
   onClose,
   cita,
   onCitaActualizada,
+  onVerPerfil,
+  onVerHistorial,
 }: DetallesCitaModalProps) {
   const { token } = useAuth();
   const [unirseLoading, setUnirseLoading] = useState(false);
@@ -79,14 +90,8 @@ export function DetallesCitaModalMedico({
     }
   };
 
-  const puedeUnirseAVideollamada = () => {
-    if (cita.tipo_cita !== "virtual") return false;
-    const estadoValido = ["confirmada", "programada", "iniciada"].includes(
-      cita.estado
-    );
-    const hoy = new Date();
-    const fechaCita = new Date(cita.fecha_cita);
-    return estadoValido && fechaCita >= new Date(hoy.setHours(0, 0, 0, 0));
+  const puedeUnirseLocal = () => {
+    return puedeUnirseAVideollamada(cita);
   };
 
   return (
@@ -94,7 +99,7 @@ export function DetallesCitaModalMedico({
       <DialogContent className="max-w-2xl w-full max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col p-0">
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-5 flex items-center justify-between flex-shrink-0">
-          <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3">
             <div className="p-2 bg-white/20 rounded-lg">
               <User className="w-5 h-5 text-white" />
             </div>
@@ -103,9 +108,7 @@ export function DetallesCitaModalMedico({
                 Detalles de la Cita
               </h2>
               <p className="text-blue-100 text-sm">
-                {cita.tipo_cita === "virtual"
-                  ? "Consulta Virtual"
-                  : "Consulta Presencial"}
+                {getDescripcionCita(cita.tipo_cita)}
               </p>
             </div>
           </div>
@@ -210,14 +213,22 @@ export function DetallesCitaModalMedico({
                     </p>
                     <Badge
                       variant="outline"
-                      className="w-full justify-center border-2 border-green-400 text-green-700 py-2 text-sm font-bold capitalize"
+                      className={`w-full justify-center border-2 py-2 text-sm font-bold ${
+                        cita.tipo_cita === "virtual"
+                          ? "border-blue-400 text-blue-700 bg-blue-50"
+                          : cita.tipo_cita === "presencial"
+                          ? "border-green-400 text-green-700 bg-green-50"
+                          : cita.tipo_cita === "domicilio"
+                          ? "border-purple-400 text-purple-700 bg-purple-50"
+                          : "border-gray-400 text-gray-700"
+                      }`}
                     >
-                      {cita.tipo_cita}
+                      {getEtiquetaCita(cita.tipo_cita)}
                     </Badge>
                   </div>
 
                   {cita.tipo_cita === "virtual" &&
-                    puedeUnirseAVideollamada() && (
+                    puedeUnirseLocal() && (
                       <Button
                         onClick={unirseAVideollamada}
                         disabled={unirseLoading}
@@ -322,21 +333,57 @@ export function DetallesCitaModalMedico({
             <div className="bg-gray-50 border border-gray-200 rounded-xl p-5">
               <h3 className="font-bold text-gray-900 mb-4 text-lg">Acciones</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Button
-                  variant="outline"
-                  className="border-blue-400 text-blue-700 hover:bg-blue-50 font-semibold py-5 rounded-lg"
-                >
-                  <FileText className="w-4 h-4 mr-2" />
-                  <span className="hidden xs:inline">Generar</span> Receta
-                </Button>
+                {puedeCrearReceta(cita) && (
+                  <Button
+                    variant="outline"
+                    className="border-blue-400 text-blue-700 hover:bg-blue-50 font-semibold py-5 rounded-lg"
+                    title="Crear nueva receta para este paciente"
+                  >
+                    <FileText className="w-4 h-4 mr-2" />
+                    <span className="hidden xs:inline">Generar</span> Receta
+                  </Button>
+                )}
 
-                <Button
-                  variant="outline"
-                  className="border-purple-400 text-purple-700 hover:bg-purple-50 font-semibold py-5 rounded-lg"
-                >
-                  <TestTube className="w-4 h-4 mr-2" />
-                  <span className="hidden xs:inline">Solicitar</span> Exámenes
-                </Button>
+                {puedeSolicitarExamenes(cita) && (
+                  <Button
+                    variant="outline"
+                    className="border-purple-400 text-purple-700 hover:bg-purple-50 font-semibold py-5 rounded-lg"
+                    title="Solicitar exámenes de laboratorio"
+                  >
+                    <TestTube className="w-4 h-4 mr-2" />
+                    <span className="hidden xs:inline">Solicitar</span> Exámenes
+                  </Button>
+                )}
+
+                {onVerPerfil && (
+                  <Button
+                    variant="outline"
+                    className="border-indigo-400 text-indigo-700 hover:bg-indigo-50 font-semibold py-2 rounded-lg"
+                    onClick={() => {
+                      onClose();
+                      onVerPerfil(cita.paciente?.id);
+                    }}
+                    title="Ver perfil completo del paciente"
+                  >
+                    <User className="w-4 h-4 mr-2" />
+                    Ver Perfil
+                  </Button>
+                )}
+
+                {onVerHistorial && (
+                  <Button
+                    variant="outline"
+                    className="border-orange-400 text-orange-700 hover:bg-orange-50 font-semibold py-2 rounded-lg"
+                    onClick={() => {
+                      onClose();
+                      onVerHistorial(cita.paciente?.id);
+                    }}
+                    title="Ver historial clínico del paciente"
+                  >
+                    <FileText className="w-4 h-4 mr-2" />
+                    Ver Historial
+                  </Button>
+                )}
               </div>
             </div>
           </div>
@@ -351,7 +398,7 @@ export function DetallesCitaModalMedico({
           >
             Cerrar
           </Button>
-          {cita.tipo_cita === "virtual" && puedeUnirseAVideollamada() && (
+          {puedeUnirseLocal() && (
             <Button
               onClick={unirseAVideollamada}
               disabled={unirseLoading}

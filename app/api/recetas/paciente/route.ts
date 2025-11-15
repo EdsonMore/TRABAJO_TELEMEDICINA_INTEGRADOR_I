@@ -1,4 +1,5 @@
 // app/api/recetas/paciente/route.ts
+// MediLink+ - API para obtener recetas del paciente con paginación y filtros
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/database";
 import { verificarToken } from "@/lib/auth";

@@ -55,6 +55,19 @@ export function ModalPerfilPaciente({
 }: ModalPerfilPacienteProps) {
   if (!paciente) return null;
 
+  // Helpers para aceptar paciente plano o anidado
+  const getNombre = () =>
+    paciente.usuario?.nombre || paciente.nombre || paciente?._raw?.usuario?.nombre || "";
+  const getApellido = () =>
+    paciente.usuario?.apellido || paciente.apellido || paciente?._raw?.usuario?.apellido || "";
+  const getDni = () => paciente.dni || paciente.informacion_personal?.dni || paciente?._raw?.dni || "";
+  const getTelefono = () => paciente.usuario?.telefono || paciente.telefono || paciente?._raw?.usuario?.telefono || "";
+  const getEmail = () => paciente.usuario?.email || paciente.email || paciente?._raw?.usuario?.email || "";
+  const getAlergias = () =>
+    paciente.informacion_medica?.alergias || paciente.alergias || paciente?._raw?.informacion_medica?.alergias || "No registra";
+  const getEnfermedades = () =>
+    paciente.informacion_medica?.enfermedades_cronicas || paciente.enfermedades_cronicas || paciente?._raw?.informacion_medica?.enfermedades_cronicas || "No registra";
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent
@@ -73,7 +86,7 @@ export function ModalPerfilPaciente({
         <DialogHeader className="pb-2">
           <DialogTitle className="flex items-center text-xl font-semibold">
             <User className="w-5 h-5 mr-2 text-primary" />
-            Perfil de {paciente.usuario?.nombre} {paciente.usuario?.apellido}
+            Perfil de {getNombre()} {getApellido()}
           </DialogTitle>
           <DialogDescription>
             Información personal y médica del paciente
@@ -90,34 +103,14 @@ export function ModalPerfilPaciente({
               </CardTitle>
             </CardHeader>
             <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-              <InfoItem
-                label="Nombre Completo"
-                value={`${paciente.usuario?.nombre} ${paciente.usuario?.apellido}`}
-              />
-              <InfoItem label="DNI" value={paciente.dni} />
-              <InfoItem
-                label="Edad"
-                value={`${paciente.informacion_personal?.edad} años`}
-              />
-              <InfoItem
-                label="Sexo"
-                value={paciente.informacion_personal?.sexo}
-              />
-              <InfoItem
-                label="Tipo de Sangre"
-                value={
-                  paciente.informacion_personal?.tipo_sangre ||
-                  "No especificado"
-                }
-              />
-              <InfoItem label="Teléfono" value={paciente.usuario?.telefono} />
-              <InfoItem label="Email" value={paciente.usuario?.email} />
-              <InfoItem
-                label="Dirección"
-                value={
-                  paciente.informacion_personal?.direccion || "No especificada"
-                }
-              />
+              <InfoItem label="Nombre Completo" value={`${getNombre()} ${getApellido()}`} />
+              <InfoItem label="DNI" value={getDni()} />
+              <InfoItem label="Edad" value={`${paciente.informacion_personal?.edad || paciente.edad || "-"} años`} />
+              <InfoItem label="Sexo" value={paciente.informacion_personal?.sexo || "-"} />
+              <InfoItem label="Tipo de Sangre" value={paciente.informacion_personal?.tipo_sangre || paciente.tipo_sangre || "No especificado"} />
+              <InfoItem label="Teléfono" value={getTelefono()} />
+              <InfoItem label="Email" value={getEmail()} />
+              <InfoItem label="Dirección" value={paciente.informacion_personal?.direccion || paciente.direccion || "No especificada"} />
             </CardContent>
           </Card>
 
@@ -131,37 +124,12 @@ export function ModalPerfilPaciente({
             </CardHeader>
             <CardContent className="grid gap-4 text-sm">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <InfoItem
-                  label="Peso"
-                  value={`${
-                    paciente.informacion_medica?.peso_kg || "No registrado"
-                  } kg`}
-                />
-                <InfoItem
-                  label="Altura"
-                  value={`${
-                    paciente.informacion_medica?.altura_cm || "No registrado"
-                  } cm`}
-                />
+                <InfoItem label="Peso" value={`${paciente.informacion_medica?.peso_kg || paciente.peso_kg || "No registrado"} kg`} />
+                <InfoItem label="Altura" value={`${paciente.informacion_medica?.altura_cm || paciente.altura_cm || "No registrado"} cm`} />
               </div>
-              <InfoItem
-                label="Alergias"
-                value={paciente.informacion_medica?.alergias || "No registra"}
-              />
-              <InfoItem
-                label="Enfermedades Crónicas"
-                value={
-                  paciente.informacion_medica?.enfermedades_cronicas ||
-                  "No registra"
-                }
-              />
-              <InfoItem
-                label="Seguro Médico"
-                value={
-                  paciente.informacion_medica?.seguro_medico ||
-                  "No especificado"
-                }
-              />
+              <InfoItem label="Alergias" value={getAlergias()} />
+              <InfoItem label="Enfermedades Crónicas" value={getEnfermedades()} />
+              <InfoItem label="Seguro Médico" value={paciente.informacion_medica?.seguro_medico || paciente.seguro_medico || "No especificado"} />
             </CardContent>
           </Card>
 
@@ -192,14 +160,38 @@ export function ModalPerfilPaciente({
           )}
 
           {/* Botón inferior */}
-          <div className="flex justify-end pt-4 border-t">
-            <Button
-              onClick={onVerHistorial}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
-            >
-              <FileText className="w-4 h-4 mr-2" />
-              Ver Historial Completo
-            </Button>
+          <div className="flex justify-between items-center pt-4 border-t">
+            <div className="flex items-center gap-2">
+              <a
+                href={`tel:${getTelefono() || ""}`}
+                onClick={(e) => {
+                  if (!getTelefono()) e.preventDefault();
+                }}
+                className="px-3 py-2 bg-gray-100 text-gray-800 rounded-md text-sm border"
+              >
+                Llamar
+              </a>
+
+              <a
+                href={`mailto:${getEmail() || ""}`}
+                onClick={(e) => {
+                  if (!getEmail()) e.preventDefault();
+                }}
+                className="px-3 py-2 bg-gray-100 text-gray-800 rounded-md text-sm border"
+              >
+                Email
+              </a>
+            </div>
+
+            <div>
+              <Button
+                onClick={onVerHistorial}
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                <FileText className="w-4 h-4 mr-2" />
+                Ver Historial Completo
+              </Button>
+            </div>
           </div>
         </div>
       </DialogContent>
