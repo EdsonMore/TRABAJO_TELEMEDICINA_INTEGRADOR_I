@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return NextResponse.json({ error: "Token de acceso requerido" }, { status: 401 })
     }
-
+    
     const token = authHeader.substring(7)
     const payload = verifyToken(token)
 

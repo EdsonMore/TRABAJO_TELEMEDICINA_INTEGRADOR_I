@@ -1,356 +1,391 @@
-"use client"
+// app/dashboard/farmacia/page.tsx
+"use client";
 
-import { useState, useEffect } from "react"
-import { useAuth } from "@/contexts/auth-context"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Input } from "@/components/ui/input"
-import { Pill, Package, Clock, CheckCircle, Search, Phone, User, FileText } from "lucide-react"
+import { useState, useEffect } from "react";
+import { useAuth } from "@/contexts/auth-context";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Pill,
+  Package,
+  BarChart3,
+  AlertCircle,
+  FileText,
+  LogOut,
+  Search,
+  Plus,
+} from "lucide-react";
 
-interface Receta {
-  id: number
-  fecha_emision: string
-  medicamentos: any
-  instrucciones: string
-  estado: string
-  nombre_paciente: string
-  dni_paciente: string
-  telefono_paciente: string
-  nombre_medico: string
-  especialidad: string
-  cmp: string
+// Componentes modulares
+import GestionInventario from "@/components/farmacia/gestion-inventario";
+import AlertasSistema from "@/components/farmacia/alertas-sistema";
+import ReportesFarmacia from "@/components/farmacia/reportes-farmacia";
+import RecetasRecibidas from "@/components/farmacia/recetas-recibidas";
+import DespachoRecetas from "@/components/farmacia/despacho-recetas";
+
+interface DashboardStats {
+  recetas: {
+    pendientes: number;
+    enProceso: number;
+    dispensadasHoy: number;
+  };
+  inventario: {
+    totalItems: number;
+    stockBajo: number;
+    agotados: number;
+  };
+  ventas: {
+    totalHoy: number;
+    recetasHoy: number;
+  };
+  alertas: {
+    activas: number;
+    porVencer: number;
+  };
 }
 
 export default function DashboardFarmacia() {
-  const { usuario } = useAuth()
-  const [recetasPendientes, setRecetasPendientes] = useState<Receta[]>([])
-  const [filtroRecetas, setFiltroRecetas] = useState("")
-  const [cargando, setCargando] = useState(true)
-  const [procesandoReceta, setProcesandoReceta] = useState<number | null>(null)
+  const { usuario, logout, token } = useAuth();
+  const [moduloActivo, setModuloActivo] = useState<string>("dashboard");
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // Cargar recetas pendientes al montar el componente
   useEffect(() => {
-    cargarRecetasPendientes()
-  }, [])
+    cargarDashboardStats();
+  }, [token]);
 
-  const cargarRecetasPendientes = async () => {
+  const cargarDashboardStats = async () => {
+    if (!token) return;
+
     try {
-      const token = localStorage.getItem("token")
-      const response = await fetch("/api/farmacia/recetas-pendientes", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
+      setLoading(true);
+      const response = await fetch("/api/farmacia/dashboard/stats", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
       if (response.ok) {
-        const data = await response.json()
-        setRecetasPendientes(data.recetas || [])
+        const data = await response.json();
+        setStats(data.stats);
+      } else {
+        setStats({
+          recetas: { pendientes: 0, enProceso: 0, dispensadasHoy: 0 },
+          inventario: { totalItems: 0, stockBajo: 0, agotados: 0 },
+          ventas: { totalHoy: 0, recetasHoy: 0 },
+          alertas: { activas: 0, porVencer: 0 },
+        });
       }
     } catch (error) {
-      console.error("Error al cargar recetas:", error)
+      console.error("Error:", error);
+      setStats({
+        recetas: { pendientes: 0, enProceso: 0, dispensadasHoy: 0 },
+        inventario: { totalItems: 0, stockBajo: 0, agotados: 0 },
+        ventas: { totalHoy: 0, recetasHoy: 0 },
+        alertas: { activas: 0, porVencer: 0 },
+      });
     } finally {
-      setCargando(false)
+      setLoading(false);
     }
-  }
+  };
 
-  const procesarReceta = async (recetaId: number, nuevoEstado: string, observaciones = "") => {
-    try {
-      setProcesandoReceta(recetaId)
-      const token = localStorage.getItem("token")
+  const handleLogout = () => {
+    logout();
+    window.location.href = "/auth/login";
+  };
 
-      const response = await fetch("/api/farmacia/recetas-pendientes", {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          recetaId,
-          nuevoEstado,
-          observaciones,
-        }),
-      })
-
-      if (response.ok) {
-        // Recargar lista de recetas
-        await cargarRecetasPendientes()
-      }
-    } catch (error) {
-      console.error("Error al procesar receta:", error)
-    } finally {
-      setProcesandoReceta(null)
-    }
-  }
-
-  // Filtrar recetas según búsqueda
-  const recetasFiltradas = recetasPendientes.filter(
-    (receta) =>
-      receta.nombre_paciente.toLowerCase().includes(filtroRecetas.toLowerCase()) ||
-      receta.dni_paciente.includes(filtroRecetas) ||
-      receta.nombre_medico.toLowerCase().includes(filtroRecetas.toLowerCase()),
-  )
-
-  // Estadísticas rápidas
-  const estadisticas = {
-    pendientes: recetasPendientes.filter((r) => r.estado === "pendiente").length,
-    enProceso: recetasPendientes.filter((r) => r.estado === "en_proceso").length,
-    totalHoy: recetasPendientes.filter((r) => {
-      const hoy = new Date().toISOString().split("T")[0]
-      return r.fecha_emision.startsWith(hoy)
-    }).length,
-  }
-
-  if (cargando) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-medical-primary mx-auto mb-4"></div>
-          <p className="text-medical-text-secondary">Cargando dashboard de farmacia...</p>
-        </div>
-      </div>
-    )
-  }
+  // Renderizar módulos específicos
+  if (moduloActivo === "recetas-recibidas") return <RecetasRecibidas />;
+  if (moduloActivo === "despacho")
+    return <DespachoRecetas onVolver={() => setModuloActivo("dashboard")} />;
+  if (moduloActivo === "inventario")
+    return <GestionInventario onVolver={() => setModuloActivo("dashboard")} />;
+  if (moduloActivo === "alertas")
+    return <AlertasSistema onVolver={() => setModuloActivo("dashboard")} />;
+  if (moduloActivo === "reportes")
+    return <ReportesFarmacia onVolver={() => setModuloActivo("dashboard")} />;
 
   return (
-    <div className="min-h-screen bg-medical-background p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
-        <div className="bg-white rounded-lg shadow-sm border border-medical-border p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-medical-text-primary mb-2">Dashboard de Farmacia</h1>
-              <p className="text-medical-text-secondary">
-                Bienvenido, {usuario?.nombres} - Gestiona recetas y medicamentos
-              </p>
-            </div>
-            <div className="flex items-center space-x-4">
-              <div className="text-right">
-                <p className="text-sm text-medical-text-secondary">Fecha actual</p>
-                <p className="font-semibold text-medical-text-primary">
-                  {new Date().toLocaleDateString("es-PE", {
-                    weekday: "long",
-                    year: "numeric",
-                    month: "long",
-                    day: "numeric",
-                  })}
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
+        <div className="px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
+                <Pill className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h1 className="text-lg font-bold text-gray-900">
+                  Hola, {usuario?.nombre}
+                </h1>
+                <p className="text-sm text-gray-600 hidden sm:block">
+                  Panel de gestión farmacéutica
                 </p>
               </div>
-              <Pill className="h-12 w-12 text-medical-primary" />
             </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleLogout}
+              className="border-red-200 text-red-600 hover:bg-red-50"
+            >
+              <LogOut className="w-4 h-4 mr-1" />
+              <span className="hidden md:inline">Salir</span>
+            </Button>
           </div>
         </div>
+      </header>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card className="border-medical-border">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-medical-text-secondary">Recetas Pendientes</CardTitle>
-              <Clock className="h-4 w-4 text-medical-warning" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-medical-text-primary">{estadisticas.pendientes}</div>
-              <p className="text-xs text-medical-text-secondary">Esperando despacho</p>
-            </CardContent>
-          </Card>
+      {/* Contenido Principal */}
+      <main className="container mx-auto px-4 py-6">
+        <div className="space-y-6">
+          {/* Header del Dashboard */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
+                Dashboard Farmacia
+              </h1>
+              <p className="text-gray-600 mt-1">
+                Resumen general y acceso rápido
+              </p>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Button variant="outline" size="sm" className="hidden sm:flex">
+                <Search className="w-4 h-4 mr-2" />
+                Buscar
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => setModuloActivo("recetas-recibidas")}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Nueva Receta
+              </Button>
+            </div>
+          </div>
 
-          <Card className="border-medical-border">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-medical-text-secondary">En Proceso</CardTitle>
-              <Package className="h-4 w-4 text-medical-primary" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-medical-text-primary">{estadisticas.enProceso}</div>
-              <p className="text-xs text-medical-text-secondary">Siendo preparadas</p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-medical-border">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-medical-text-secondary">Recetas Hoy</CardTitle>
-              <CheckCircle className="h-4 w-4 text-medical-success" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-medical-text-primary">{estadisticas.totalHoy}</div>
-              <p className="text-xs text-medical-text-secondary">Recibidas hoy</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        <Tabs defaultValue="recetas" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="recetas">Recetas Pendientes</TabsTrigger>
-            <TabsTrigger value="inventario">Inventario</TabsTrigger>
-            <TabsTrigger value="reportes">Reportes</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="recetas" className="space-y-6">
-            <Card className="border-medical-border">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Search className="h-5 w-5" />
-                  Buscar Recetas
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Input
-                  placeholder="Buscar por nombre del paciente, DNI o médico..."
-                  value={filtroRecetas}
-                  onChange={(e) => setFiltroRecetas(e.target.value)}
-                  className="max-w-md"
-                />
-              </CardContent>
-            </Card>
-
-            <div className="space-y-4">
-              {recetasFiltradas.length === 0 ? (
-                <Card className="border-medical-border">
-                  <CardContent className="text-center py-8">
-                    <Pill className="h-12 w-12 text-medical-text-secondary mx-auto mb-4" />
-                    <p className="text-medical-text-secondary">
-                      {filtroRecetas ? "No se encontraron recetas con ese criterio" : "No hay recetas pendientes"}
+          {loading ? (
+            // Skeleton loader
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {[...Array(4)].map((_, i) => (
+                <Card key={i} className="animate-pulse">
+                  <CardHeader className="pb-3">
+                    <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-6 bg-gray-200 rounded w-1/2 mb-2"></div>
+                    <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <>
+              {/* Estadísticas Principales */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <Card className="bg-white border-0 sm:border">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-sm font-semibold">
+                        Recetas Pendientes
+                      </CardTitle>
+                      <FileText className="h-4 w-4 text-blue-600" />
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-xl font-bold text-blue-600">
+                      {stats?.recetas.pendientes || 0}
+                    </div>
+                    <p className="text-xs text-gray-600 mt-1">
+                      {stats?.recetas.enProceso || 0} en proceso
                     </p>
                   </CardContent>
                 </Card>
-              ) : (
-                recetasFiltradas.map((receta) => (
-                  <Card key={receta.id} className="border-medical-border">
-                    <CardHeader>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="bg-medical-primary/10 p-2 rounded-lg">
-                            <FileText className="h-5 w-5 text-medical-primary" />
-                          </div>
-                          <div>
-                            <CardTitle className="text-lg">Receta #{receta.id}</CardTitle>
-                            <CardDescription>
-                              Emitida el {new Date(receta.fecha_emision).toLocaleDateString("es-PE")}
-                            </CardDescription>
-                          </div>
-                        </div>
-                        <Badge
-                          variant={receta.estado === "pendiente" ? "destructive" : "default"}
-                          className="capitalize"
-                        >
-                          {receta.estado.replace("_", " ")}
-                        </Badge>
+
+                <Card className="bg-white border-0 sm:border">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-sm font-semibold">
+                        Estado Inventario
+                      </CardTitle>
+                      <Package className="h-4 w-4 text-green-600" />
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-xl font-bold text-gray-900">
+                      {stats?.inventario.totalItems || 0}
+                    </div>
+                    <div className="flex space-x-2 mt-1">
+                      <Badge variant="outline" className="text-xs bg-yellow-50">
+                        {stats?.inventario.stockBajo || 0} bajo
+                      </Badge>
+                      <Badge variant="outline" className="text-xs bg-red-50">
+                        {stats?.inventario.agotados || 0} agotado
+                      </Badge>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-white border-0 sm:border">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-sm font-semibold">
+                        Ventas Hoy
+                      </CardTitle>
+                      <BarChart3 className="h-4 w-4 text-purple-600" />
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-xl font-bold text-purple-600">
+                      S/ {(stats?.ventas.totalHoy || 0).toLocaleString()}
+                    </div>
+                    <p className="text-xs text-gray-600 mt-1">
+                      {stats?.ventas.recetasHoy || 0} recetas
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-white border-0 sm:border">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-sm font-semibold">
+                        Alertas Activas
+                      </CardTitle>
+                      <AlertCircle className="h-4 w-4 text-orange-600" />
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-xl font-bold text-orange-600">
+                      {stats?.alertas.activas || 0}
+                    </div>
+                    <p className="text-xs text-gray-600 mt-1">
+                      {stats?.alertas.porVencer || 0} por vencer
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Módulos Principales */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <Card
+                  className="cursor-pointer transition-all hover:shadow-lg"
+                  onClick={() => setModuloActivo("recetas-recibidas")}
+                >
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Pill className="w-5 h-5 text-purple-600" />
+                      Recetas Recibidas
+                    </CardTitle>
+                    <CardDescription>
+                      Gestionar recetas enviadas por pacientes
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Button className="w-full bg-purple-600 hover:bg-purple-700">
+                      Ver Recetas Recibidas
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                <Card
+                  className="cursor-pointer transition-all hover:shadow-lg"
+                  onClick={() => setModuloActivo("despacho")}
+                >
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Package className="w-5 h-5 text-green-600" />
+                      Despacho de Recetas
+                    </CardTitle>
+                    <CardDescription>
+                      Procesar y despachar recetas a pacientes
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Button className="w-full bg-green-600 hover:bg-green-700">
+                      Ir a Despacho
+                    </Button>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Módulos Secundarios */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <BarChart3 className="w-5 h-5 text-purple-600" />
+                      Reportes y Análisis
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span>Recetas hoy:</span>
+                        <span className="font-semibold">
+                          {stats?.ventas.recetasHoy || 0}
+                        </span>
                       </div>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <h4 className="font-semibold text-medical-text-primary flex items-center gap-2">
-                            <User className="h-4 w-4" />
-                            Información del Paciente
-                          </h4>
-                          <div className="text-sm space-y-1">
-                            <p>
-                              <span className="font-medium">Nombre:</span> {receta.nombre_paciente}
-                            </p>
-                            <p>
-                              <span className="font-medium">DNI:</span> {receta.dni_paciente}
-                            </p>
-                            <p className="flex items-center gap-1">
-                              <Phone className="h-3 w-3" />
-                              {receta.telefono_paciente}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <h4 className="font-semibold text-medical-text-primary flex items-center gap-2">
-                            <User className="h-4 w-4" />
-                            Médico Prescriptor
-                          </h4>
-                          <div className="text-sm space-y-1">
-                            <p>
-                              <span className="font-medium">Dr(a):</span> {receta.nombre_medico}
-                            </p>
-                            <p>
-                              <span className="font-medium">Especialidad:</span> {receta.especialidad}
-                            </p>
-                            <p>
-                              <span className="font-medium">CMP:</span> {receta.cmp}
-                            </p>
-                          </div>
-                        </div>
+                      <div className="flex justify-between">
+                        <span>Ingresos:</span>
+                        <span className="font-semibold">
+                          S/ {(stats?.ventas.totalHoy || 0).toLocaleString()}
+                        </span>
                       </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      className="w-full mt-4"
+                      onClick={() => setModuloActivo("reportes")}
+                    >
+                      Ver Reportes
+                    </Button>
+                  </CardContent>
+                </Card>
 
-                      <div className="space-y-2">
-                        <h4 className="font-semibold text-medical-text-primary flex items-center gap-2">
-                          <Pill className="h-4 w-4" />
-                          Medicamentos Prescritos
-                        </h4>
-                        <div className="bg-medical-background p-3 rounded-lg">
-                          <pre className="text-sm whitespace-pre-wrap">
-                            {typeof receta.medicamentos === "string"
-                              ? receta.medicamentos
-                              : JSON.stringify(receta.medicamentos, null, 2)}
-                          </pre>
-                        </div>
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <AlertCircle className="w-5 h-5 text-orange-600" />
+                      Sistema de Alertas
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span>Alertas activas:</span>
+                        <span className="font-semibold">
+                          {stats?.alertas.activas || 0}
+                        </span>
                       </div>
-
-                      {receta.instrucciones && (
-                        <div className="space-y-2">
-                          <h4 className="font-semibold text-medical-text-primary">Instrucciones Especiales</h4>
-                          <p className="text-sm bg-medical-background p-3 rounded-lg">{receta.instrucciones}</p>
-                        </div>
-                      )}
-
-                      <div className="flex gap-2 pt-4 border-t border-medical-border">
-                        <Button
-                          onClick={() => procesarReceta(receta.id, "en_proceso")}
-                          disabled={procesandoReceta === receta.id}
-                          className="bg-medical-primary hover:bg-medical-primary/90"
-                        >
-                          {procesandoReceta === receta.id ? "Procesando..." : "Iniciar Preparación"}
-                        </Button>
-                        <Button
-                          onClick={() => procesarReceta(receta.id, "completado")}
-                          disabled={procesandoReceta === receta.id}
-                          variant="outline"
-                          className="border-medical-success text-medical-success hover:bg-medical-success/10"
-                        >
-                          Marcar como Despachado
-                        </Button>
+                      <div className="flex justify-between">
+                        <span>Por vencer:</span>
+                        <span className="font-semibold">
+                          {stats?.alertas.porVencer || 0}
+                        </span>
                       </div>
-                    </CardContent>
-                  </Card>
-                ))
-              )}
-            </div>
-          </TabsContent>
-
-          <TabsContent value="inventario">
-            <Card className="border-medical-border">
-              <CardHeader>
-                <CardTitle>Gestión de Inventario</CardTitle>
-                <CardDescription>Control de stock de medicamentos y productos farmacéuticos</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-8">
-                  <Package className="h-12 w-12 text-medical-text-secondary mx-auto mb-4" />
-                  <p className="text-medical-text-secondary">Módulo de inventario en desarrollo</p>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="reportes">
-            <Card className="border-medical-border">
-              <CardHeader>
-                <CardTitle>Reportes y Estadísticas</CardTitle>
-                <CardDescription>Análisis de ventas, despachos y rendimiento de la farmacia</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-8">
-                  <FileText className="h-12 w-12 text-medical-text-secondary mx-auto mb-4" />
-                  <p className="text-medical-text-secondary">Módulo de reportes en desarrollo</p>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
-      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      className="w-full mt-4"
+                      onClick={() => setModuloActivo("alertas")}
+                    >
+                      Ver Alertas
+                    </Button>
+                  </CardContent>
+                </Card>
+              </div>
+            </>
+          )}
+        </div>
+      </main>
     </div>
-  )
+  );
 }

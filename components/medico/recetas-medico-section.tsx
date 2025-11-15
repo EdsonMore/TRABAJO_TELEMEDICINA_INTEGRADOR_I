@@ -1,4 +1,4 @@
-// components/medico/recetas-medico-section.tsx - VERSIÓN CORREGIDA
+// components/medico/recetas-medico-section.tsx - VERSIÓN CON QR MEJORADO
 "use client";
 
 import { useState, useEffect } from "react";
@@ -103,6 +103,7 @@ export function RecetasMedicoSection() {
   const [citaSeleccionada, setCitaSeleccionada] = useState<Cita | null>(null);
   const [detallesCompletos, setDetallesCompletos] = useState<any>(null);
   const [descargandoPDF, setDescargandoPDF] = useState<string | null>(null);
+  const [mostrarQR, setMostrarQR] = useState(false); // ✅ AGREGADO: Estado para modal QR
 
   useEffect(() => {
     if (token) {
@@ -252,16 +253,29 @@ export function RecetasMedicoSection() {
 
     setDescargandoPDF(receta.id);
     try {
-      const response = await fetch(`/api/recetas/${receta.id}/pdf`, {
+      // ✅ CORRECCIÓN: Usar el endpoint específico para médicos
+      const response = await fetch(`/api/recetas/medico/${receta.id}/pdf`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
       });
 
       if (response.ok) {
-        const data = await response.json();
-        // Para implementación real de PDF:
-        if (response.headers.get("content-type")?.includes("application/pdf")) {
+        const contentType = response.headers.get("content-type");
+
+        if (contentType?.includes("text/html")) {
+          // Es un HTML - descargar como archivo
+          const blob = await response.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `receta_${receta.codigo_receta}.html`;
+          document.body.appendChild(a);
+          a.click();
+          window.URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+        } else if (contentType?.includes("application/pdf")) {
+          // Es un PDF real
           const blob = await response.blob();
           const url = window.URL.createObjectURL(blob);
           const a = document.createElement("a");
@@ -272,10 +286,22 @@ export function RecetasMedicoSection() {
           window.URL.revokeObjectURL(url);
           document.body.removeChild(a);
         } else {
-          alert(data.message || "PDF generado exitosamente");
+          // Es JSON (fallback)
+          const data = await response.json();
+          if (data.html) {
+            // Generar PDF desde HTML en el frontend
+            generarPDFDesdeHTML(data.html, receta.codigo_receta);
+          } else {
+            alert(data.message || "PDF generado exitosamente");
+          }
         }
       } else {
-        alert("Error al generar el PDF de la receta");
+        const errorData = await response
+          .json()
+          .catch(() => ({ error: "Error desconocido" }));
+        alert(
+          `Error al generar PDF: ${errorData.error || "Intente más tarde"}`
+        );
       }
     } catch (error) {
       console.error("Error descargando PDF:", error);
@@ -285,6 +311,204 @@ export function RecetasMedicoSection() {
     }
   };
 
+  // Función para generar PDF desde HTML (usando print)
+  const generarPDFDesdeHTML = (html: string, codigoReceta: string) => {
+    const ventana = window.open("", "_blank");
+    if (!ventana) {
+      alert("Por favor permite ventanas emergentes para generar el PDF");
+      return;
+    }
+
+    ventana.document.write(html);
+    ventana.document.close();
+    setTimeout(() => {
+      ventana.print();
+    }, 500);
+  };
+
+  const generarPDFFallback = (receta: Receta, detalles: any) => {
+    // Crear un PDF básico usando window.print() y estilos para impresión
+    const ventana = window.open("", "_blank");
+    if (!ventana) {
+      alert("Por favor permite ventanas emergentes para generar el PDF");
+      return;
+    }
+
+    ventana.document.write(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Receta Médica - ${receta.codigo_receta}</title>
+      <style>
+        body { 
+          font-family: Arial, sans-serif; 
+          margin: 20px; 
+          color: #333; 
+          line-height: 1.4;
+        }
+        .header { 
+          text-align: center; 
+          border-bottom: 2px solid #2563eb; 
+          padding-bottom: 20px; 
+          margin-bottom: 30px; 
+        }
+        .section { 
+          margin-bottom: 25px; 
+        }
+        .section-title { 
+          background: #2563eb; 
+          color: white; 
+          padding: 8px 12px; 
+          margin-bottom: 10px; 
+          border-radius: 4px; 
+          font-weight: bold;
+        }
+        .medicamento { 
+          border: 1px solid #ddd; 
+          padding: 15px; 
+          margin-bottom: 10px; 
+          border-radius: 4px; 
+          background: #f8f9fa;
+        }
+        .footer { 
+          margin-top: 40px; 
+          text-align: center; 
+          font-size: 12px; 
+          color: #666; 
+          border-top: 1px solid #ddd; 
+          padding-top: 20px; 
+        }
+        .firma {
+          margin-top: 50px;
+          border-top: 1px solid #333;
+          width: 300px;
+          text-align: center;
+          padding-top: 10px;
+          margin-left: auto;
+          margin-right: auto;
+        }
+        @media print { 
+          body { margin: 0; } 
+          .header { border-bottom: 3px double #2563eb; }
+        }
+        .grid-2 {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 15px;
+          margin-bottom: 15px;
+        }
+        .info-item {
+          margin-bottom: 8px;
+        }
+        .info-label {
+          font-weight: bold;
+          color: #555;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <h1>RECETA MÉDICA</h1>
+        <p><strong>Código:</strong> ${receta.codigo_receta}</p>
+        <p><strong>Fecha de Emisión:</strong> ${formatearFecha(
+          receta.fecha_emision
+        )}</p>
+        <p><strong>Válido hasta:</strong> ${formatearFecha(
+          receta.fecha_vencimiento
+        )}</p>
+      </div>
+
+      <div class="section">
+        <div class="section-title">INFORMACIÓN DEL MÉDICO</div>
+        <div class="grid-2">
+          <div class="info-item">
+            <span class="info-label">Médico:</span>
+            Dr. ${receta.medico_nombre} ${receta.medico_apellido}
+          </div>
+          <div class="info-item">
+            <span class="info-label">Especialidad:</span>
+            ${receta.especialidad}
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">INFORMACIÓN DEL PACIENTE</div>
+        <p><strong>Paciente:</strong> ${receta.paciente_nombre} ${
+      receta.paciente_apellido
+    }</p>
+        <p><strong>DNI:</strong> ${receta.paciente_dni}</p>
+        <p><strong>Edad:</strong> ${receta.paciente_edad} años</p>
+      </div>
+
+      <div class="section">
+        <div class="section-title">DIAGNÓSTICO PRINCIPAL</div>
+        <p>${receta.diagnostico_principal_texto}</p>
+      </div>
+
+      ${
+        receta.observaciones
+          ? `
+      <div class="section">
+        <div class="section-title">OBSERVACIONES</div>
+        <p>${receta.observaciones}</p>
+      </div>
+      `
+          : ""
+      }
+
+      <div class="section">
+        <div class="section-title">MEDICAMENTOS RECETADOS</div>
+        ${
+          detalles?.medicamentos
+            ?.map(
+              (med: any) => `
+          <div class="medicamento">
+            <p><strong>${med.nombre_comercial}</strong> ${
+                med.nombre_generico ? `(${med.nombre_generico})` : ""
+              }</p>
+            <div class="grid-2">
+              <div><strong>Dosis:</strong> ${med.dosis}</div>
+              <div><strong>Frecuencia:</strong> ${med.frecuencia}</div>
+              <div><strong>Duración:</strong> ${med.duracion_dias} días</div>
+              <div><strong>Cantidad:</strong> ${med.cantidad} unidades</div>
+            </div>
+            ${
+              med.instrucciones_especiales
+                ? `<p><strong>Instrucciones:</strong> ${med.instrucciones_especiales}</p>`
+                : ""
+            }
+            <p><strong>Estado:</strong> ${
+              med.dispensado ? "✅ DISPENSADO" : "⏳ PENDIENTE"
+            }</p>
+          </div>
+        `
+            )
+            .join("") || "<p>No se encontraron medicamentos</p>"
+        }
+      </div>
+
+      <div class="firma">
+        <div>Firma y sello del médico</div>
+      </div>
+
+      <div class="footer">
+        <p>Receta generada electrónicamente - ${new Date().toLocaleDateString(
+          "es-PE"
+        )}</p>
+        <p><strong>MediLink+</strong> - Sistema de Gestión Médica</p>
+        <p>Código QR de verificación: ${receta.codigo_receta}</p>
+      </div>
+    </body>
+    </html>
+  `);
+
+    ventana.document.close();
+    setTimeout(() => {
+      ventana.print();
+    }, 500);
+  };
+
   const verDetallesReceta = async (receta: Receta) => {
     setRecetaSeleccionada(receta);
     const detalles = await cargarDetallesReceta(receta.id);
@@ -292,10 +516,18 @@ export function RecetasMedicoSection() {
     setMostrarDetalles(true);
   };
 
+  // ✅ FUNCIÓN MEJORADA PARA QR (IGUAL QUE PACIENTE)
   const verCodigoQR = (receta: Receta) => {
-    alert(
-      `Código QR para la receta: ${receta.codigo_receta}\n\nURL: /recetas/verificar/${receta.codigo_receta}`
-    );
+    setRecetaSeleccionada(receta);
+    setMostrarQR(true);
+  };
+
+  // Función para generar QR simple (IGUAL QUE PACIENTE)
+  const generarQRSimple = (text: string) => {
+    // Por ahora mostramos un QR simulado
+    return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(
+      text
+    )}`;
   };
 
   const getEstadoBadge = (estado: string) => {
@@ -881,6 +1113,14 @@ export function RecetasMedicoSection() {
                 </Button>
                 <Button
                   variant="outline"
+                  onClick={() => verCodigoQR(recetaSeleccionada)}
+                  className="border-gray-300 text-gray-700 hover:bg-gray-50"
+                >
+                  <QrCode className="w-4 h-4 mr-2" />
+                  Ver QR
+                </Button>
+                <Button
+                  variant="outline"
                   onClick={() => descargarPDF(recetaSeleccionada)}
                   disabled={descargandoPDF === recetaSeleccionada.id}
                   className="border-gray-300 text-gray-700 hover:bg-gray-50"
@@ -892,13 +1132,74 @@ export function RecetasMedicoSection() {
                   )}
                   Descargar PDF
                 </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ✅ AGREGADO: Modal de QR (IGUAL QUE PACIENTE) */}
+      <Dialog open={mostrarQR} onOpenChange={setMostrarQR}>
+        <DialogContent className="max-w-md bg-white">
+          <DialogHeader className="border-b border-gray-200 pb-4">
+            <DialogTitle className="flex items-center text-xl font-bold text-gray-800">
+              <QrCode className="w-6 h-6 mr-3 text-blue-600" />
+              Código QR de Receta
+            </DialogTitle>
+          </DialogHeader>
+
+          {recetaSeleccionada && (
+            <div className="py-6 text-center">
+              <div className="mb-4">
+                <p className="text-sm text-gray-600 mb-2">
+                  Escanee este código para verificar la receta
+                </p>
+                <p className="font-mono text-sm bg-gray-100 p-2 rounded border">
+                  {recetaSeleccionada.codigo_receta}
+                </p>
+              </div>
+
+              {/* QR Code */}
+              <div className="bg-white p-4 rounded-lg border-2 border-dashed border-gray-300 inline-block mb-4">
+                <img
+                  src={generarQRSimple(
+                    `https://medilink.com/recetas/verificar/${recetaSeleccionada.codigo_receta}`
+                  )}
+                  alt="Código QR de la receta"
+                  className="w-48 h-48 mx-auto"
+                />
+              </div>
+
+              <div className="text-xs text-gray-500 space-y-1">
+                <p>Receta: {recetaSeleccionada.codigo_receta}</p>
+                <p>
+                  Médico: Dr. {recetaSeleccionada.medico_nombre}{" "}
+                  {recetaSeleccionada.medico_apellido}
+                </p>
+                <p>
+                  Vence: {formatearFecha(recetaSeleccionada.fecha_vencimiento)}
+                </p>
+              </div>
+
+              <div className="flex justify-center space-x-3 mt-6">
                 <Button
                   variant="outline"
-                  onClick={() => verCodigoQR(recetaSeleccionada)}
+                  onClick={() => setMostrarQR(false)}
                   className="border-gray-300 text-gray-700 hover:bg-gray-50"
                 >
-                  <QrCode className="w-4 h-4 mr-2" />
-                  Ver QR
+                  Cerrar
+                </Button>
+                <Button
+                  onClick={() => {
+                    const qrUrl = generarQRSimple(
+                      `https://medilink.com/recetas/verificar/${recetaSeleccionada.codigo_receta}`
+                    );
+                    window.open(qrUrl, "_blank");
+                  }}
+                  className="bg-blue-600 text-white hover:bg-blue-700"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Descargar QR
                 </Button>
               </div>
             </div>

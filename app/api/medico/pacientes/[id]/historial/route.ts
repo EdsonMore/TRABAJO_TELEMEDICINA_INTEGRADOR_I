@@ -1,7 +1,7 @@
 // app/api/medico/pacientes/[id]/historial/route.ts
 import { type NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/database";
-import { verifyToken } from "@/lib/auth";
+import { verificarToken } from "@/lib/auth";
 
 export async function GET(
   request: NextRequest,
@@ -19,7 +19,7 @@ export async function GET(
     }
 
     const token = authHeader.substring(7);
-    const payload = verifyToken(token);
+    const payload = await verificarToken(token);
 
     if (!payload || payload.rol !== "medico") {
       return NextResponse.json(
@@ -62,15 +62,40 @@ export async function GET(
     const medicoId = medicoResult.rows[0].id;
     console.log("👨‍⚕️ Médico ID:", medicoId);
 
-    // Verificar que existe al menos una cita entre el médico y el paciente
-    const accesoResult = await query(
-      "SELECT COUNT(*) as count FROM citas WHERE id_medico = $1 AND id_paciente = $2",
-      [medicoId, pacienteId]
+    // Requerir el parámetro de consulta `cita_id` para validar acceso temporal
+    const url = new URL(request.url);
+    const citaId = url.searchParams.get("cita_id");
+
+    if (!citaId) {
+      return NextResponse.json(
+        { error: "Se requiere cita_id para acceder al historial" },
+        { status: 400 }
+      );
+    }
+
+    // Verificar que la cita pertenece al médico y al paciente
+    const citaResult = await query(
+      "SELECT id, fecha_cita FROM citas WHERE id = $1 AND id_medico = $2 AND id_paciente = $3",
+      [citaId, medicoId, pacienteId]
     );
 
-    if (Number.parseInt(accesoResult.rows[0].count) === 0) {
+    if (citaResult.rows.length === 0) {
       return NextResponse.json(
-        { error: "No tienes acceso al historial de este paciente" },
+        { error: "Cita no encontrada o no autorizada" },
+        { status: 403 }
+      );
+    }
+
+    const fechaCita = new Date(citaResult.rows[0].fecha_cita);
+    const ahora = new Date();
+
+    // Acceso permitido sólo durante 7 días después de la cita (y si la cita ya ocurrió)
+    const diffMs = ahora.getTime() - fechaCita.getTime();
+    const sieteDiasMs = 7 * 24 * 60 * 60 * 1000;
+
+    if (fechaCita > ahora || diffMs > sieteDiasMs) {
+      return NextResponse.json(
+        { error: "El acceso al historial de este paciente expiró para esta cita" },
         { status: 403 }
       );
     }

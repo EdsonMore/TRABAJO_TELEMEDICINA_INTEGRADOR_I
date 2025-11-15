@@ -1,17 +1,10 @@
-// components/paciente/detalles-cita-modal.tsx - VERSIÓN MEJORADA CON ACCIONES EN INFERIOR
+// components/paciente/detalles-cita-modal.tsx - VERSIÓN REDISEÑADA
 "use client";
 
 import { useState } from "react";
 import { useAuth } from "@/contexts/auth-context";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useToast } from "@/hooks/use-toast";
 import {
   Calendar,
   Clock,
@@ -22,12 +15,10 @@ import {
   X,
   CheckCircle,
   Phone,
-  Shield,
-  Wifi,
-  Loader2,
   Stethoscope,
+  Loader2,
+  Wifi,
 } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
 
 interface DetallesCitaModalProps {
   isOpen: boolean;
@@ -36,29 +27,29 @@ interface DetallesCitaModalProps {
   onCitaActualizada: () => void;
 }
 
-interface MedicoData {
-  nombre: string;
-  apellido: string;
-  especialidad: string;
-  numero_colegiatura: string;
-  telefono: string;
-  direccion_consultorio: string;
+function safeFormatDate(value: any) {
+  if (!value) return "-";
+  try {
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return "-";
+    return d.toLocaleDateString("es-PE", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+  } catch (e) {
+    return "-";
+  }
 }
 
-interface CitaData {
-  id: string;
-  fecha_cita: string;
-  hora_cita: string;
-  tipo_cita: string;
-  estado: string;
-  motivo_consulta: string;
-  diagnostico: string;
-  tratamiento: string;
-  observaciones: string;
-  consultorio_nombre: string;
+function formatHora(hora: string): string {
+  if (!hora) return "--:--";
+  if (hora.includes(":")) return hora.slice(0, 5);
+  const horaNum = parseInt(hora);
+  return `${horaNum.toString().padStart(2, "0")}:00`;
 }
 
-export function DetallesCitaModal({
+export default function DetallesCitaModal({
   isOpen,
   onClose,
   cita,
@@ -69,57 +60,37 @@ export function DetallesCitaModal({
   const [isLoading, setIsLoading] = useState(false);
   const [unirseLoading, setUnirseLoading] = useState(false);
 
-  if (!cita) return null;
+  // Normalizar datos de la cita
+  const citaData = {
+    id: cita?.id || cita?.cita_id || "",
+    fecha_cita: cita?.fecha_cita || cita?.fecha || "",
+    hora_cita: cita?.hora_cita || cita?.hora || "",
+    tipo_cita: cita?.tipo_cita || "presencial",
+    estado: cita?.estado || "programada",
+    motivo_consulta:
+      cita?.motivo_consulta || cita?.motivo || "Consulta médica general",
+    diagnostico: cita?.diagnostico || "",
+    tratamiento: cita?.tratamiento || "",
+    observaciones: cita?.observaciones || "",
+    consultorio_nombre: cita?.consultorio_nombre || "Consultorio MediLink+",
 
-  const getMedicoData = (): MedicoData => {
-    if (cita.medico) {
-      return {
-        nombre: cita.medico.nombre || "",
-        apellido: cita.medico.apellido || "",
-        especialidad: cita.medico.especialidad || "Medicina General",
-        numero_colegiatura: cita.medico.numero_colegiatura || "",
-        telefono: cita.medico.telefono || "",
-        direccion_consultorio: cita.medico.direccion_consultorio || "",
-      };
-    } else if (cita.medico_nombre || cita.medico_apellido) {
-      return {
-        nombre: cita.medico_nombre || "",
-        apellido: cita.medico_apellido || "",
-        especialidad: cita.especialidad || "Medicina General",
-        numero_colegiatura: cita.numero_colegiatura || "",
-        telefono: cita.medico_telefono || "",
-        direccion_consultorio: cita.direccion_consultorio || "",
-      };
-    } else {
-      return {
-        nombre: "",
-        apellido: "",
-        especialidad: "Medicina General",
-        numero_colegiatura: "",
-        telefono: "",
-        direccion_consultorio: "",
-      };
-    }
+    // Datos del médico
+    medico_nombre: cita?.medico?.nombre || cita?.medico_nombre || "",
+    medico_apellido: cita?.medico?.apellido || cita?.medico_apellido || "",
+    medico_especialidad:
+      cita?.medico?.especialidad || cita?.especialidad || "Medicina General",
+    medico_colegiatura:
+      cita?.medico?.numero_colegiatura || cita?.numero_colegiatura || "",
+    medico_telefono: cita?.medico?.telefono || cita?.medico_telefono || "",
+    medico_direccion:
+      cita?.medico?.direccion_consultorio || cita?.direccion_consultorio || "",
   };
 
-  const getCitaData = (): CitaData => {
-    return {
-      id: cita.id || cita.cita_id || "",
-      fecha_cita: cita.fecha_cita || cita.fecha || "",
-      hora_cita: cita.hora_cita || cita.hora || "",
-      tipo_cita: cita.tipo_cita || "presencial",
-      estado: cita.estado || "programada",
-      motivo_consulta:
-        cita.motivo_consulta || cita.motivo || "Consulta médica general",
-      diagnostico: cita.diagnostico || "",
-      tratamiento: cita.tratamiento || "",
-      observaciones: cita.observaciones || "",
-      consultorio_nombre: cita.consultorio_nombre || "Consultorio MediLink+",
-    };
-  };
+  const medicoNombreCompleto =
+    `${citaData.medico_nombre} ${citaData.medico_apellido}`.trim() ||
+    "Médico no asignado";
 
-  const medicoData = getMedicoData();
-  const citaData = getCitaData();
+  if (!isOpen || !cita) return null;
 
   const obtenerToken = (): string => {
     if (!token) {
@@ -148,7 +119,6 @@ export function DetallesCitaModal({
 
       if (response.ok) {
         const data = await response.json();
-
         if (data.sesion) {
           toast({
             title: "Conectando a videollamada",
@@ -276,8 +246,8 @@ export function DetallesCitaModal({
   const verUbicacionConsultorio = () => {
     const consultorio = {
       nombre: citaData.consultorio_nombre,
-      direccion: medicoData.direccion_consultorio || "Av. La Marina 1234, Lima",
-      telefono: medicoData.telefono || "+51 1 2345678",
+      direccion: citaData.medico_direccion || "Av. La Marina 1234, Lima",
+      telefono: citaData.medico_telefono || "+51 1 2345678",
     };
 
     const mensaje = `📍 ${consultorio.nombre}\n🏥 ${consultorio.direccion}\n📞 ${consultorio.telefono}\n\n¿Abrir en Google Maps?`;
@@ -295,294 +265,226 @@ export function DetallesCitaModal({
     const configs: any = {
       programada: {
         label: "Programada",
-        color: "text-yellow-600 bg-yellow-50",
+        color: "bg-yellow-100 text-yellow-800",
       },
-      confirmada: { label: "Confirmada", color: "text-blue-600 bg-blue-50" },
-      completada: { label: "Completada", color: "text-green-600 bg-green-50" },
-      cancelada: { label: "Cancelada", color: "text-red-600 bg-red-50" },
-      iniciada: { label: "En curso", color: "text-orange-600 bg-orange-50" },
+      confirmada: { label: "Confirmada", color: "bg-blue-100 text-blue-800" },
+      completada: { label: "Completada", color: "bg-green-100 text-green-800" },
+      cancelada: { label: "Cancelada", color: "bg-red-100 text-red-800" },
+      iniciada: { label: "En curso", color: "bg-orange-100 text-orange-800" },
     };
     return (
-      configs[estado] || { label: estado, color: "text-gray-600 bg-gray-50" }
+      configs[estado] || { label: estado, color: "bg-gray-100 text-gray-800" }
     );
   };
 
   const getTipoCitaConfig = (tipo: string) => {
     const configs: any = {
-      virtual: { icon: Video, color: "text-blue-600 bg-blue-50" },
-      presencial: { icon: MapPin, color: "text-green-600 bg-green-50" },
-      domicilio: { icon: User, color: "text-purple-600 bg-purple-50" },
+      virtual: {
+        icon: Video,
+        label: "Virtual",
+        color: "bg-blue-100 text-blue-800",
+      },
+      presencial: {
+        icon: MapPin,
+        label: "Presencial",
+        color: "bg-green-100 text-green-800",
+      },
+      domicilio: {
+        icon: User,
+        label: "Domicilio",
+        color: "bg-purple-100 text-purple-800",
+      },
     };
-    return configs[tipo] || { icon: User, color: "text-gray-600 bg-gray-50" };
-  };
-
-  const formatHora = (hora: string): string => {
-    if (!hora) return "--:--";
-    if (hora.includes(":")) return hora.slice(0, 5);
-    const horaNum = parseInt(hora);
-    return `${horaNum.toString().padStart(2, "0")}:00`;
+    return (
+      configs[tipo] || {
+        icon: User,
+        label: tipo,
+        color: "bg-gray-100 text-gray-800",
+      }
+    );
   };
 
   const estadoConfig = getEstadoConfig(citaData.estado);
   const tipoCitaConfig = getTipoCitaConfig(citaData.tipo_cita);
   const TipoCitaIcon = tipoCitaConfig.icon;
 
-  // Renderizar acciones principales
-  const renderAccionesPrincipales = () => {
-    // Botón principal de videollamada
-    if (citaData.tipo_cita === "virtual" && puedeUnirseAVideollamada()) {
-      return (
-        <Button
-          onClick={unirseAVideollamada}
-          disabled={unirseLoading}
-          className="w-full bg-green-600 hover:bg-green-700 text-white h-12 text-base font-semibold"
-        >
-          {unirseLoading ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Conectando...
-            </>
-          ) : (
-            <>
-              <Video className="w-5 h-5 mr-2" />
-              Unirse a Videollamada
-            </>
-          )}
-        </Button>
-      );
-    }
-
-    // Acciones para citas programadas
-    if (citaData.estado === "programada") {
-      return (
-        <div className="flex gap-3">
-          <Button
-            onClick={confirmarCita}
-            disabled={isLoading}
-            className="flex-1 h-12 text-base"
-          >
-            <CheckCircle className="w-4 h-4 mr-2" />
-            {isLoading ? "Confirmando..." : "Confirmar Cita"}
-          </Button>
-          <Button
-            variant="outline"
-            onClick={cancelarCita}
-            disabled={isLoading}
-            className="flex-1 h-12 text-red-600 border-red-300 hover:bg-red-50 text-base"
-          >
-            <X className="w-4 h-4 mr-2" />
-            Cancelar
-          </Button>
-        </div>
-      );
-    }
-
-    // Acciones para citas confirmadas
-    if (citaData.estado === "confirmada") {
-      return (
-        <div className="flex gap-3">
-          {citaData.tipo_cita === "presencial" && (
-            <Button
-              variant="outline"
-              onClick={verUbicacionConsultorio}
-              className="flex-1 h-12 text-base"
-            >
-              <MapPin className="w-4 h-4 mr-2" />
-              Ver Ubicación
-            </Button>
-          )}
-          <Button
-            variant="outline"
-            onClick={cancelarCita}
-            disabled={isLoading}
-            className="flex-1 h-12 text-red-600 border-red-300 hover:bg-red-50 text-base"
-          >
-            <X className="w-4 h-4 mr-2" />
-            Cancelar
-          </Button>
-        </div>
-      );
-    }
-
-    // Sin acciones para otros estados
-    return (
-      <div className="text-center py-4">
-        <p className="text-sm text-gray-500">
-          No hay acciones disponibles para esta cita
-        </p>
-      </div>
-    );
-  };
-
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto rounded-lg">
-        <DialogHeader className="pb-4 border-b">
-          <DialogTitle className="flex items-center text-xl font-bold">
-            <Calendar className="w-5 h-5 mr-2 text-blue-600" />
-            Detalles de la Consulta
-          </DialogTitle>
-        </DialogHeader>
+    <div
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto p-4 sm:p-6 lg:p-8">
+        <div className="p-6">
+          {/* Header */}
+          <div className="flex justify-between items-start mb-6">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-800">
+                Detalles de la Cita
+              </h2>
+              <p className="text-gray-600">Código: {citaData.id}</p>
+            </div>
+            <button
+              onClick={onClose}
+              className="text-gray-500 hover:text-gray-700 text-2xl"
+              aria-label="Cerrar"
+            >
+              ✕
+            </button>
+          </div>
 
-        <div className="space-y-6">
-          {/* TARJETA PRINCIPAL */}
-          <Card className="bg-blue-50 border-blue-200">
-            <CardContent className="p-6">
-              <div className="flex flex-col gap-4">
-                <div className="flex flex-wrap gap-2">
-                  <Badge
-                    className={`${estadoConfig.color} border-0 font-semibold`}
-                  >
-                    {estadoConfig.label}
-                  </Badge>
-                  <Badge
-                    className={`${tipoCitaConfig.color} border-0 font-semibold`}
-                  >
-                    <TipoCitaIcon className="w-4 h-4 mr-1" />
-                    {citaData.tipo_cita}
-                  </Badge>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Información principal */}
+            <div className="lg:col-span-2 space-y-6">
+              {/* Estado y tipo de cita */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <h3 className="font-semibold text-blue-800 mb-2">
+                    Fecha y Hora
+                  </h3>
+                  <div className="flex items-center text-sm mb-1">
+                    <Calendar className="w-4 h-4 mr-2 text-blue-600" />
+                    {safeFormatDate(citaData.fecha_cita)}
+                  </div>
+                  <div className="flex items-center text-sm">
+                    <Clock className="w-4 h-4 mr-2 text-blue-600" />
+                    {formatHora(citaData.hora_cita)} horas
+                  </div>
                 </div>
 
-                <div>
-                  <h2 className="text-xl font-bold text-gray-900">
-                    {new Date(citaData.fecha_cita).toLocaleDateString("es-PE", {
-                      weekday: "long",
-                      day: "numeric",
-                      month: "long",
-                    })}
-                  </h2>
-                  <p className="text-lg text-gray-600 flex items-center mt-1">
-                    <Clock className="w-5 h-5 mr-2" />
-                    {formatHora(citaData.hora_cita)} horas
-                  </p>
+                <div className="bg-green-50 p-4 rounded-lg">
+                  <h3 className="font-semibold text-green-800 mb-2">
+                    Estado y Tipo
+                  </h3>
+                  <div className="space-y-2">
+                    <span
+                      className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${estadoConfig.color}`}
+                    >
+                      {estadoConfig.label}
+                    </span>
+                    <div className="flex items-center text-sm">
+                      <TipoCitaIcon className="w-4 h-4 mr-2 text-green-600" />
+                      {tipoCitaConfig.label}
+                    </div>
+                  </div>
                 </div>
               </div>
-            </CardContent>
-          </Card>
 
-          {/* CONTENIDO PRINCIPAL - UNA SOLA COLUMNA */}
-          <div className="space-y-6">
-            {/* INFORMACIÓN DEL MÉDICO */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center text-lg">
-                  <User className="w-5 h-5 mr-2 text-blue-600" />
+              {/* Información del médico */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h3 className="font-semibold text-gray-800 mb-3 flex items-center">
+                  <User className="w-5 h-5 mr-2 text-gray-600" />
                   Información del Médico
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                    <User className="w-6 h-6 text-blue-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-gray-900 text-lg">
-                      Dr. {medicoData.nombre} {medicoData.apellido}
-                    </h3>
-                    <p className="text-gray-600 mt-1 flex items-center">
-                      <Stethoscope className="w-4 h-4 mr-2 text-green-600" />
-                      {medicoData.especialidad}
+                </h3>
+                <div className="space-y-3">
+                  <div>
+                    <p className="font-medium text-lg">
+                      Dr. {medicoNombreCompleto}
                     </p>
-
-                    <div className="flex flex-wrap gap-4 mt-2">
-                      {medicoData.numero_colegiatura && (
-                        <div className="flex items-center gap-1 text-sm text-gray-500">
-                          <Shield className="w-4 h-4" />
-                          <span>CMP: {medicoData.numero_colegiatura}</span>
-                        </div>
-                      )}
-                      {medicoData.telefono && (
-                        <div className="flex items-center gap-1 text-sm text-gray-500">
-                          <Phone className="w-4 h-4" />
-                          <span>{medicoData.telefono}</span>
-                        </div>
-                      )}
-                    </div>
+                    <p className="text-sm text-gray-600 flex items-center mt-1">
+                      <Stethoscope className="w-4 h-4 mr-2 text-green-600" />
+                      {citaData.medico_especialidad}
+                    </p>
                   </div>
-                </div>
 
-                {medicoData.direccion_consultorio &&
-                  citaData.tipo_cita === "presencial" && (
-                    <div className="bg-gray-50 rounded-lg p-3">
-                      <div className="flex items-start gap-3">
-                        <MapPin className="w-4 h-4 text-gray-600 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <p className="font-medium text-gray-900">
-                            Consultorio
-                          </p>
-                          <p className="text-gray-600 mt-1">
-                            {medicoData.direccion_consultorio}
-                          </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    {citaData.medico_colegiatura && (
+                      <div>
+                        <span className="text-gray-600">CMP:</span>
+                        <p className="font-medium">
+                          {citaData.medico_colegiatura}
+                        </p>
+                      </div>
+                    )}
+                    {citaData.medico_telefono && (
+                      <div>
+                        <span className="text-gray-600">Teléfono:</span>
+                        <p className="font-medium">
+                          {citaData.medico_telefono}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {citaData.medico_direccion &&
+                    citaData.tipo_cita === "presencial" && (
+                      <div className="bg-white p-3 rounded border">
+                        <div className="flex items-start">
+                          <MapPin className="w-4 h-4 text-gray-600 mt-0.5 mr-2 flex-shrink-0" />
+                          <div>
+                            <p className="font-medium text-gray-900">
+                              Consultorio
+                            </p>
+                            <p className="text-gray-600 text-sm mt-1">
+                              {citaData.medico_direccion}
+                            </p>
+                          </div>
                         </div>
                       </div>
+                    )}
+                </div>
+              </div>
+
+              {/* Detalles de la consulta */}
+              <div className="border border-gray-200 rounded-lg">
+                <div className="bg-gray-50 px-4 py-3 border-b">
+                  <h3 className="font-semibold text-gray-800 flex items-center">
+                    <FileText className="w-5 h-5 mr-2 text-gray-600" />
+                    Detalles de la Consulta
+                  </h3>
+                </div>
+                <div className="p-4 space-y-4">
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 mb-2">
+                      Motivo de Consulta
+                    </h4>
+                    <p className="text-gray-900 bg-gray-50 rounded-lg p-3 text-sm leading-relaxed">
+                      {citaData.motivo_consulta}
+                    </p>
+                  </div>
+
+                  {citaData.diagnostico && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-700 mb-2">
+                        Diagnóstico
+                      </h4>
+                      <p className="text-gray-900 bg-blue-50 rounded-lg p-3 text-sm leading-relaxed">
+                        {citaData.diagnostico}
+                      </p>
                     </div>
                   )}
-              </CardContent>
-            </Card>
 
-            {/* DETALLES DE LA CONSULTA */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center text-lg">
-                  <FileText className="w-5 h-5 mr-2 text-blue-600" />
-                  Detalles de la Consulta
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <h4 className="text-sm font-semibold text-gray-700 mb-2">
-                    Motivo de Consulta
-                  </h4>
-                  <p className="text-gray-900 bg-gray-50 rounded-lg p-3 text-sm leading-relaxed">
-                    {citaData.motivo_consulta}
-                  </p>
+                  {citaData.tratamiento && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-700 mb-2">
+                        Tratamiento
+                      </h4>
+                      <p className="text-gray-900 bg-green-50 rounded-lg p-3 text-sm leading-relaxed">
+                        {citaData.tratamiento}
+                      </p>
+                    </div>
+                  )}
+
+                  {citaData.observaciones && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-700 mb-2">
+                        Observaciones
+                      </h4>
+                      <p className="text-gray-900 bg-yellow-50 rounded-lg p-3 text-sm leading-relaxed">
+                        {citaData.observaciones}
+                      </p>
+                    </div>
+                  )}
                 </div>
+              </div>
 
-                {citaData.diagnostico && (
-                  <div>
-                    <h4 className="text-sm font-semibold text-gray-700 mb-2">
-                      Diagnóstico
-                    </h4>
-                    <p className="text-gray-900 bg-blue-50 rounded-lg p-3 text-sm leading-relaxed">
-                      {citaData.diagnostico}
-                    </p>
-                  </div>
-                )}
-
-                {citaData.tratamiento && (
-                  <div>
-                    <h4 className="text-sm font-semibold text-gray-700 mb-2">
-                      Tratamiento
-                    </h4>
-                    <p className="text-gray-900 bg-green-50 rounded-lg p-3 text-sm leading-relaxed">
-                      {citaData.tratamiento}
-                    </p>
-                  </div>
-                )}
-
-                {citaData.observaciones && (
-                  <div>
-                    <h4 className="text-sm font-semibold text-gray-700 mb-2">
-                      Observaciones
-                    </h4>
-                    <p className="text-gray-900 bg-yellow-50 rounded-lg p-3 text-sm leading-relaxed">
-                      {citaData.observaciones}
-                    </p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* INFORMACIÓN DE TELECONSULTA */}
-            {citaData.tipo_cita === "virtual" && (
-              <Card className="bg-blue-50 border-blue-200">
-                <CardHeader className="pb-3">
-                  <CardTitle className="flex items-center text-blue-900 text-sm font-semibold">
-                    <Wifi className="w-4 h-4 mr-2" />
+              {/* Información para teleconsulta */}
+              {citaData.tipo_cita === "virtual" && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <h3 className="font-semibold text-blue-800 mb-3 flex items-center">
+                    <Wifi className="w-5 h-5 mr-2 text-blue-600" />
                     Para tu Videollamada
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
+                  </h3>
                   <div className="space-y-2 text-sm text-blue-800">
                     <div className="flex items-start gap-2">
                       <div className="w-2 h-2 bg-blue-500 rounded-full mt-1.5 flex-shrink-0"></div>
@@ -597,33 +499,154 @@ export function DetallesCitaModal({
                       <span>Lugar tranquilo e iluminado</span>
                     </div>
                   </div>
-                </CardContent>
-              </Card>
-            )}
-          </div>
+                </div>
+              )}
+            </div>
 
-          {/* SECCIÓN DE ACCIONES - EN LA PARTE INFERIOR */}
-          <div className="border-t pt-6">
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-800">
-                Acciones de la Cita
-              </h3>
-              {renderAccionesPrincipales()}
+            {/* Panel lateral */}
+            <div className="space-y-6">
+              {/* Información de la cita */}
+              <div className="bg-white border border-gray-200 rounded-lg p-4">
+                <h3 className="font-semibold text-gray-800 mb-3">
+                  Información de la Cita
+                </h3>
+
+                <div className="space-y-3">
+                  <div>
+                    <span className="text-xs text-gray-600">Estado</span>
+                    <div
+                      className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${estadoConfig.color}`}
+                    >
+                      {estadoConfig.label}
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="text-xs text-gray-600">
+                      Tipo de Consulta
+                    </span>
+                    <div className="flex items-center text-sm font-medium">
+                      <TipoCitaIcon className="w-4 h-4 mr-2 text-gray-600" />
+                      {tipoCitaConfig.label}
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="text-xs text-gray-600">Fecha</span>
+                    <p className="text-sm font-medium">
+                      {safeFormatDate(citaData.fecha_cita)}
+                    </p>
+                  </div>
+
+                  <div>
+                    <span className="text-xs text-gray-600">Hora</span>
+                    <p className="text-sm font-medium">
+                      {formatHora(citaData.hora_cita)} horas
+                    </p>
+                  </div>
+
+                  <div>
+                    <span className="text-xs text-gray-600">Consultorio</span>
+                    <p className="text-sm font-medium">
+                      {citaData.consultorio_nombre}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Acciones */}
+              <div className="bg-white border border-gray-200 rounded-lg p-4">
+                <h3 className="font-semibold text-gray-800 mb-3">Acciones</h3>
+
+                <div className="space-y-2">
+                  {/* Botón principal de videollamada */}
+                  {citaData.tipo_cita === "virtual" &&
+                    puedeUnirseAVideollamada() && (
+                      <Button
+                        onClick={unirseAVideollamada}
+                        disabled={unirseLoading}
+                        className="w-full bg-green-600 hover:bg-green-700 text-white h-12 text-base font-semibold"
+                      >
+                        {unirseLoading ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Conectando...
+                          </>
+                        ) : (
+                          <>
+                            <Video className="w-5 h-5 mr-2" />
+                            Unirse a Videollamada
+                          </>
+                        )}
+                      </Button>
+                    )}
+
+                  {/* Acciones para citas programadas */}
+                  {citaData.estado === "programada" && (
+                    <>
+                      <Button
+                        onClick={confirmarCita}
+                        disabled={isLoading}
+                        className="w-full h-12 text-base"
+                      >
+                        <CheckCircle className="w-4 h-4 mr-2" />
+                        {isLoading ? "Confirmando..." : "Confirmar Cita"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={cancelarCita}
+                        disabled={isLoading}
+                        className="w-full h-12 text-red-600 border-red-300 hover:bg-red-50 text-base"
+                      >
+                        <X className="w-4 h-4 mr-2" />
+                        Cancelar Cita
+                      </Button>
+                    </>
+                  )}
+
+                  {/* Acciones para citas confirmadas */}
+                  {citaData.estado === "confirmada" && (
+                    <>
+                      {citaData.tipo_cita === "presencial" && (
+                        <Button
+                          variant="outline"
+                          onClick={verUbicacionConsultorio}
+                          className="w-full h-12 text-base mb-2"
+                        >
+                          <MapPin className="w-4 h-4 mr-2" />
+                          Ver Ubicación
+                        </Button>
+                      )}
+                      <Button
+                        variant="outline"
+                        onClick={cancelarCita}
+                        disabled={isLoading}
+                        className="w-full h-12 text-red-600 border-red-300 hover:bg-red-50 text-base"
+                      >
+                        <X className="w-4 h-4 mr-2" />
+                        Cancelar Cita
+                      </Button>
+                    </>
+                  )}
+
+                  {/* Sin acciones para otros estados */}
+                  {!["programada", "confirmada"].includes(citaData.estado) &&
+                    !(
+                      citaData.tipo_cita === "virtual" &&
+                      puedeUnirseAVideollamada()
+                    ) && (
+                      <div className="text-center py-2">
+                        <p className="text-sm text-gray-500">
+                          No hay acciones disponibles para esta cita
+                        </p>
+                      </div>
+                    )}
+                </div>
+              </div>
             </div>
           </div>
-
-          {/* FOOTER */}
-          <div className="flex justify-end pt-4 border-t">
-            <Button
-              variant="outline"
-              onClick={onClose}
-              className="min-w-24 h-11 text-base"
-            >
-              Cerrar
-            </Button>
-          </div>
         </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </div>
   );
 }

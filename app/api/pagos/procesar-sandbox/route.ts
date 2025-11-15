@@ -1,9 +1,14 @@
+//app/api/pagos/procesar-sandbox/route.ts
+// API Sandbox para procesamiento de pagos de prueba
+// Simula pagos pero los registra en la BD de forma completa y consistente
+
 import { type NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/database";
 import { verificarToken } from "@/lib/auth";
-import { jsPDF } from "jspdf";
 
 export async function POST(request: NextRequest) {
+  const client = await pool.connect();
+
   try {
     const token = request.headers.get("authorization")?.replace("Bearer ", "");
     if (!token) {
@@ -15,106 +20,136 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Token inválido" }, { status: 401 });
     }
 
-    const { servicio_id, metodo_pago, monto, datos_pago } =
-      await request.json();
+    const body = await request.json();
+    const tipo_pago = body.tipo_pago || "cita"; // 'cita' por defecto
+    const referencia_id = body.referencia_id; // ID de la cita
+    const metodo_pago = body.metodo_pago;
+    const monto = body.monto ? Number(body.monto) : null;
+    const datos_pago = body.datos_pago || {};
 
-    const client = await pool.connect();
+    // ✅ Validar datos requeridos
+    if (!referencia_id || !metodo_pago || !monto) {
+      return NextResponse.json(
+        { error: "Faltan datos requeridos: referencia_id, metodo_pago, monto" },
+        { status: 400 }
+      );
+    }
+
+    console.log("Procesando pago sandbox:", {
+      usuario_id: usuario.id,
+      tipo_pago,
+      referencia_id,
+      metodo_pago,
+      monto,
+    });
+
+    await client.query("BEGIN");
 
     try {
-      await client.query("BEGIN");
-
-      // Generar número de transacción único
-      const numero_transaccion = `TXN${Date.now()}${Math.random()
+      // ✅ Generar referencia de pago única
+      const referencia_sandbox = `SBX${Date.now()}${Math.random()
         .toString(36)
-        .substr(2, 6)
+        .substr(2, 8)
         .toUpperCase()}`;
 
-      // Simular procesamiento según método de pago
-      let estado_pago = "exitoso";
-      let mensaje_respuesta = "Pago procesado exitosamente";
+      // ✅ Simular validación del método de pago
+      let estado_pago = "completado";
+      let mensaje_respuesta = "Pago procesado exitosamente en entorno sandbox";
 
-      // Simular diferentes respuestas según método
+      // Validaciones simuladas
       if (metodo_pago === "tarjeta") {
-        // Validar datos de tarjeta (simulado)
-        if (!datos_pago.numeroTarjeta || !datos_pago.cvv) {
+        if (
+          !datos_pago.numero_tarjeta ||
+          !datos_pago.cvv ||
+          !datos_pago.fecha_vencimiento
+        ) {
           estado_pago = "fallido";
           mensaje_respuesta = "Datos de tarjeta inválidos";
         }
       } else if (metodo_pago === "yape" || metodo_pago === "plin") {
-        // Simular notificación móvil
-        mensaje_respuesta = `Notificación enviada a ${datos_pago.numeroTelefono}`;
+        if (!datos_pago.numero_telefono || !datos_pago.codigo_operacion) {
+          estado_pago = "fallido";
+          mensaje_respuesta = "Datos de YAPE/PLIN incompletos";
+        }
       } else if (metodo_pago === "transferencia") {
-        // Simular validación bancaria
-        mensaje_respuesta = `Transferencia desde ${datos_pago.banco} procesada`;
+        if (!datos_pago.banco || !datos_pago.numero_operacion) {
+          estado_pago = "fallido";
+          mensaje_respuesta = "Datos de transferencia incompletos";
+        }
       }
 
-      // Registrar pago en base de datos
-      const pagoQuery = `
-        INSERT INTO pagos_sandbox 
-        (usuario_id, servicio_id, metodo_pago, monto, numero_transaccion, estado, datos_pago)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-        RETURNING *
-      `;
+      console.log("Estado de pago simulado:", estado_pago);
 
-      const pagoResult = await client.query(pagoQuery, [
-        usuario.id,
-        servicio_id,
-        metodo_pago,
-        monto,
-        numero_transaccion,
-        estado_pago,
-        JSON.stringify(datos_pago),
-      ]);
-
-      const pago = pagoResult.rows[0];
-
-      // Generar comprobante PDF (simulado)
-      const pdf = new jsPDF();
-      pdf.setFontSize(20);
-      pdf.text("COMPROBANTE DE PAGO", 20, 30);
-      pdf.text("(ENTORNO DE PRUEBA)", 20, 40);
-
-      pdf.setFontSize(12);
-      pdf.text(`Número de Transacción: ${numero_transaccion}`, 20, 60);
-      pdf.text(`Fecha: ${new Date().toLocaleDateString("es-PE")}`, 20, 70);
-      pdf.text(`Método: ${metodo_pago.toUpperCase()}`, 20, 80);
-      pdf.text(`Monto: S/ ${monto.toFixed(2)}`, 20, 90);
-      pdf.text(`Estado: ${estado_pago.toUpperCase()}`, 20, 100);
-
-      pdf.setFontSize(10);
-      pdf.text(
-        "Este es un comprobante de prueba - No válido para fines fiscales",
-        20,
-        120
+      // ✅ Insertar registro de pago en tabla pagos (con estructura REAL de BD)
+      const pagoResult = await client.query(
+        `INSERT INTO pagos (
+          usuario_id, entidad_tipo, entidad_id, monto, metodo_pago, 
+          estado, referencia_pago, fecha_pago, created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+        RETURNING id, created_at`,
+        [
+          usuario.id,
+          tipo_pago,          // 'cita' → entidad_tipo
+          referencia_id,      // cita ID → entidad_id
+          monto,
+          metodo_pago,
+          estado_pago,
+          referencia_sandbox, // SBX... → referencia_pago
+        ]
       );
 
-      const comprobante_url = `/comprobantes/sandbox_${numero_transaccion}.pdf`;
+      const pago = pagoResult.rows[0];
+      console.log("Pago registrado en BD:", pago);
 
+      // ✅ Si el pago es exitoso y es una cita, actualizar estado de la cita
+      if (estado_pago === "completado" && tipo_pago === "cita") {
+        console.log("Actualizando cita:", referencia_id);
+
+        const updateResult = await client.query(
+          `UPDATE citas 
+           SET pagado = true, estado = 'confirmada', fecha_actualizacion = NOW() 
+           WHERE id = $1
+           RETURNING id, pagado, estado, costo`,
+          [referencia_id]
+        );
+
+        if (updateResult.rows.length === 0) {
+          throw new Error(`Cita con ID ${referencia_id} no encontrada`);
+        }
+
+        console.log("Cita actualizada:", updateResult.rows[0]);
+      }
+
+      // ✅ Confirmar transacción
       await client.query("COMMIT");
 
+      // ✅ Devolver respuesta consistente
       return NextResponse.json({
         success: true,
         pago: {
           id: pago.id,
-          numero_transaccion: numero_transaccion,
+          referencia_pago: referencia_sandbox,
           estado: estado_pago,
           monto: monto,
           fecha_pago: pago.created_at,
-          comprobante_url: comprobante_url,
           mensaje: mensaje_respuesta,
         },
       });
     } catch (error) {
       await client.query("ROLLBACK");
+      console.error("Error en transacción de pago:", error);
       throw error;
-    } finally {
-      client.release();
     }
   } catch (error) {
     console.error("Error procesando pago sandbox:", error);
     return NextResponse.json(
-      { error: "Error interno del servidor" },
+      {
+        error:
+          error instanceof Error ? error.message : "Error interno del servidor",
+      },
       { status: 500 }
     );
+  } finally {
+    client.release();
   }
 }

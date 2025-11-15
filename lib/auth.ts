@@ -12,6 +12,7 @@ const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "100d";
 
 // Interfaz para el payload del JWT
 export interface JWTPayload {
+  id: string;
   userId: string;
   email: string;
   rol: string;
@@ -43,7 +44,9 @@ export function verifyToken(token: string): JWTPayload | null {
   try {
     return jwt.verify(token, JWT_SECRET) as JWTPayload;
   } catch (error) {
-    console.error("Error verificando token JWT:", error);
+    // Evitar imprimir el objeto completo del error (puede contener stack largo)
+    // y reducir ruido de logs cuando el token está mal formado.
+    console.warn("Error verificando token JWT:", (error as Error).message);
     return null;
   }
 }
@@ -52,34 +55,39 @@ export async function verificarToken(
   token: string
 ): Promise<JWTPayload | null> {
   try {
-    // Validaciones básicas del token
     if (!token || typeof token !== "string" || token.length < 10) {
-      console.warn("Token inválido o muy corto");
       return null;
     }
 
-    // Verificar formato básico del JWT (debe tener 3 partes separadas por puntos)
     const tokenParts = token.split(".");
     if (tokenParts.length !== 3) {
-      console.warn("Token JWT mal formado - no tiene 3 partes");
       return null;
     }
 
-    const payload = jwt.verify(token, JWT_SECRET) as JWTPayload;
+    // Verificar el token
+    const decoded = jwt.verify(token, JWT_SECRET) as any;
 
-    // Verificar que el usuario aún existe y está activo
+    // Extraer el userId del payload decodificado
+    const userId = decoded.userId || decoded.id;
+
+    if (!userId) {
+      console.warn("Token no contiene userId");
+      return null;
+    }
+
+    // Verificar que el usuario existe
     const result = await query(
       "SELECT id, nombre, apellido, email, rol FROM usuarios WHERE id = $1 AND activo = true",
-      [payload.userId]
+      [userId]
     );
 
     if (result.rows.length === 0) {
-      console.warn("Usuario no encontrado o inactivo");
       return null;
     }
 
     const usuario = result.rows[0];
 
+    // Retornar el payload con ambas propiedades id y userId
     return {
       id: usuario.id,
       userId: usuario.id,
@@ -89,17 +97,7 @@ export async function verificarToken(
       apellido: usuario.apellido,
     };
   } catch (error: any) {
-    console.error("Error verificando token JWT:", error.message);
-
-    // Manejar diferentes tipos de errores
-    if (error.name === "JsonWebTokenError") {
-      console.warn("Token JWT inválido:", error.message);
-    } else if (error.name === "TokenExpiredError") {
-      console.warn("Token JWT expirado");
-    } else if (error.name === "NotBeforeError") {
-      console.warn("Token JWT no activo aún");
-    }
-
+    console.error("Error verificando token:", error.message);
     return null;
   }
 }

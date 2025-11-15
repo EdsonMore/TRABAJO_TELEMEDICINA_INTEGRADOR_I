@@ -2,32 +2,44 @@
 // MediLink+ - API para obtener pacientes del médico
 // Endpoint que retorna lista de pacientes atendidos con historial
 
-import { type NextRequest, NextResponse } from "next/server"
-import { query } from "@/lib/database"
-import { verifyToken } from "@/lib/auth"
+import { type NextRequest, NextResponse } from "next/server";
+import { query } from "@/lib/database";
+import { verifyToken } from "@/lib/auth";
 
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization")
+    const authHeader = request.headers.get("authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return NextResponse.json({ error: "Token de acceso requerido" }, { status: 401 })
+      return NextResponse.json(
+        { error: "Token de acceso requerido" },
+        { status: 401 }
+      );
     }
 
-    const token = authHeader.substring(7)
-    const payload = verifyToken(token)
+    const token = authHeader.substring(7);
+    const payload = verifyToken(token);
 
     if (!payload || payload.rol !== "medico") {
-      return NextResponse.json({ error: "Acceso no autorizado" }, { status: 403 })
+      return NextResponse.json(
+        { error: "Acceso no autorizado" },
+        { status: 403 }
+      );
     }
 
     // Obtener ID del médico
-    const medicoResult = await query("SELECT id FROM medicos WHERE id_usuario = $1", [payload.userId])
+    const medicoResult = await query(
+      "SELECT id FROM medicos WHERE id_usuario = $1",
+      [payload.userId]
+    );
 
     if (medicoResult.rows.length === 0) {
-      return NextResponse.json({ error: "Médico no encontrado" }, { status: 404 })
+      return NextResponse.json(
+        { error: "Médico no encontrado" },
+        { status: 404 }
+      );
     }
 
-    const medicoId = medicoResult.rows[0].id
+    const medicoId = medicoResult.rows[0].id;
 
     // Obtener pacientes únicos que han tenido citas con este médico
     const pacientesResult = await query(
@@ -51,14 +63,14 @@ export async function GET(request: NextRequest) {
       )
       ORDER BY u.apellido, u.nombre
     `,
-      [medicoId],
-    )
+      [medicoId]
+    );
 
     const pacientes = pacientesResult.rows.map((paciente) => {
       // Calcular edad
-      const fechaNacimiento = new Date(paciente.fecha_nacimiento)
-      const hoy = new Date()
-      const edad = hoy.getFullYear() - fechaNacimiento.getFullYear()
+      const fechaNacimiento = new Date(paciente.fecha_nacimiento);
+      const hoy = new Date();
+      const edad = hoy.getFullYear() - fechaNacimiento.getFullYear();
 
       return {
         id: paciente.id,
@@ -92,32 +104,41 @@ export async function GET(request: NextRequest) {
           primera_cita: paciente.primera_cita,
           ultima_cita: paciente.ultima_cita,
         },
-      }
-    })
+      };
+    });
 
     // Estadísticas generales
     const estadisticas = {
       total_pacientes: pacientes.length,
       pacientes_activos: pacientes.filter((p) => {
-        const ultimaCita = p.estadisticas_atencion.ultima_cita
-        if (!ultimaCita) return false
+        const ultimaCita = p.estadisticas_atencion.ultima_cita;
+        if (!ultimaCita) return false;
         const diasDesdeUltimaCita = Math.floor(
-          (new Date().getTime() - new Date(ultimaCita).getTime()) / (1000 * 60 * 60 * 24),
-        )
-        return diasDesdeUltimaCita <= 90 // Activo si tuvo cita en los últimos 3 meses
+          (new Date().getTime() - new Date(ultimaCita).getTime()) /
+            (1000 * 60 * 60 * 24)
+        );
+        return diasDesdeUltimaCita <= 90; // Activo si tuvo cita en los últimos 3 meses
       }).length,
       promedio_citas_por_paciente:
         pacientes.length > 0
-          ? (pacientes.reduce((sum, p) => sum + p.estadisticas_atencion.total_citas, 0) / pacientes.length).toFixed(1)
+          ? (
+              pacientes.reduce(
+                (sum, p) => sum + p.estadisticas_atencion.total_citas,
+                0
+              ) / pacientes.length
+            ).toFixed(1)
           : 0,
-    }
+    };
 
     return NextResponse.json({
       pacientes,
       estadisticas,
-    })
+    });
   } catch (error) {
-    console.error("Error obteniendo pacientes del médico:", error)
-    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
+    console.error("Error obteniendo pacientes del médico:", error);
+    return NextResponse.json(
+      { error: "Error interno del servidor" },
+      { status: 500 }
+    );
   }
 }

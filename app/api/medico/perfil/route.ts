@@ -1,22 +1,28 @@
 // MediLink+ - API para obtener perfil completo del médico
 // Endpoint que retorna información profesional y estadísticas del médico
 
-import { type NextRequest, NextResponse } from "next/server"
-import { query } from "@/lib/database"
-import { verifyToken } from "@/lib/auth"
+import { type NextRequest, NextResponse } from "next/server";
+import { query } from "@/lib/database";
+import { verifyToken } from "@/lib/auth";
 
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization")
+    const authHeader = request.headers.get("authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return NextResponse.json({ error: "Token de acceso requerido" }, { status: 401 })
+      return NextResponse.json(
+        { error: "Token de acceso requerido" },
+        { status: 401 }
+      );
     }
 
-    const token = authHeader.substring(7)
-    const payload = verifyToken(token)
+    const token = authHeader.substring(7);
+    const payload = verifyToken(token);
 
     if (!payload || payload.rol !== "medico") {
-      return NextResponse.json({ error: "Acceso no autorizado" }, { status: 403 })
+      return NextResponse.json(
+        { error: "Acceso no autorizado" },
+        { status: 403 }
+      );
     }
 
     // Obtener información completa del médico
@@ -33,14 +39,17 @@ export async function GET(request: NextRequest) {
       LEFT JOIN ubicaciones ub ON m.id_ubicacion = ub.id
       WHERE m.id_usuario = $1
     `,
-      [payload.userId],
-    )
+      [payload.userId]
+    );
 
     if (result.rows.length === 0) {
-      return NextResponse.json({ error: "Perfil de médico no encontrado" }, { status: 404 })
+      return NextResponse.json(
+        { error: "Perfil de médico no encontrado" },
+        { status: 404 }
+      );
     }
 
-    const medico = result.rows[0]
+    const medico = result.rows[0];
 
     // Obtener estadísticas del médico
     const estadisticasResult = await query(
@@ -55,10 +64,10 @@ export async function GET(request: NextRequest) {
       FROM citas 
       WHERE id_medico = $1
     `,
-      [medico.id],
-    )
+      [medico.id]
+    );
 
-    const estadisticas = estadisticasResult.rows[0]
+    const estadisticas = estadisticasResult.rows[0];
 
     // Obtener pacientes únicos atendidos
     const pacientesResult = await query(
@@ -67,10 +76,10 @@ export async function GET(request: NextRequest) {
       FROM citas 
       WHERE id_medico = $1 AND estado = 'completada'
     `,
-      [medico.id],
-    )
+      [medico.id]
+    );
 
-    const totalPacientes = pacientesResult.rows[0].total_pacientes
+    const totalPacientes = pacientesResult.rows[0].total_pacientes;
 
     return NextResponse.json({
       id: medico.id,
@@ -110,12 +119,16 @@ export async function GET(request: NextRequest) {
         citas_hoy: Number.parseInt(estadisticas.citas_hoy),
         citas_futuras: Number.parseInt(estadisticas.citas_futuras),
         total_pacientes: Number.parseInt(totalPacientes),
-        ingreso_promedio_cita: Number.parseFloat(estadisticas.ingreso_promedio_cita) || 0,
+        ingreso_promedio_cita:
+          Number.parseFloat(estadisticas.ingreso_promedio_cita) || 0,
       },
       fecha_actualizacion: medico.fecha_actualizacion,
-    })
+    });
   } catch (error) {
-    console.error("Error obteniendo perfil del médico:", error)
-    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
+    console.error("Error obteniendo perfil del médico:", error);
+    return NextResponse.json(
+      { error: "Error interno del servidor" },
+      { status: 500 }
+    );
   }
 }

@@ -6,11 +6,19 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
-import { ProtectedRoute } from "@/components/auth/protected-route";
-import { DetallesCitaModal } from "@/components/paciente/detalles-cita-modal";
+import { NavbarUniversal } from "@/components/layout/navbar-universal";
+import { BottomNavigation } from "@/components/layout/bottom-navigation";
+import DetallesCitaModal from "@/components/paciente/detalles-cita-modal";
 import { EditarPerfilModal } from "@/components/paciente/editar-perfil-modal";
 import { RecetasPacienteSection } from "@/components/paciente/recetas-paciente-section";
 import { ResultadosLaboratorioSection } from "@/components/paciente/resultados-laboratorio-section";
+import SeguimientoRecetas from "@/components/farmacia/seguimiento-recetas";
+import dynamic from "next/dynamic";
+
+const ListaRecetasPaciente = dynamic(
+  () => import("@/components/paciente/ListaRecetasPaciente"),
+  { ssr: false }
+);
 import {
   Card,
   CardContent,
@@ -20,7 +28,6 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Calendar,
@@ -31,21 +38,16 @@ import {
   Phone,
   Mail,
   AlertTriangle,
-  Activity,
   Stethoscope,
   TestTube,
   Shield,
-  Bell,
-  Plus,
-  LogOut,
   Video,
   Eye,
   ChevronDown,
   ChevronUp,
-  Home,
-  Menu,
-  X,
+  Plus,
 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 interface PerfilPaciente {
   id: string;
@@ -84,49 +86,137 @@ interface EstadisticasCitas {
   proxima_cita?: any;
 }
 
+interface CitaPaciente {
+  id: string;
+  fecha_cita: string;
+  hora_cita?: string;
+  tipo_cita: "presencial" | "virtual";
+  estado: "pendiente" | "confirmada" | "completada" | "cancelada" | "iniciada";
+  motivo_consulta?: string;
+  medico_nombre?: string;
+  medico_apellido?: string;
+  especialidad?: string;
+  medico?: {
+    nombre: string;
+    apellido: string;
+    especialidad: string;
+  };
+}
+
+interface Receta {
+  id: string;
+  codigo_receta: string;
+  estado: "activa" | "completada" | "cancelada" | "expirada";
+  estado_envio?:
+    | "no_enviada"
+    | "enviada"
+    | "recibida"
+    | "rechazada"
+    | "dispensada";
+  fecha_creacion: string;
+  medicamentos?: Array<{
+    nombre: string;
+    cantidad: number;
+    unidad: string;
+  }>;
+}
+
 export default function DashboardPacientePage() {
   const { usuario, token, logout } = useAuth();
   const router = useRouter();
   const [perfil, setPerfil] = useState<PerfilPaciente | null>(null);
   const [estadisticasCitas, setEstadisticasCitas] =
     useState<EstadisticasCitas | null>(null);
+  const [recetas, setRecetas] = useState<Receta[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [citasPaciente, setCitasPaciente] = useState<any[]>([]);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [citasPaciente, setCitasPaciente] = useState<CitaPaciente[]>([]);
   const [mostrarTodasLasCitas, setMostrarTodasLasCitas] = useState(false);
+  const { toast } = useToast();
+  const [error, setError] = useState<string | null>(null);
 
   // Estados para modales
   const [detallesCitaOpen, setDetallesCitaOpen] = useState(false);
   const [editarPerfilOpen, setEditarPerfilOpen] = useState(false);
-  const [citaSeleccionada, setCitaSeleccionada] = useState<any>(null);
+  const [citaSeleccionada, setCitaSeleccionada] = useState<CitaPaciente | null>(
+    null
+  );
+
+  // Estado para la navegación activa
+  const [activeTab, setActiveTab] = useState("resumen");
 
   useEffect(() => {
     const cargarDatosDashboard = async () => {
       if (!token) return;
 
+      setError(null);
       try {
+        // helper para fetch con timeout y parseo seguro
+        const safeFetchJSON = async (
+          url: string,
+          options: RequestInit = {},
+          timeout = 10000
+        ) => {
+          const controller = new AbortController();
+          const id = setTimeout(() => controller.abort(), timeout);
+          try {
+            const res = await fetch(url, {
+              ...options,
+              signal: controller.signal,
+            });
+            clearTimeout(id);
+            let data: any = null;
+            const contentType = res.headers.get("content-type") || "";
+            if (contentType.includes("application/json")) {
+              try {
+                data = await res.json();
+              } catch (e) {
+                throw new Error("Respuesta JSON inválida");
+              }
+            } else {
+              data = await res.text();
+            }
+
+            if (!res.ok) {
+              const msg =
+                data && data.message ? data.message : `HTTP ${res.status}`;
+              throw new Error(msg);
+            }
+
+            return data;
+          } catch (err: any) {
+            if (err.name === "AbortError")
+              throw new Error("La petición tardó demasiado y fue cancelada");
+            throw err;
+          }
+        };
+
         const headers = {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         };
-
-        const [perfilRes, citasRes] = await Promise.all([
-          fetch("/api/paciente/perfil", { headers }),
-          fetch("/api/paciente/citas", { headers }),
+        // Ejecutar todas las peticiones con manejo centralizado
+        const [perfilData, citasData, recetasData] = await Promise.all([
+          safeFetchJSON("/api/paciente/perfil", { headers }),
+          safeFetchJSON("/api/paciente/citas", { headers }),
+          safeFetchJSON("/api/paciente/recetas", { headers }),
         ]);
 
-        if (perfilRes.ok) {
-          const perfilData = await perfilRes.json();
-          setPerfil(perfilData);
+        if (perfilData) setPerfil(perfilData as PerfilPaciente);
+        if (citasData) {
+          setEstadisticasCitas((citasData as any).estadisticas || null);
+          setCitasPaciente((citasData as any).citas || []);
         }
-
-        if (citasRes.ok) {
-          const citasData = await citasRes.json();
-          setEstadisticasCitas(citasData.estadisticas);
-          setCitasPaciente(citasData.citas || []);
+        if (recetasData && (recetasData as any).recetas) {
+          setRecetas((recetasData as any).recetas);
         }
       } catch (error) {
         console.error("Error cargando datos:", error);
+        const msg =
+          (error as any)?.message || "Error desconocido al cargar datos";
+        setError(msg);
+        try {
+          toast({ title: "Error cargando dashboard", description: msg });
+        } catch (e) {}
       } finally {
         setIsLoading(false);
       }
@@ -138,29 +228,76 @@ export default function DashboardPacientePage() {
   const recargarDatos = async () => {
     if (!token) return;
 
+    setError(null);
     try {
       const headers = {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       };
 
-      const [perfilRes, citasRes] = await Promise.all([
-        fetch("/api/paciente/perfil", { headers }),
-        fetch("/api/paciente/citas", { headers }),
+      const safeFetchJSON = async (
+        url: string,
+        options: RequestInit = {},
+        timeout = 10000
+      ) => {
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), timeout);
+        try {
+          const res = await fetch(url, {
+            ...options,
+            signal: controller.signal,
+          });
+          clearTimeout(id);
+          let data: any = null;
+          const contentType = res.headers.get("content-type") || "";
+          if (contentType.includes("application/json")) {
+            try {
+              data = await res.json();
+            } catch (e) {
+              throw new Error("Respuesta JSON inválida");
+            }
+          } else {
+            data = await res.text();
+          }
+
+          if (!res.ok) {
+            const msg =
+              data && (data as any).message
+                ? (data as any).message
+                : `HTTP ${res.status}`;
+            throw new Error(msg);
+          }
+
+          return data;
+        } catch (err: any) {
+          if (err.name === "AbortError")
+            throw new Error("La petición tardó demasiado y fue cancelada");
+          throw err;
+        }
+      };
+
+      const [perfilData, citasData, recetasData] = await Promise.all([
+        safeFetchJSON("/api/paciente/perfil", { headers }),
+        safeFetchJSON("/api/paciente/citas", { headers }),
+        safeFetchJSON("/api/paciente/recetas", { headers }),
       ]);
 
-      if (perfilRes.ok) {
-        const perfilData = await perfilRes.json();
-        setPerfil(perfilData);
+      if (perfilData) setPerfil(perfilData as PerfilPaciente);
+      if (citasData) {
+        setCitasPaciente((citasData as any).citas || []);
+        setEstadisticasCitas((citasData as any).estadisticas || null);
       }
-
-      if (citasRes.ok) {
-        const citasData = await citasRes.json();
-        setCitasPaciente(citasData.citas || []);
-        setEstadisticasCitas(citasData.estadisticas);
+      if (recetasData && (recetasData as any).recetas) {
+        setRecetas((recetasData as any).recetas);
       }
     } catch (error) {
       console.error("Error recargando datos:", error);
+      const msg =
+        (error as any)?.message || "Error desconocido al recargar datos";
+      setError(msg);
+      try {
+        toast({ title: "Error recargando datos", description: msg });
+      } catch (e) {}
     }
   };
 
@@ -169,72 +306,181 @@ export default function DashboardPacientePage() {
     window.location.href = "/auth/login";
   };
 
-  const verDetallesCita = (cita: any) => {
+  const verDetallesCita = (cita: CitaPaciente) => {
     setCitaSeleccionada(cita);
     setDetallesCitaOpen(true);
   };
 
-  const unirseAVideollamada = async (cita: any) => {
+  // Función robusta para validar si puede unirse a videollamada (acepta cita opcional)
+  const puedeUnirseAVideollamada = (cita?: CitaPaciente | null): boolean => {
+    if (!cita) return false;
+    if (cita.tipo_cita !== "virtual") return false;
+    const estadosValidos = ["confirmada", "programada", "iniciada"];
+    if (!estadosValidos.includes(cita.estado)) return false;
+
     try {
-      if (cita.tipo_cita !== "virtual") {
-        alert("❌ Esta cita no es virtual.");
-        return;
+      const ahora = new Date();
+      const fechaCita = new Date(cita.fecha_cita);
+      if (isNaN(fechaCita.getTime())) return false;
+
+      if (cita.hora_cita) {
+        const match = cita.hora_cita.match(/^(\d{1,2}):(\d{2})$/);
+        if (!match) return false;
+        const horas = Number(match[1]);
+        const minutos = Number(match[2]);
+        if (isNaN(horas) || isNaN(minutos)) return false;
+        fechaCita.setHours(horas, minutos, 0, 0);
+
+        const margenAntes = 15 * 60 * 1000;
+        const margenDespues = 2 * 60 * 60 * 1000;
+        const tiempoCita = fechaCita.getTime();
+        const tiempoActual = ahora.getTime();
+        return (
+          tiempoActual >= tiempoCita - margenAntes &&
+          tiempoActual <= tiempoCita + margenDespues
+        );
       }
 
+      const hoy = new Date();
+      return fechaCita.toDateString() === hoy.toDateString();
+    } catch (e) {
+      console.warn("Error validando videollamada:", e);
+      return false;
+    }
+  };
+
+  const unirseAVideollamada = async (cita: CitaPaciente) => {
+    if (!token) {
+      try {
+        toast({
+          title: "No autenticado",
+          description: "No se encontró token de autenticación",
+        });
+      } catch (e) {}
+      return;
+    }
+
+    if (!puedeUnirseAVideollamada(cita)) {
+      try {
+        toast({
+          title: "No puedes unirte",
+          description:
+            "Verifica que la cita sea virtual, esté confirmada y sea hoy en horario válido.",
+        });
+      } catch (e) {}
+      return;
+    }
+
+    try {
       const headers = {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       };
 
-      const sesionesResponse = await fetch(
-        `/api/telemedicina/sesiones?cita_id=${cita.id}`,
+      const safeFetchJSON = async (
+        url: string,
+        options: RequestInit = {},
+        timeout = 10000
+      ) => {
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), timeout);
+        try {
+          const res = await fetch(url, {
+            ...options,
+            signal: controller.signal,
+          });
+          clearTimeout(id);
+          let data: any = null;
+          const contentType = res.headers.get("content-type") || "";
+          if (contentType.includes("application/json")) {
+            try {
+              data = await res.json();
+            } catch (e) {
+              throw new Error("Respuesta JSON inválida");
+            }
+          } else {
+            data = await res.text();
+          }
+          if (!res.ok) {
+            const msg =
+              data && (data as any).message
+                ? (data as any).message
+                : `HTTP ${res.status}`;
+            throw new Error(msg);
+          }
+          return data;
+        } catch (err: any) {
+          if (err.name === "AbortError")
+            throw new Error("La petición tardó demasiado y fue cancelada");
+          throw err;
+        }
+      };
+
+      // Buscar sesiones existentes
+      const sesionesData = await safeFetchJSON(
+        `/api/telemedicina/sesiones?cita_id=${encodeURIComponent(cita.id)}`,
         { headers }
       );
+      let sesionId: string | undefined;
 
-      if (!sesionesResponse.ok) throw new Error("Error al buscar sesión");
-
-      const sesionesData = await sesionesResponse.json();
-      let sesionId;
-
-      if (sesionesData.success && sesionesData.sesiones.length > 0) {
-        sesionId = sesionesData.sesiones[0].id;
-        window.open(`/telemedicina/sesion/${sesionId}`, "_blank");
+      if (
+        sesionesData &&
+        (sesionesData as any).success &&
+        Array.isArray((sesionesData as any).sesiones) &&
+        (sesionesData as any).sesiones.length > 0
+      ) {
+        sesionId = (sesionesData as any).sesiones[0].id;
       } else {
-        const programarResponse = await fetch("/api/telemedicina/programar", {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            id_cita: cita.id,
-            titulo: "Consulta Virtual",
-            fecha_programada: new Date().toISOString(),
-            duracion_minutos: 30,
-          }),
-        });
+        // Crear nueva sesión
+        const titulo = `Consulta Virtual - Dr. ${cita.medico_nombre || ""} ${
+          cita.medico_apellido || ""
+        }`.trim();
+        const payload = {
+          id_cita: cita.id,
+          titulo: titulo || "Consulta Virtual",
+          fecha_programada: new Date().toISOString(),
+          duracion_minutos: 30,
+        };
 
-        const programarData = await programarResponse.json();
-        if (!programarData.success) throw new Error("Error al crear sesión");
+        const programarData = await safeFetchJSON(
+          "/api/telemedicina/programar",
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify(payload),
+          }
+        );
 
-        sesionId = programarData.sesion.id;
-        window.open(`/telemedicina/sesion/${sesionId}`, "_blank");
+        if (!(programarData as any).success) {
+          throw new Error(
+            (programarData as any).message || "Error al crear sesión"
+          );
+        }
+
+        sesionId = (programarData as any).sesion?.id;
       }
+
+      if (!sesionId) throw new Error("No se obtuvo id de sesión");
+
+      try {
+        toast({
+          title: "Conectando",
+          description:
+            "Se abrirá la sesión de telemedicina en una nueva pestaña",
+        });
+      } catch (e) {}
+      window.open(`/telemedicina/sesion/${sesionId}`, "_blank");
     } catch (error: any) {
-      alert(`❌ Error: ${error.message}`);
+      console.error("Error en videollamada:", error);
+      const msg =
+        error?.message || "Error desconocido al unirse a la videollamada";
+      try {
+        toast({ title: "Error videollamada", description: msg });
+      } catch (e) {}
     }
   };
 
-  const puedeUnirseAVideollamada = (cita: any) => {
-    const esVirtual = cita.tipo_cita === "virtual";
-    const estadoValido = ["confirmada", "programada", "iniciada"].includes(
-      cita.estado
-    );
-    const hoy = new Date();
-    const fechaCita = new Date(cita.fecha_cita);
-    const esFechaValida = fechaCita >= new Date(hoy.setHours(0, 0, 0, 0));
-
-    return esVirtual && estadoValido && esFechaValida;
-  };
-
-  const verUbicacionConsultorio = (cita: any) => {
+  const verUbicacionConsultorio = (cita: CitaPaciente) => {
     const consultorio = {
       nombre: "Consultorio Principal MediLink+",
       direccion: "Av. La Marina 1234, Lima",
@@ -250,6 +496,34 @@ export default function DashboardPacientePage() {
         "_blank"
       );
     }
+  };
+
+  // Función para obtener datos del médico de forma segura (acepta undefined/null)
+  const getMedicoData = (cita?: CitaPaciente | null) => {
+    if (!cita)
+      return {
+        nombre: "Médico",
+        apellido: "",
+        especialidad: "Consulta general",
+      };
+    if (cita.medico) {
+      return {
+        nombre: cita.medico.nombre || "Médico",
+        apellido: cita.medico.apellido || "",
+        especialidad: cita.medico.especialidad || "Medicina General",
+      };
+    }
+    return {
+      nombre: cita.medico_nombre || "Médico",
+      apellido: cita.medico_apellido || "",
+      especialidad: cita.especialidad || "Consulta general",
+    };
+  };
+
+  // Función para formatear hora
+  const formatearHora = (horaCita?: string): string => {
+    if (!horaCita) return "--:--";
+    return horaCita.slice(0, 5);
   };
 
   if (isLoading) {
@@ -308,119 +582,35 @@ export default function DashboardPacientePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header Mejorado - Totalmente Responsivo */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
-        <div className="px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            {/* Logo y Nombre */}
-            <div className="flex items-center space-x-3 flex-1 min-w-0">
-              <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
-                <Heart className="w-5 h-5 text-white" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <h1 className="text-lg font-bold text-gray-900 truncate">
-                  Hola, {perfil?.usuario.nombre}
-                </h1>
-                <p className="text-sm text-gray-600 hidden xs:block truncate">
-                  Panel de salud personal
-                </p>
-                <p className="text-sm text-gray-600 xs:hidden truncate">
-                  {perfil?.usuario.nombre} {perfil?.usuario.apellido}
-                </p>
-              </div>
-            </div>
-
-            {/* Botones de Acción - Desktop */}
-            <div className="hidden sm:flex items-center space-x-2 ml-4">
-              <Button
-                onClick={() => router.push("/dashboard/citas")}
-                size="sm"
-                className="bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                <Plus className="w-4 h-4 mr-1" />
-                <span className="hidden md:inline">Nueva Cita</span>
-                <span className="md:hidden">Cita</span>
-              </Button>
-
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setEditarPerfilOpen(true)}
-                className="hidden lg:flex"
-              >
-                <User className="w-4 h-4 mr-1" />
-                Perfil
-              </Button>
-
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleLogout}
-                className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
-              >
-                <LogOut className="w-4 h-4 mr-1" />
-                <span className="hidden md:inline">Cerrar Sesión</span>
-              </Button>
-            </div>
-
-            {/* Botón Menú Móvil */}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="sm:hidden ml-2"
-            >
-              {mobileMenuOpen ? (
-                <X className="w-5 h-5" />
-              ) : (
-                <Menu className="w-5 h-5" />
-              )}
-            </Button>
-          </div>
-
-          {/* Menú Móvil Mejorado */}
-          {mobileMenuOpen && (
-            <div className="sm:hidden border-t border-gray-200 pt-4 pb-4 space-y-2 bg-white">
-              <Button
-                variant="outline"
-                className="w-full justify-start text-base h-12"
-                onClick={() => {
-                  router.push("/dashboard/citas");
-                  setMobileMenuOpen(false);
-                }}
-              >
-                <Plus className="w-5 h-5 mr-3" />
-                Nueva Cita
-              </Button>
-
-              <Button
-                variant="outline"
-                className="w-full justify-start text-base h-12"
-                onClick={() => {
-                  setEditarPerfilOpen(true);
-                  setMobileMenuOpen(false);
-                }}
-              >
-                <User className="w-5 h-5 mr-3" />
-                Editar Perfil
-              </Button>
-
-              <Button
-                variant="outline"
-                className="w-full justify-start text-base h-12 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
-                onClick={handleLogout}
-              >
-                <LogOut className="w-5 h-5 mr-3" />
-                Cerrar Sesión
-              </Button>
-            </div>
-          )}
-        </div>
-      </header>
-
+    <div className="min-h-screen bg-gray-50 pb-20 sm:pb-0">
+      {" "}
+      {/* Añadido padding-bottom para móvil */}
+      <NavbarUniversal showNotifications notificationCount={3} />
       {/* Contenido Principal */}
       <main className="container mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8">
+        {error && (
+          <div className="mb-4">
+            <Card className="border border-red-200 bg-red-50">
+              <CardContent>
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-red-700">Error: {error}</div>
+                  <div className="flex space-x-2">
+                    <Button size="sm" onClick={recargarDatos}>
+                      Reintentar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setError(null)}
+                    >
+                      Cerrar
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
         {/* Tarjetas de Resumen - Grid Responsivo Mejorado */}
         <div className="grid grid-cols-1 xs:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6 lg:mb-8">
           {/* Próxima Cita */}
@@ -446,17 +636,17 @@ export default function DashboardPacientePage() {
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-xs sm:text-sm text-gray-600">
-                      {estadisticasCitas.proxima_cita.hora_cita?.slice(0, 5) ||
-                        "Por confirmar"}
+                      {formatearHora(estadisticasCitas.proxima_cita.hora_cita)}
                     </span>
                     <Badge variant="outline" className="text-xs">
                       Próxima
                     </Badge>
                   </div>
                   <div className="text-xs sm:text-sm text-gray-600 truncate">
-                    Dr. {estadisticasCitas.proxima_cita.medico_nombre}
+                    Dr. {getMedicoData(estadisticasCitas.proxima_cita).nombre}{" "}
+                    {getMedicoData(estadisticasCitas.proxima_cita).apellido}
                   </div>
-                  {estadisticasCitas.proxima_cita.tipo_cita === "virtual" && (
+                  {puedeUnirseAVideollamada(estadisticasCitas.proxima_cita) && (
                     <Button
                       size="sm"
                       className="w-full h-7 sm:h-8 text-xs bg-green-600 hover:bg-green-700"
@@ -514,11 +704,22 @@ export default function DashboardPacientePage() {
             </CardHeader>
             <CardContent>
               <div className="text-lg sm:text-xl font-bold text-gray-900">
-                0
+                {recetas.filter((r) => r.estado === "activa").length}
               </div>
               <p className="text-xs sm:text-sm text-gray-600 mt-1">
                 Recetas activas
               </p>
+              {recetas.filter((r) => r.estado === "activa").length > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-3 w-full h-8 text-xs"
+                  onClick={() => setActiveTab("recetas")}
+                >
+                  <Pill className="w-3 h-3 mr-1" />
+                  Ver Recetas
+                </Button>
+              )}
             </CardContent>
           </Card>
 
@@ -544,40 +745,52 @@ export default function DashboardPacientePage() {
         </div>
 
         {/* Tabs Responsivos Mejorados */}
-        <Tabs defaultValue="resumen" className="space-y-4 sm:space-y-6">
-          <TabsList className="grid w-full grid-cols-3 sm:grid-cols-5 h-10 sm:h-12 bg-gray-100 p-1">
-            <TabsTrigger
-              value="resumen"
-              className="text-xs sm:text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm"
-            >
-              <span className="hidden xs:inline">Resumen</span>
-              <span className="xs:hidden">Inicio</span>
-            </TabsTrigger>
-            <TabsTrigger
-              value="perfil"
-              className="text-xs sm:text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm"
-            >
-              Perfil
-            </TabsTrigger>
-            <TabsTrigger
-              value="citas"
-              className="text-xs sm:text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm"
-            >
-              Citas
-            </TabsTrigger>
-            <TabsTrigger
-              value="recetas"
-              className="text-xs sm:text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm hidden sm:flex"
-            >
-              Recetas
-            </TabsTrigger>
-            <TabsTrigger
-              value="resultados"
-              className="text-xs sm:text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm hidden sm:flex"
-            >
-              Resultados
-            </TabsTrigger>
-          </TabsList>
+        <Tabs
+          value={activeTab}
+          onValueChange={setActiveTab}
+          className="space-y-4 sm:space-y-6"
+        >
+          {/* Solo mostrar tabs en desktop */}
+          <div className="hidden sm:block">
+            <TabsList className="grid w-full grid-cols-3 sm:grid-cols-6 h-12 bg-gray-100 p-1 gap-1">
+              <TabsTrigger
+                value="resumen"
+                className="text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm"
+              >
+                Resumen
+              </TabsTrigger>
+              <TabsTrigger
+                value="perfil"
+                className="text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm"
+              >
+                Perfil
+              </TabsTrigger>
+              <TabsTrigger
+                value="citas"
+                className="text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm"
+              >
+                Citas
+              </TabsTrigger>
+              <TabsTrigger
+                value="recetas"
+                className="text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm"
+              >
+                Recetas
+              </TabsTrigger>
+              <TabsTrigger
+                value="despacho"
+                className="text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm"
+              >
+                Despacho
+              </TabsTrigger>
+              <TabsTrigger
+                value="resultados"
+                className="text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm"
+              >
+                Resultados
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
           {/* Contenido de Tabs */}
           <TabsContent value="resumen" className="space-y-4 sm:space-y-6">
@@ -651,12 +864,7 @@ export default function DashboardPacientePage() {
                     <Button
                       variant="outline"
                       className="h-14 sm:h-16 flex flex-col bg-white hover:bg-gray-50 border-2"
-                      onClick={() => {
-                        const trigger = document.querySelector(
-                          '[value="recetas"]'
-                        ) as HTMLElement;
-                        if (trigger) trigger.click();
-                      }}
+                      onClick={() => setActiveTab("recetas")}
                     >
                       <Pill className="w-5 h-5 sm:w-6 sm:h-6 mb-1 sm:mb-2 text-green-600" />
                       <span className="text-xs sm:text-sm">Ver Recetas</span>
@@ -664,12 +872,7 @@ export default function DashboardPacientePage() {
                     <Button
                       variant="outline"
                       className="h-14 sm:h-16 flex flex-col bg-white hover:bg-gray-50 border-2"
-                      onClick={() => {
-                        const trigger = document.querySelector(
-                          '[value="resultados"]'
-                        ) as HTMLElement;
-                        if (trigger) trigger.click();
-                      }}
+                      onClick={() => setActiveTab("resultados")}
                     >
                       <TestTube className="w-5 h-5 sm:w-6 sm:h-6 mb-1 sm:mb-2 text-purple-600" />
                       <span className="text-xs sm:text-sm">Resultados</span>
@@ -885,25 +1088,8 @@ export default function DashboardPacientePage() {
                       ? citasPaciente
                       : citasPaciente.slice(0, 5)
                     ).map((cita) => {
-                      const getMedicoData = () => {
-                        if (cita.medico) {
-                          return {
-                            nombre: cita.medico.nombre || "",
-                            apellido: cita.medico.apellido || "",
-                            especialidad:
-                              cita.medico.especialidad || "Medicina General",
-                          };
-                        } else {
-                          return {
-                            nombre: cita.medico_nombre || "Médico",
-                            apellido: cita.medico_apellido || "",
-                            especialidad:
-                              cita.especialidad || "Consulta general",
-                          };
-                        }
-                      };
-
-                      const medicoData = getMedicoData();
+                      const medicoData = getMedicoData(cita);
+                      const puedeUnirse = puedeUnirseAVideollamada(cita);
 
                       return (
                         <div
@@ -933,13 +1119,7 @@ export default function DashboardPacientePage() {
                                   )}
                                 </div>
                                 <div className="text-xs font-semibold bg-blue-100 text-blue-600 px-2 py-1 rounded mt-1">
-                                  {cita.hora_cita
-                                    ? typeof cita.hora_cita === "string"
-                                      ? cita.hora_cita.slice(0, 5)
-                                      : `${cita.hora_cita
-                                          .toString()
-                                          .padStart(2, "0")}:00`
-                                    : "--:--"}
+                                  {formatearHora(cita.hora_cita)}
                                 </div>
                               </div>
 
@@ -998,7 +1178,7 @@ export default function DashboardPacientePage() {
                                 </Button>
 
                                 {cita.tipo_cita === "virtual" &&
-                                  puedeUnirseAVideollamada(cita) && (
+                                  puedeUnirse && (
                                     <Button
                                       size="sm"
                                       className="h-8 sm:h-9 px-2 sm:px-3 bg-green-600 hover:bg-green-700 text-white"
@@ -1081,11 +1261,27 @@ export default function DashboardPacientePage() {
                   Mis Recetas Médicas
                 </CardTitle>
                 <CardDescription className="text-sm sm:text-base">
-                  Medicamentos prescritos
+                  Medicamentos prescritos y envío a farmacias
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <RecetasPacienteSection />
+                <ListaRecetasPaciente />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="despacho">
+            <Card className="bg-white shadow-sm border-0 sm:border">
+              <CardHeader>
+                <CardTitle className="text-base sm:text-lg">
+                  Seguimiento de Despacho
+                </CardTitle>
+                <CardDescription className="text-sm sm:text-base">
+                  Estado de tus recetas en proceso de despacho
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <SeguimientoRecetas />
               </CardContent>
             </Card>
           </TabsContent>
@@ -1107,14 +1303,14 @@ export default function DashboardPacientePage() {
           </TabsContent>
         </Tabs>
       </main>
-
+      {/* Navegación Inferior para Móviles */}
+      <BottomNavigation activeTab={activeTab} onTabChange={setActiveTab} />
       {/* Modales */}
       <DetallesCitaModal
         isOpen={detallesCitaOpen}
         onClose={() => setDetallesCitaOpen(false)}
         cita={citaSeleccionada}
         onCitaActualizada={recargarDatos}
-        onUnirseVideollamada={unirseAVideollamada}
       />
       <EditarPerfilModal
         isOpen={editarPerfilOpen}

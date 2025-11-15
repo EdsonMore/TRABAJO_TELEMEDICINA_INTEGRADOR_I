@@ -1,78 +1,79 @@
+/* app/globals.css */
 @import "tailwindcss";
 @import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* Actualizando tokens de diseño para MediLink+ con colores médicos profesionales */
-  --background: oklch(1 0 0); /* Blanco puro para fondo principal */
-  --foreground: oklch(0.25 0 0); /* Gris oscuro para texto principal */
-  --card: oklch(0.98 0.02 142); /* Verde muy claro para tarjetas */
-  --card-foreground: oklch(0.25 0 0);
+  /* TOKENS ACTUALIZADOS PARA ADULTOS MAYORES */
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.15 0 0);
+  --card: oklch(0.98 0.01 250);
+  --card-foreground: oklch(0.15 0 0);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.25 0 0);
-  --primary: oklch(0.45 0.15 142); /* Verde médico confiable */
+  --popover-foreground: oklch(0.15 0 0);
+  --primary: oklch(0.35 0.15 250); /* AZUL MÁS OSCURO PARA MEJOR CONTRASTE */
   --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.55 0.12 270); /* Púrpura suave para acciones secundarias */
+  --secondary: oklch(0.4 0.12 280);
   --secondary-foreground: oklch(1 0 0);
-  --muted: oklch(0.96 0.01 142); /* Verde muy suave para elementos silenciados */
-  --muted-foreground: oklch(0.45 0 0);
-  --accent: oklch(0.55 0.12 270); /* Púrpura para acentos */
+  --muted: oklch(0.96 0.005 250);
+  --muted-foreground: oklch(0.35 0 0); /* TEXTO MÁS OSCURO */
+  --accent: oklch(0.4 0.12 280);
   --accent-foreground: oklch(1 0 0);
-  --destructive: oklch(0.55 0.15 25); /* Naranja para acciones destructivas */
+  --destructive: oklch(0.65 0.2 25);
   --destructive-foreground: oklch(1 0 0);
-  --border: oklch(0.85 0.02 142); /* Bordes verdes suaves */
-  --input: oklch(0.98 0.01 142); /* Fondo de inputs verde muy claro */
-  --ring: oklch(0.45 0.15 142); /* Anillo de foco verde médico */
-  --chart-1: oklch(0.45 0.15 142);
-  --chart-2: oklch(0.55 0.15 25);
-  --chart-3: oklch(0.55 0.12 270);
-  --chart-4: oklch(0.35 0.1 200);
-  --chart-5: oklch(0.65 0.1 60);
-  --radius: 0.75rem; /* Bordes más redondeados para apariencia amigable */
-  --sidebar: oklch(0.98 0.02 142);
-  --sidebar-foreground: oklch(0.25 0 0);
-  --sidebar-primary: oklch(0.45 0.15 142);
+  --border: oklch(0.8 0.02 250); /* BORDES MÁS CONTRASTADOS */
+  --input: oklch(0.98 0.01 250);
+  --ring: oklch(0.35 0.15 250);
+  --chart-1: oklch(0.35 0.15 250);
+  --chart-2: oklch(0.65 0.2 25);
+  --chart-3: oklch(0.4 0.12 280);
+  --chart-4: oklch(0.5 0.1 200);
+  --chart-5: oklch(0.7 0.1 160);
+  --radius: 1rem; /* BORDES MÁS REDONDEADOS */
+  --sidebar: oklch(0.98 0.01 250);
+  --sidebar-foreground: oklch(0.15 0 0);
+  --sidebar-primary: oklch(0.35 0.15 250);
   --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.55 0.12 270);
+  --sidebar-accent: oklch(0.4 0.12 280);
   --sidebar-accent-foreground: oklch(1 0 0);
-  --sidebar-border: oklch(0.85 0.02 142);
-  --sidebar-ring: oklch(0.45 0.15 142);
+  --sidebar-border: oklch(0.8 0.02 250);
+  --sidebar-ring: oklch(0.35 0.15 250);
 }
 
 .dark {
-  --background: oklch(0.08 0 0);
-  --foreground: oklch(0.95 0 0);
-  --card: oklch(0.12 0.02 142);
-  --card-foreground: oklch(0.95 0 0);
-  --popover: oklch(0.08 0 0);
-  --popover-foreground: oklch(0.95 0 0);
-  --primary: oklch(0.55 0.15 142);
-  --primary-foreground: oklch(0.08 0 0);
-  --secondary: oklch(0.65 0.12 270);
-  --secondary-foreground: oklch(0.08 0 0);
-  --muted: oklch(0.15 0.01 142);
-  --muted-foreground: oklch(0.65 0 0);
-  --accent: oklch(0.65 0.12 270);
-  --accent-foreground: oklch(0.08 0 0);
-  --destructive: oklch(0.65 0.15 25);
-  --destructive-foreground: oklch(0.08 0 0);
-  --border: oklch(0.2 0.02 142);
-  --input: oklch(0.15 0.01 142);
-  --ring: oklch(0.55 0.15 142);
-  --chart-1: oklch(0.55 0.15 142);
-  --chart-2: oklch(0.65 0.15 25);
-  --chart-3: oklch(0.65 0.12 270);
-  --chart-4: oklch(0.45 0.1 200);
-  --chart-5: oklch(0.75 0.1 60);
-  --sidebar: oklch(0.12 0.02 142);
-  --sidebar-foreground: oklch(0.95 0 0);
-  --sidebar-primary: oklch(0.55 0.15 142);
-  --sidebar-primary-foreground: oklch(0.08 0 0);
-  --sidebar-accent: oklch(0.65 0.12 270);
-  --sidebar-accent-foreground: oklch(0.08 0 0);
-  --sidebar-border: oklch(0.2 0.02 142);
-  --sidebar-ring: oklch(0.55 0.15 142);
+  --background: oklch(0.12 0 0);
+  --foreground: oklch(0.98 0 0);
+  --card: oklch(0.15 0.02 250);
+  --card-foreground: oklch(0.98 0 0);
+  --popover: oklch(0.12 0 0);
+  --popover-foreground: oklch(0.98 0 0);
+  --primary: oklch(0.65 0.15 250);
+  --primary-foreground: oklch(0.12 0 0);
+  --secondary: oklch(0.7 0.12 280);
+  --secondary-foreground: oklch(0.12 0 0);
+  --muted: oklch(0.18 0.01 250);
+  --muted-foreground: oklch(0.7 0 0);
+  --accent: oklch(0.7 0.12 280);
+  --accent-foreground: oklch(0.12 0 0);
+  --destructive: oklch(0.7 0.2 25);
+  --destructive-foreground: oklch(0.12 0 0);
+  --border: oklch(0.3 0.02 250);
+  --input: oklch(0.18 0.01 250);
+  --ring: oklch(0.65 0.15 250);
+  --chart-1: oklch(0.65 0.15 250);
+  --chart-2: oklch(0.7 0.2 25);
+  --chart-3: oklch(0.7 0.12 280);
+  --chart-4: oklch(0.55 0.1 200);
+  --chart-5: oklch(0.8 0.1 160);
+  --sidebar: oklch(0.15 0.02 250);
+  --sidebar-foreground: oklch(0.98 0 0);
+  --sidebar-primary: oklch(0.65 0.15 250);
+  --sidebar-primary-foreground: oklch(0.12 0 0);
+  --sidebar-accent: oklch(0.7 0.12 280);
+  --sidebar-accent-foreground: oklch(0.12 0 0);
+  --sidebar-border: oklch(0.3 0.02 250);
+  --sidebar-ring: oklch(0.65 0.15 250);
 }
 
 @theme inline {
@@ -120,18 +121,373 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-size: 16px; /* BASE REDUCIDO LIGERAMENTE */
+    line-height: 1.6; /* MEJOR ESPACIADO */
   }
 }
 
-/* Estilos adicionales para MediLink+ */
-.medilink-gradient {
-  background: linear-gradient(135deg, oklch(0.45 0.15 142) 0%, oklch(0.55 0.12 270) 100%);
+/* ESTILOS ESPECÍFICOS PARA ADULTOS MAYORES */
+.senior-friendly {
+  font-size: 1rem; /* 16px base */
+  line-height: 1.6;
 }
 
-.medical-shadow {
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+.senior-friendly-lg {
+  font-size: 1.125rem; /* 18px */
+  line-height: 1.6;
 }
 
-.medical-shadow-lg {
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+.senior-friendly-xl {
+  font-size: 1.25rem; /* 20px */
+  line-height: 1.5;
+}
+
+.senior-friendly-2xl {
+  font-size: 1.5rem; /* 24px */
+  line-height: 1.4;
+}
+
+.senior-friendly-3xl {
+  font-size: 1.875rem; /* 30px */
+  line-height: 1.3;
+}
+
+/* MEJORAS DE ACCESIBILIDAD */
+button, 
+[role="button"], 
+a {
+  min-height: 60px; /* BOTONES MÁS GRANDES */
+  min-width: 60px;
+  font-weight: 600;
+}
+
+input, 
+select, 
+textarea {
+  font-size: 1.125rem; /* INPUTS MÁS GRANDES */
+  padding: 0.75rem 1rem;
+  border-width: 2px;
+}
+
+/* CONTRASTE MEJORADO */
+.high-contrast {
+  --primary: oklch(0.2 0.15 250);
+  --muted-foreground: oklch(0.2 0 0);
+  --border: oklch(0.3 0.02 250);
+}
+
+/* ANIMACIONES SUAVES */
+* {
+  transition: color 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+}
+
+/* FOCO VISIBLE MEJORADO */
+button:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible {
+  outline: 3px solid oklch(0.35 0.15 250);
+  outline-offset: 2px;
+}
+
+/* SCROLL SUAVE */
+html {
+  scroll-behavior: smooth;
+}
+
+/* MEJORAS PARA LECTURA */
+.readable-text {
+  max-width: 70ch;
+  text-align: justify;
+  text-justify: inter-word;
+}
+
+/* ============================================
+   PALETA FIJA 3 COLORES - TELEMEDICINA ADULTOS MAYORES
+   ============================================
+   Primario: #0B63D4 (Azul profesional)
+   Acento: #059669 (Verde accesible para éxito)
+   Neutro: #0F172A (Gris oscuro para texto)
+   Fondo: #FFFFFF (Blanco puro)
+   ============================================ */
+
+:root {
+  --app-primary: #0B63D4;
+  --app-accent: #059669;
+  --app-text: #0F172A;
+  --app-bg: #FFFFFF;
+  --app-bg-light: #F8FAFC;
+  --app-gray: #6B7280;
+  --app-border: #D1D5DB;
+}
+
+/* OVERRIDES DE TAILWIND A VARIABLES FIJAS */
+
+/* Azul primario (botones, enlaces, elementos interactivos) */
+.bg-blue-600,
+.bg-blue-700 {
+  background-color: var(--app-primary) !important;
+}
+
+.text-blue-600,
+.text-blue-700,
+.text-blue-900 {
+  color: var(--app-primary) !important;
+}
+
+.border-blue-200,
+.border-blue-300,
+.border-blue-600 {
+  border-color: var(--app-primary) !important;
+}
+
+.hover\:bg-blue-700:hover,
+.hover\:bg-blue-800:hover {
+  background-color: #0950A8 !important; /* Azul más oscuro en hover */
+}
+
+/* Verde para acciones de éxito/confirmación */
+.bg-green-600,
+.bg-green-700 {
+  background-color: var(--app-accent) !important;
+}
+
+.text-green-600,
+.text-green-700 {
+  color: var(--app-accent) !important;
+}
+
+.border-green-200,
+.border-green-300,
+.border-green-600 {
+  border-color: var(--app-accent) !important;
+}
+
+.hover\:bg-green-700:hover,
+.hover\:bg-green-800:hover {
+  background-color: #047857 !important; /* Verde más oscuro en hover */
+}
+
+/* Grises y neutrales */
+.bg-gray-50,
+.bg-gray-100 {
+  background-color: var(--app-bg-light) !important;
+}
+
+.bg-gray-200 {
+  background-color: #E5E7EB !important;
+}
+
+.bg-white {
+  background-color: var(--app-bg) !important;
+}
+
+.text-gray-600,
+.text-gray-700,
+.text-gray-800,
+.text-gray-900 {
+  color: var(--app-text) !important;
+}
+
+.text-gray-400,
+.text-gray-500 {
+  color: var(--app-gray) !important;
+}
+
+.border-gray-200,
+.border-gray-300 {
+  border-color: var(--app-border) !important;
+}
+
+/* Rojo para alertas/destructivas (mantener como está, solo ajustar si es necesario) */
+.bg-red-50 {
+  background-color: #FEF2F2 !important;
+}
+
+.bg-red-600 {
+  background-color: #DC2626 !important;
+}
+
+.text-red-600,
+.text-red-700,
+.text-red-800 {
+  color: #DC2626 !important;
+}
+
+.border-red-200 {
+  border-color: #FECACA !important;
+}
+
+/* Amarillo/Orange para advertencias */
+.bg-yellow-50 {
+  background-color: #FFFBEB !important;
+}
+
+.text-yellow-400 {
+  color: #FCD34D !important;
+}
+
+.bg-yellow-400,
+.bg-yellow-500,
+.bg-yellow-600 {
+  background-color: #FCD34D !important;
+}
+
+/* Púrpura y Naranja → mapear a primario (SIMPLIFICACIÓN) */
+.bg-purple-600,
+.bg-orange-600 {
+  background-color: var(--app-primary) !important;
+}
+
+.text-purple-600,
+.text-purple-700,
+.text-orange-600 {
+  color: var(--app-primary) !important;
+}
+
+.hover\:bg-purple-700:hover {
+  background-color: #0950A8 !important;
+}
+
+/* Fondo para modo alto contraste */
+.bg-gray-800,
+.bg-gray-900 {
+  background-color: #1F2937 !important;
+}
+
+.bg-blue-50 {
+  background-color: var(--app-bg-light) !important;
+}
+
+.bg-blue-800,
+.bg-blue-900 {
+  background-color: #0950A8 !important;
+}
+
+/* Incremento de tamaño de fuente global */
+html {
+  font-size: 16px;
+}
+
+body {
+  font-size: 1rem; /* 16px */
+  line-height: 1.6;
+  letter-spacing: 0.2px;
+}
+
+/* Aumentar tamaño de botones */
+button,
+[role="button"],
+.btn {
+  font-size: 1rem;
+  padding: 0.625rem 1.25rem;
+  min-height: 44px;
+}
+
+/* Aumentar tamaño de inputs y textareas */
+input,
+textarea,
+select {
+  font-size: 1rem;
+  padding: 0.625rem 0.875rem;
+  min-height: 44px;
+}
+
+/* Aumentar espaciado en tarjetas */
+.card,
+[role="region"] {
+  padding: 1.25rem;
+}
+
+/* Aumentar tamaño de iconos */
+svg {
+  min-width: 20px;
+  min-height: 20px;
+}
+
+/* Mejorar legibilidad de párrafos */
+p {
+  line-height: 1.6;
+  margin-bottom: 1rem;
+}
+
+/* Aumentar altura de línea en headings */
+h1, h2, h3, h4, h5, h6 {
+  line-height: 1.3;
+  letter-spacing: -0.2px;
+}
+
+/* Espaciado entre elementos - MEJORADO PARA RESPONSIVE */
+.gap-4 {
+  gap: 1.25rem;
+}
+
+.space-y-4 > * + * {
+  margin-top: 1.25rem;
+}
+
+/* Espaciado en formarios mobile-optimizado */
+@media (max-width: 640px) {
+  .space-y-4 {
+    --space: 1rem; /* Reducido en mobile */
+  }
+  
+  .space-y-4 > * + * {
+    margin-top: 1rem;
+  }
+  
+  .grid-cols-1 {
+    gap: 1rem;
+  }
+}
+
+/* Focus visible mejorado para accesibilidad */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[role="button"]:focus-visible {
+  outline: 3px solid var(--app-primary);
+  outline-offset: 2px;
+}
+
+/* Touch-friendly elements para mobile */
+@media (max-width: 768px) {
+  button,
+  [role="button"],
+  a,
+  input,
+  select,
+  textarea {
+    min-height: 44px; /* WCAG recommends 44-48px minimum */
+    min-width: 44px;
+  }
+  
+  /* Mejorar tapping en dropdowns y menus */
+  [role="menuitem"],
+  [role="option"],
+  [role="tab"] {
+    min-height: 44px;
+    padding: 0.75rem 1rem;
+  }
+  
+  /* Mejorar legibilidad en mobile */
+  body {
+    font-size: 1rem; /* 16px */
+  }
+  
+  h1 {
+    font-size: 1.5rem; /* 24px */
+    line-height: 1.3;
+  }
+  
+  h2 {
+    font-size: 1.25rem; /* 20px */
+    line-height: 1.35;
+  }
+  
+  h3 {
+    font-size: 1.125rem; /* 18px */
+    line-height: 1.4;
+  }
 }

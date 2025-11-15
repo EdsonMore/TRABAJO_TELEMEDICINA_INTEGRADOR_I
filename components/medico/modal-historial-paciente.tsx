@@ -74,6 +74,35 @@ export function ModalHistorialPaciente({
 }: ModalHistorialPacienteProps) {
   if (!historial) return null;
 
+  // Helpers para tolerar distintas formas del objeto paciente
+  const getPacienteNombre = () => {
+    return (
+      historial.paciente?.usuario?.nombre ||
+      historial.paciente?.nombre ||
+      historial.paciente?.usuario?.firstName ||
+      "Paciente"
+    );
+  };
+
+  const getPacienteApellido = () => {
+    return (
+      historial.paciente?.usuario?.apellido ||
+      historial.paciente?.apellido ||
+      historial.paciente?.usuario?.lastName ||
+      ""
+    );
+  };
+
+  const getPacienteContacto = () => {
+    return {
+      telefono:
+        historial.paciente?.usuario?.telefono || historial.paciente?.telefono || "",
+      email: historial.paciente?.usuario?.email || historial.paciente?.email || "",
+      dni:
+        historial.paciente?.informacion_personal?.dni || historial.paciente?.dni || "",
+    };
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent
@@ -100,8 +129,9 @@ export function ModalHistorialPaciente({
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="citas" className="w-full mt-4">
-          <TabsList className="grid w-full grid-cols-3">
+        <Tabs defaultValue="resumen" className="w-full mt-4">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="resumen">Resumen</TabsTrigger>
             <TabsTrigger value="citas">
               Citas ({historial.historial_citas?.length || 0})
             </TabsTrigger>
@@ -112,6 +142,73 @@ export function ModalHistorialPaciente({
               Exámenes ({historial.examenes_laboratorio?.length || 0})
             </TabsTrigger>
           </TabsList>
+
+          {/* Resumen Clínico */}
+          <TabsContent value="resumen" className="space-y-4 py-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="p-4 border rounded-lg bg-white shadow-sm">
+                <h4 className="font-semibold">Paciente</h4>
+                <p className="text-sm text-gray-700 mt-2">
+                  <strong>Nombre:</strong> {getPacienteNombre()} {getPacienteApellido()}
+                </p>
+                <p className="text-sm text-gray-700 mt-1">
+                  <strong>DNI:</strong> {getPacienteContacto().dni || "No especificado"}
+                </p>
+                <p className="text-sm text-gray-700 mt-1">
+                  <strong>Teléfono:</strong> {getPacienteContacto().telefono || "-"}
+                </p>
+                <p className="text-sm text-gray-700 mt-1">
+                  <strong>Email:</strong> {getPacienteContacto().email || "-"}
+                </p>
+              </div>
+
+              <div className="p-4 border rounded-lg bg-white shadow-sm md:col-span-2">
+                <h4 className="font-semibold">Resumen Clínico</h4>
+                <div className="mt-2 text-sm text-gray-700 space-y-2">
+                  <p>
+                    <strong>Alergias:</strong>{" "}
+                    {historial.paciente?.informacion_medica?.alergias || historial.paciente?.alergias || "No registra"}
+                  </p>
+                  <p>
+                    <strong>Enfermedades crónicas:</strong>{" "}
+                    {historial.paciente?.informacion_medica?.enfermedades_cronicas || historial.paciente?.enfermedades_cronicas || "No registra"}
+                  </p>
+                  <p>
+                    <strong>Última cita:</strong>{" "}
+                    {historial.paciente?.estadisticas_atencion?.ultima_cita || historial.paciente?.ultima_cita || "-"}
+                  </p>
+                </div>
+
+                <div className="mt-4 flex gap-2">
+                  <button
+                    className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm"
+                    onClick={() => {
+                      // Descargar JSON del historial como respaldo
+                      const blob = new Blob([JSON.stringify(historial, null, 2)], { type: "application/json" });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `historial_${historial.paciente?.id || "paciente"}.json`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    }}
+                  >
+                    Descargar JSON
+                  </button>
+
+                  <a
+                    className="px-3 py-2 bg-gray-100 text-gray-800 rounded-md text-sm border"
+                    href={`tel:${getPacienteContacto().telefono || ""}`}
+                    onClick={(e) => {
+                      if (!getPacienteContacto().telefono) e.preventDefault();
+                    }}
+                  >
+                    Llamar
+                  </a>
+                </div>
+              </div>
+            </div>
+          </TabsContent>
 
           {/* 🩵 Citas */}
           <TabsContent value="citas" className="space-y-4 py-4">

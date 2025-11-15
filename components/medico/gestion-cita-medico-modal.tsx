@@ -7,6 +7,13 @@ import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import {
+  puedeUnirseAVideollamada,
+  puedeCrearReceta,
+  puedeSolicitarExamenes,
+  getEtiquetaCita,
+  getDescripcionCita,
+} from "@/lib/cita-utils";
+import {
   Calendar,
   Clock,
   User,
@@ -26,6 +33,7 @@ import {
   Ruler,
   BadgeCheck,
 } from "lucide-react";
+import { ModalHistorialPaciente } from "./modal-historial-paciente";
 
 interface GestionCitaMedicoModalProps {
   isOpen: boolean;
@@ -93,6 +101,10 @@ export function GestionCitaMedicoModal({
     alergias: "",
   });
 
+  const [historialOpen, setHistorialOpen] = useState(false);
+  const [historialData, setHistorialData] = useState<any | null>(null);
+  const [loadingHistorial, setLoadingHistorial] = useState(false);
+
   const [citaData, setCitaData] = useState<CitaData>({
     id: "",
     fecha_cita: "",
@@ -135,6 +147,8 @@ export function GestionCitaMedicoModal({
   const getPacienteData = (cita: any): PacienteData => {
     if (cita.paciente) {
       return {
+        // si existe id del paciente, lo podemos mantener en el objeto
+        ...(cita.paciente.id ? { id: cita.paciente.id } : {}),
         nombre: cita.paciente.nombre || "",
         apellido: cita.paciente.apellido || "",
         dni: cita.paciente.dni || "",
@@ -165,6 +179,49 @@ export function GestionCitaMedicoModal({
         tipo_sangre: "",
         alergias: "",
       };
+    }
+  };
+
+  // Solicitar historial al backend usando la cita actual como comprobante de acceso
+  const verHistorialCompleto = async () => {
+    const pacienteId = cita?.paciente?.id || cita?.id_paciente || null;
+    const citaId = citaData.id || cita?.cita_id || null;
+
+    if (!pacienteId || !citaId) {
+      toast({
+        title: "No se puede obtener historial",
+        description: "Faltan datos de paciente o cita",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setLoadingHistorial(true);
+    try {
+      const res = await fetch(
+        `/api/medico/pacientes/${pacienteId}/historial?cita_id=${citaId}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Error" }));
+        throw new Error(err.error || "No autorizado");
+      }
+
+      const data = await res.json();
+      setHistorialData(data);
+      setHistorialOpen(true);
+    } catch (error: any) {
+      console.error("Error cargando historial:", error);
+      toast({
+        title: "Error al cargar historial",
+        description: error.message || "No se pudo obtener el historial",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingHistorial(false);
     }
   };
 
@@ -338,6 +395,20 @@ export function GestionCitaMedicoModal({
     return `${horaNum.toString().padStart(2, "0")}:00`;
   };
 
+  // Permiso local: permitir ver historial solo si la cita ya ocurrió y está dentro de los 7 días posteriores
+  const canViewHistorial = (() => {
+    try {
+      if (!citaData?.fecha_cita) return false;
+      const fecha = new Date(citaData.fecha_cita);
+      const ahora = new Date();
+      const diff = ahora.getTime() - fecha.getTime();
+      const sieteDiasMs = 7 * 24 * 60 * 60 * 1000;
+      return fecha <= ahora && diff <= sieteDiasMs;
+    } catch (e) {
+      return false;
+    }
+  })();
+
   const handleClose = () => {
     setFormData({
       diagnostico: "",
@@ -425,7 +496,7 @@ export function GestionCitaMedicoModal({
                     horas
                   </div>
                   <div>
-                    <strong>Tipo:</strong> {citaData.tipo_cita}
+                    <strong>Tipo:</strong> {getEtiquetaCita(citaData.tipo_cita)}
                   </div>
                 </div>
                 {citaData.motivo_consulta && (
@@ -468,6 +539,23 @@ focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                   <h4 className="font-semibold text-gray-800 mb-3 flex items-center">
                     <FileText className="w-5 h-5 mr-2 text-blue-600" />
                     Historial Médico
+                    <button
+                      type="button"
+                      onClick={verHistorialCompleto}
+                      disabled={loadingHistorial || !canViewHistorial}
+                      title={
+                        !canViewHistorial
+                          ? "Acceso disponible solo durante 7 días después de la cita"
+                          : undefined
+                      }
+                      className="ml-3 text-sm px-2 py-1 border rounded-md text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                    >
+                      {loadingHistorial
+                        ? "Cargando..."
+                        : canViewHistorial
+                        ? "Ver historial"
+                        : "Acceso expirado"}
+                    </button>
                   </h4>
 
                   {pacienteData.alergias ? (
@@ -784,6 +872,13 @@ focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
           </div>
         </div>
       </div>
+      {historialOpen && (
+        <ModalHistorialPaciente
+          isOpen={historialOpen}
+          onClose={() => setHistorialOpen(false)}
+          historial={historialData}
+        />
+      )}
     </div>
   );
 }
