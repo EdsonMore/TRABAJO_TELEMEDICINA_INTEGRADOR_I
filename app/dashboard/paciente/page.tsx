@@ -12,6 +12,7 @@ import DetallesCitaModal from "@/components/paciente/detalles-cita-modal";
 import { EditarPerfilModal } from "@/components/paciente/editar-perfil-modal";
 import { RecetasPacienteSection } from "@/components/paciente/recetas-paciente-section";
 import { ResultadosLaboratorioSection } from "@/components/paciente/resultados-laboratorio-section";
+import SeguimientoRecetasPaciente from "@/components/paciente/SeguimientoRecetasPaciente";
 import SeguimientoRecetas from "@/components/farmacia/seguimiento-recetas";
 import dynamic from "next/dynamic";
 
@@ -141,12 +142,33 @@ export default function DashboardPacientePage() {
     null
   );
 
-  // Estado para la navegación activa
+  // Estado para la navegación activa - Inicializar desde URL si es posible
   const [activeTab, setActiveTab] = useState("resumen");
 
   useEffect(() => {
     const cargarDatosDashboard = async () => {
       if (!token) return;
+
+      // Detectar parámetros de URL
+      if (typeof window !== "undefined") {
+        const params = new URLSearchParams(window.location.search);
+        const tabParam = params.get("tab");
+        const mensajeParam = params.get("mensaje");
+        
+        if (tabParam) {
+          setActiveTab(tabParam);
+        }
+        
+        // Mostrar notificación si hay mensaje
+        if (mensajeParam === "receta_enviada") {
+          try {
+            toast({
+              title: "Receta Enviada ✓",
+              description: "Tu receta ha sido enviada a la farmacia correctamente.",
+            });
+          } catch (e) {}
+        }
+      }
 
       setError(null);
       try {
@@ -778,10 +800,10 @@ export default function DashboardPacientePage() {
                 Recetas
               </TabsTrigger>
               <TabsTrigger
-                value="despacho"
+                value="seguimiento"
                 className="text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm"
               >
-                Despacho
+                📦 Seguimiento
               </TabsTrigger>
               <TabsTrigger
                 value="resultados"
@@ -1270,18 +1292,18 @@ export default function DashboardPacientePage() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="despacho">
+          <TabsContent value="seguimiento">
             <Card className="bg-white shadow-sm border-0 sm:border">
               <CardHeader>
                 <CardTitle className="text-base sm:text-lg">
-                  Seguimiento de Despacho
+                  📦 Seguimiento de Recetas
                 </CardTitle>
                 <CardDescription className="text-sm sm:text-base">
-                  Estado de tus recetas en proceso de despacho
+                  Estado de tus recetas en la farmacia
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <SeguimientoRecetas />
+                <SeguimientoRecetasPaciente />
               </CardContent>
             </Card>
           </TabsContent>

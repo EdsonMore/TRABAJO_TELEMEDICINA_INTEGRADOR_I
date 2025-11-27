@@ -303,33 +303,6 @@ export default function HomePage() {
               description="Aprende a usar nuestra plataforma en 5 minutos"
               highContrast={highContrast}
             />
-
-            {/* Floating elements */}
-            <div
-              className={`absolute -top-6 -left-6 rounded-2xl shadow-xl p-4 border-2 ${
-                highContrast
-                  ? "bg-gray-800 border-yellow-400 text-yellow-300"
-                  : "bg-white border-blue-300 text-blue-700"
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <Video className="w-6 h-6" />
-                <span className="text-lg font-bold">Consultas virtuales</span>
-              </div>
-            </div>
-
-            <div
-              className={`absolute -bottom-6 -right-6 rounded-2xl shadow-xl p-4 border-2 ${
-                highContrast
-                  ? "bg-gray-800 border-yellow-400 text-yellow-300"
-                  : "bg-white border-blue-300 text-blue-700"
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <Phone className="w-6 h-6" />
-                <span className="text-lg font-bold">App móvil disponible</span>
-              </div>
-            </div>
           </div>
         </div>
       </section>

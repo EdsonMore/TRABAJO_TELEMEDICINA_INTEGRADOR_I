@@ -5,6 +5,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/auth-context";
 import {
   Pill,
   Package,
@@ -63,6 +65,8 @@ interface Receta {
 }
 
 export default function RecetasRecibidas() {
+  const router = useRouter();
+  const { token } = useAuth();
   const [recetas, setRecetas] = useState<Receta[]>([]);
   const [cargando, setCargando] = useState(true);
   const [filtroEstado, setFiltroEstado] = useState("enviada");
@@ -80,14 +84,20 @@ export default function RecetasRecibidas() {
   });
 
   useEffect(() => {
-    cargarRecetas();
-  }, [filtroEstado, pagina]);
+    if (token) {
+      cargarRecetas();
+    }
+  }, [filtroEstado, pagina, busqueda, token]);
 
   const cargarRecetas = async () => {
     try {
       setCargando(true);
 
-      const token = localStorage.getItem("token");
+      if (!token) {
+        console.error("Token no disponible");
+        return;
+      }
+
       const params = new URLSearchParams({
         estado: filtroEstado,
         ...(busqueda && { busqueda }),
@@ -104,14 +114,21 @@ export default function RecetasRecibidas() {
       );
 
       if (!response.ok) {
-        throw new Error("Error al cargar recetas");
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || errorData.detalle || `Error ${response.status} al cargar recetas`);
       }
 
       const data = await response.json();
-      setRecetas(data.recetas);
-      setEstadisticas(data.estadisticas);
+      setRecetas(data.recetas || []);
+      setEstadisticas(data.estadisticas || {
+        enviadas: 0,
+        recibidas: 0,
+        rechazadas: 0,
+        dispensadas: 0,
+      });
     } catch (error) {
-      console.error("Error:", error);
+      console.error("Error cargando recetas:", error);
+      // No lancar alerta, solo registrar el error
     } finally {
       setCargando(false);
     }
@@ -129,7 +146,11 @@ export default function RecetasRecibidas() {
         return;
       }
 
-      const token = localStorage.getItem("token");
+      if (!token) {
+        alert("Token no disponible");
+        return;
+      }
+
       const response = await fetch(
         `/api/farmacia/recetas-recibidas/${recetaId}/responder`,
         {
@@ -147,16 +168,28 @@ export default function RecetasRecibidas() {
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.error);
+        throw new Error(error.error || "Error al responder receta");
       }
 
-      // Recargar recetas
-      cargarRecetas();
-      setMotivoRechazo("");
-      setMostrarDetalles(false);
-      setRecetaSeleccionada(null);
+      // Si fue aceptada, navegar a despacho de recetas
+      if (accion === "aceptar") {
+        // Recargar recetas primero
+        await cargarRecetas();
+        setMotivoRechazo("");
+        setMostrarDetalles(false);
+        setRecetaSeleccionada(null);
+        
+        // Navegar a despacho con la receta seleccionada
+        router.push(`/dashboard/farmacia/despacho?receta=${recetaId}`);
+      } else {
+        // Si fue rechazada, solo recargar
+        cargarRecetas();
+        setMotivoRechazo("");
+        setMostrarDetalles(false);
+        setRecetaSeleccionada(null);
+      }
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Error");
+      alert(error instanceof Error ? error.message : "Error al procesar receta");
     } finally {
       setProcesando(false);
     }
@@ -185,6 +218,11 @@ export default function RecetasRecibidas() {
       default:
         return "📋";
     }
+  };
+
+  const handleBusqueda = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setBusqueda(e.target.value);
+    setPagina(1); // Reiniciar paginación al buscar
   };
 
   return (
@@ -241,7 +279,7 @@ export default function RecetasRecibidas() {
       </div>
 
       {/* Controles de Filtro y Búsqueda */}
-      <Card className="p-4">
+      <Card className="p-4 space-y-4">
         <div className="flex gap-3 flex-wrap">
           {["enviada", "recibida", "rechazada", "dispensada"].map((estado) => (
             <Button
@@ -256,6 +294,17 @@ export default function RecetasRecibidas() {
               {obtenerIconoEstado(estado)} {estado.charAt(0).toUpperCase() + estado.slice(1)}
             </Button>
           ))}
+        </div>
+
+        {/* Input de búsqueda */}
+        <div className="relative">
+          <input
+            type="text"
+            placeholder="Buscar por código de receta o nombre de paciente..."
+            value={busqueda}
+            onChange={handleBusqueda}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
         </div>
       </Card>
 
@@ -278,7 +327,10 @@ export default function RecetasRecibidas() {
                   Disponibilidad
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">
-                  Fecha
+                  Enviada
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">
+                  Vence
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">
                   Estado
@@ -337,15 +389,17 @@ export default function RecetasRecibidas() {
                         </Badge>
                       ) : (
                         <Badge className="bg-orange-100 text-orange-800">
-                          ⚠️ Parcial
+                          ⚠️ {receta.medicamentos_disponibles}/{receta.medicamentos_totales}
                         </Badge>
                       )}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
-                      <div className="flex items-center gap-1">
-                        <Calendar size={14} />
-                        {new Date(receta.fecha_envio).toLocaleDateString("es-PE")}
-                      </div>
+                      {new Date(receta.fecha_envio).toLocaleDateString("es-PE")}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
+                      <span className={new Date(receta.fecha_vencimiento) < new Date() ? "text-red-600 font-semibold" : ""}>
+                        {new Date(receta.fecha_vencimiento).toLocaleDateString("es-PE")}
+                      </span>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <Badge className={obtenerColorEstado(receta.estado_envio)}>
@@ -425,6 +479,22 @@ export default function RecetasRecibidas() {
                   <p className="text-sm text-gray-600">
                     {recetaSeleccionada.paciente.telefono}
                   </p>
+                </div>
+
+                {/* Información de Fechas */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-purple-50 p-4 rounded-lg">
+                    <h3 className="font-semibold text-sm mb-1 text-purple-900">Emitida</h3>
+                    <p className="text-sm text-purple-700">
+                      {new Date(recetaSeleccionada.fecha_emision).toLocaleDateString("es-PE")}
+                    </p>
+                  </div>
+                  <div className="bg-orange-50 p-4 rounded-lg">
+                    <h3 className="font-semibold text-sm mb-1 text-orange-900">Vence</h3>
+                    <p className="text-sm text-orange-700">
+                      {new Date(recetaSeleccionada.fecha_vencimiento).toLocaleDateString("es-PE")}
+                    </p>
+                  </div>
                 </div>
 
                 {/* Medicamentos */}

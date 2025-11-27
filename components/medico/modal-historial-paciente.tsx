@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { FileText } from "lucide-react";
+import { FileText, AlertCircle } from "lucide-react";
 
 interface HistorialCita {
   id: string;
@@ -51,10 +51,35 @@ interface ExamenLaboratorio {
 
 interface PacienteHistorial {
   paciente: {
+    id?: string;
     usuario: {
       nombre: string;
       apellido: string;
+      email?: string;
+      telefono?: string;
     };
+    informacion_personal?: {
+      dni?: string;
+      edad?: number;
+      fecha_nacimiento?: string;
+    };
+    informacion_medica?: {
+      alergias?: string;
+      enfermedades_cronicas?: string;
+      tipo_sangre?: string;
+    };
+    estadisticas_atencion?: {
+      ultima_cita?: string;
+    };
+    // Propiedades de fallback (estructura alternativa)
+    nombre?: string;
+    apellido?: string;
+    email?: string;
+    telefono?: string;
+    dni?: string;
+    alergias?: string;
+    enfermedades_cronicas?: string;
+    ultima_cita?: string;
   };
   historial_citas: HistorialCita[];
   recetas: Receta[];
@@ -65,21 +90,76 @@ interface ModalHistorialPacienteProps {
   isOpen: boolean;
   onClose: () => void;
   historial: PacienteHistorial | null;
+  canAccess?: boolean;
+  accessDenialReason?: string;
+  citaFecha?: Date;
 }
 
 export function ModalHistorialPaciente({
   isOpen,
   onClose,
   historial,
+  canAccess = true,
+  accessDenialReason = "",
+  citaFecha,
 }: ModalHistorialPacienteProps) {
   if (!historial) return null;
+
+  // Si no tiene acceso, mostrar mensaje restrictivo
+  if (!canAccess) {
+    return (
+      <Dialog open={isOpen} onOpenChange={onClose}>
+        <DialogContent className="max-w-md rounded-2xl p-6">
+          <DialogHeader className="pb-4">
+            <DialogTitle className="flex items-center text-lg font-semibold text-red-600">
+              <AlertCircle className="w-5 h-5 mr-2" />
+              Acceso Restringido
+            </DialogTitle>
+            <DialogDescription className="text-gray-700 mt-2">
+              {accessDenialReason ||
+                "No tienes permiso para acceder al historial de este paciente en este momento."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {citaFecha && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 my-4">
+              <p className="text-sm text-amber-900">
+                <strong>ℹ️ Información:</strong>
+              </p>
+              <p className="text-sm text-amber-800 mt-1">
+                El acceso al historial está disponible desde la fecha de la cita hasta 7 días
+                después.
+              </p>
+              <p className="text-sm text-amber-800 mt-2">
+                <strong>Fecha de la cita:</strong>{" "}
+                {new Date(citaFecha).toLocaleDateString("es-PE", {
+                  weekday: "long",
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                })}
+              </p>
+            </div>
+          )}
+
+          <div className="flex gap-3 mt-6">
+            <button
+              onClick={onClose}
+              className="flex-1 px-4 py-2 bg-gray-100 text-gray-800 rounded-lg hover:bg-gray-200 transition font-medium text-sm"
+            >
+              Entendido
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   // Helpers para tolerar distintas formas del objeto paciente
   const getPacienteNombre = () => {
     return (
       historial.paciente?.usuario?.nombre ||
       historial.paciente?.nombre ||
-      historial.paciente?.usuario?.firstName ||
       "Paciente"
     );
   };
@@ -88,7 +168,6 @@ export function ModalHistorialPaciente({
     return (
       historial.paciente?.usuario?.apellido ||
       historial.paciente?.apellido ||
-      historial.paciente?.usuario?.lastName ||
       ""
     );
   };

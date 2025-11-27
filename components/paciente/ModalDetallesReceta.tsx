@@ -45,6 +45,13 @@ export default function ModalDetallesReceta({
   const [mostrarQR, setMostrarQR] = useState(false);
   const { token } = useAuth();
 
+  // Función para verificar si se puede enviar la receta
+  const puedeEnviar = (receta: any): boolean => {
+    // Solo se puede enviar si está activa y no fue enviada aún
+    const estadoEnvio = receta.estado_envio || "no_enviada";
+    return receta.estado === "activa" && estadoEnvio === "no_enviada";
+  };
+
   // Normalizar receta y evitar crashes si la estructura es distinta
   const r = useMemo(() => {
     if (!receta) return null;
@@ -74,6 +81,7 @@ export default function ModalDetallesReceta({
       observaciones_generales: receta.observaciones_generales || receta.observaciones || "",
       medicamentos,
       estado: receta.estado || "desconocido",
+      estado_envio: receta.estado_envio || "no_enviada",
       fecha_emision: receta.fecha_emision || receta.created_at || null,
       fecha_vencimiento: receta.fecha_vencimiento || receta.vencimiento || null,
       fecha_dispensacion: receta.fecha_dispensacion || receta.dispensacion_fecha || null,
@@ -255,8 +263,17 @@ export default function ModalDetallesReceta({
 
                   {/* Enviar a farmacia desde el modal si se provee callback */}
                   {onEnviar && (
-                    <Button className="w-full bg-indigo-600 hover:bg-indigo-700 mt-2" onClick={() => onEnviar(String(r.id || ""))}>
-                      🚚 Enviar a farmacia
+                    <Button 
+                      className={`w-full mt-2 ${
+                        puedeEnviar(r)
+                          ? "bg-indigo-600 hover:bg-indigo-700"
+                          : "bg-gray-400 cursor-not-allowed opacity-50"
+                      }`}
+                      onClick={() => onEnviar(String(r.id || ""))}
+                      disabled={!puedeEnviar(r)}
+                      title={!puedeEnviar(r) ? "Esta receta ya fue enviada a una farmacia" : "Enviar a farmacia"}
+                    >
+                      🚚 {puedeEnviar(r) ? "Enviar a farmacia" : "Ya fue enviada"}
                     </Button>
                   )}
 

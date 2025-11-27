@@ -132,12 +132,13 @@ export const useWebRTC = (roomId, userData) => {
     if (isCleaningUp.current) return;
 
     try {
-      // CORRECCIÓN DEFINITIVA: Usar puerto 3002 para WebSocket
+      // CORRECCIÓN: Usar el mismo puerto que tu aplicación Next.js
       let wsUrl;
 
       if (process.env.NODE_ENV === "development") {
-        // En desarrollo, conectar al puerto 3002 donde está el WebSocket Server
-        wsUrl = "ws://localhost:3002";
+        // En desarrollo, conectar al mismo puerto de Next.js (normalmente 3000 o 3001)
+        const port = process.env.NEXT_PUBLIC_WS_PORT || "3002";
+        wsUrl = `ws://localhost:${port}`;
       } else {
         // En producción, usar el mismo host
         const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -150,7 +151,7 @@ export const useWebRTC = (roomId, userData) => {
       const websocket = new WebSocket(wsUrl);
 
       websocket.onopen = () => {
-        console.log("✅ CONECTADO al WebSocket Server en puerto 3002");
+        console.log("✅ CONECTADO al WebSocket Server");
         setIsConnected(true);
         setConnectionStatus("connected");
         wsRef.current = websocket;
@@ -217,10 +218,14 @@ export const useWebRTC = (roomId, userData) => {
       };
 
       websocket.onerror = (error) => {
-        console.error("❌ WebSocket error:", error);
+        console.error("❌ WebSocket error event triggered");
+        console.error("WebSocket error details:", {
+          event: error,
+          readyState: websocket.readyState,
+          url: websocket.url,
+        });
         // No crear error duplicado, el onclose manejará la reconexión
       };
-
       setWs(websocket);
       return websocket;
     } catch (error) {
@@ -794,6 +799,22 @@ export const useWebRTC = (roomId, userData) => {
       };
     }
   }, [roomId, userData, connectWebSocket]);
+
+  // En hooks/useWebRTC.js, agrega este efecto
+  useEffect(() => {
+    // Manejar errores de permisos de medios
+    const handleMediaError = (error) => {
+      console.error("Error de medios:", error);
+      addError(new Error(`Error de cámara/micrófono: ${error.message}`));
+    };
+
+    // Escuchar errores globales de medios
+    window.addEventListener("mediaerror", handleMediaError);
+
+    return () => {
+      window.removeEventListener("mediaerror", handleMediaError);
+    };
+  }, [addError]);
 
   // Reset cleanup flag cuando se monta de nuevo
   useEffect(() => {

@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import {
   Card,
@@ -21,6 +22,8 @@ import {
   LogOut,
   Search,
   Plus,
+  Warehouse,
+  ClipboardList,
 } from "lucide-react";
 
 // Componentes modulares
@@ -53,9 +56,21 @@ interface DashboardStats {
 
 export default function DashboardFarmacia() {
   const { usuario, logout, token } = useAuth();
+  const searchParams = useSearchParams();
   const [moduloActivo, setModuloActivo] = useState<string>("dashboard");
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Detectar si viene de RecetasRecibidas con una receta específica
+    if (typeof window !== "undefined") {
+      const recetaParam = searchParams?.get("receta");
+      if (recetaParam) {
+        // Ir directamente al despacho con la receta especificada
+        setModuloActivo("despacho");
+      }
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     cargarDashboardStats();
@@ -101,8 +116,15 @@ export default function DashboardFarmacia() {
 
   // Renderizar módulos específicos
   if (moduloActivo === "recetas-recibidas") return <RecetasRecibidas />;
-  if (moduloActivo === "despacho")
-    return <DespachoRecetas onVolver={() => setModuloActivo("dashboard")} />;
+  if (moduloActivo === "despacho") {
+    const recetaParam = searchParams?.get("receta");
+    return (
+      <DespachoRecetas 
+        recetaPreseleccionada={recetaParam}
+        onVolver={() => setModuloActivo("dashboard")} 
+      />
+    );
+  }
   if (moduloActivo === "inventario")
     return <GestionInventario onVolver={() => setModuloActivo("dashboard")} />;
   if (moduloActivo === "alertas")
@@ -191,7 +213,7 @@ export default function DashboardFarmacia() {
             <>
               {/* Estadísticas Principales */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <Card className="bg-white border-0 sm:border">
+                <Card className="bg-white border-0 sm:border shadow-sm hover:shadow-md transition-shadow">
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-sm font-semibold">
@@ -210,7 +232,7 @@ export default function DashboardFarmacia() {
                   </CardContent>
                 </Card>
 
-                <Card className="bg-white border-0 sm:border">
+                <Card className="bg-white border-0 sm:border shadow-sm hover:shadow-md transition-shadow">
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-sm font-semibold">
@@ -234,7 +256,7 @@ export default function DashboardFarmacia() {
                   </CardContent>
                 </Card>
 
-                <Card className="bg-white border-0 sm:border">
+                <Card className="bg-white border-0 sm:border shadow-sm hover:shadow-md transition-shadow">
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-sm font-semibold">
@@ -253,7 +275,7 @@ export default function DashboardFarmacia() {
                   </CardContent>
                 </Card>
 
-                <Card className="bg-white border-0 sm:border">
+                <Card className="bg-white border-0 sm:border shadow-sm hover:shadow-md transition-shadow">
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-sm font-semibold">
@@ -273,54 +295,100 @@ export default function DashboardFarmacia() {
                 </Card>
               </div>
 
-              {/* Módulos Principales */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Módulos Principales - Grid Responsivo Mejorado */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {/* Recetas Recibidas */}
                 <Card
-                  className="cursor-pointer transition-all hover:shadow-lg"
+                  className="cursor-pointer transition-all hover:shadow-lg border-0 sm:border shadow-sm"
                   onClick={() => setModuloActivo("recetas-recibidas")}
                 >
                   <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Pill className="w-5 h-5 text-purple-600" />
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <ClipboardList className="w-5 h-5 text-purple-600" />
                       Recetas Recibidas
                     </CardTitle>
-                    <CardDescription>
+                    <CardDescription className="text-sm">
                       Gestionar recetas enviadas por pacientes
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <Button className="w-full bg-purple-600 hover:bg-purple-700">
+                    <Button className="w-full bg-purple-600 hover:bg-purple-700 h-10">
                       Ver Recetas Recibidas
                     </Button>
                   </CardContent>
                 </Card>
 
+                {/* Despacho de Recetas */}
                 <Card
-                  className="cursor-pointer transition-all hover:shadow-lg"
+                  className="cursor-pointer transition-all hover:shadow-lg border-0 sm:border shadow-sm"
                   onClick={() => setModuloActivo("despacho")}
                 >
                   <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
+                    <CardTitle className="flex items-center gap-2 text-base">
                       <Package className="w-5 h-5 text-green-600" />
                       Despacho de Recetas
                     </CardTitle>
-                    <CardDescription>
+                    <CardDescription className="text-sm">
                       Procesar y despachar recetas a pacientes
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <Button className="w-full bg-green-600 hover:bg-green-700">
+                    <Button className="w-full bg-green-600 hover:bg-green-700 h-10">
                       Ir a Despacho
                     </Button>
+                  </CardContent>
+                </Card>
+
+                {/* Gestión de Inventario - NUEVA TARJETA */}
+                <Card
+                  className="cursor-pointer transition-all hover:shadow-lg border-0 sm:border shadow-sm"
+                  onClick={() => setModuloActivo("inventario")}
+                >
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Warehouse className="w-5 h-5 text-blue-600" />
+                      Gestión de Inventario
+                    </CardTitle>
+                    <CardDescription className="text-sm">
+                      Administrar stock y medicamentos disponibles
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-gray-600">Total items:</span>
+                        <span className="font-semibold">
+                          {stats?.inventario.totalItems || 0}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-gray-600">Stock bajo:</span>
+                        <Badge
+                          variant="outline"
+                          className="bg-yellow-50 text-xs"
+                        >
+                          {stats?.inventario.stockBajo || 0}
+                        </Badge>
+                      </div>
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-gray-600">Agotados:</span>
+                        <Badge variant="outline" className="bg-red-50 text-xs">
+                          {stats?.inventario.agotados || 0}
+                        </Badge>
+                      </div>
+                      <Button className="w-full bg-blue-600 hover:bg-blue-700 h-10 mt-2">
+                        Gestionar Inventario
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               </div>
 
               {/* Módulos Secundarios */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <Card>
+                <Card className="border-0 sm:border shadow-sm">
                   <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
+                    <CardTitle className="flex items-center gap-2 text-base">
                       <BarChart3 className="w-5 h-5 text-purple-600" />
                       Reportes y Análisis
                     </CardTitle>
@@ -339,20 +407,26 @@ export default function DashboardFarmacia() {
                           S/ {(stats?.ventas.totalHoy || 0).toLocaleString()}
                         </span>
                       </div>
+                      <div className="flex justify-between">
+                        <span>Recetas pendientes:</span>
+                        <span className="font-semibold">
+                          {stats?.recetas.pendientes || 0}
+                        </span>
+                      </div>
                     </div>
                     <Button
                       variant="outline"
-                      className="w-full mt-4"
+                      className="w-full mt-4 h-10"
                       onClick={() => setModuloActivo("reportes")}
                     >
-                      Ver Reportes
+                      Ver Reportes Detallados
                     </Button>
                   </CardContent>
                 </Card>
 
-                <Card>
+                <Card className="border-0 sm:border shadow-sm">
                   <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
+                    <CardTitle className="flex items-center gap-2 text-base">
                       <AlertCircle className="w-5 h-5 text-orange-600" />
                       Sistema de Alertas
                     </CardTitle>
@@ -371,14 +445,67 @@ export default function DashboardFarmacia() {
                           {stats?.alertas.porVencer || 0}
                         </span>
                       </div>
+                      <div className="flex justify-between">
+                        <span>Stock bajo:</span>
+                        <span className="font-semibold">
+                          {stats?.inventario.stockBajo || 0}
+                        </span>
+                      </div>
                     </div>
                     <Button
                       variant="outline"
-                      className="w-full mt-4"
+                      className="w-full mt-4 h-10"
                       onClick={() => setModuloActivo("alertas")}
                     >
-                      Ver Alertas
+                      Ver Alertas Completas
                     </Button>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Acciones Rápidas para Móviles */}
+              <div className="lg:hidden">
+                <Card className="border-0 sm:border shadow-sm">
+                  <CardHeader>
+                    <CardTitle className="text-base">
+                      Acciones Rápidas
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 gap-3">
+                      <Button
+                        variant="outline"
+                        className="h-14 flex flex-col bg-white hover:bg-gray-50 border-2"
+                        onClick={() => setModuloActivo("recetas-recibidas")}
+                      >
+                        <ClipboardList className="w-5 h-5 mb-1 text-purple-600" />
+                        <span className="text-xs">Recetas</span>
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="h-14 flex flex-col bg-white hover:bg-gray-50 border-2"
+                        onClick={() => setModuloActivo("despacho")}
+                      >
+                        <Package className="w-5 h-5 mb-1 text-green-600" />
+                        <span className="text-xs">Despacho</span>
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="h-14 flex flex-col bg-white hover:bg-gray-50 border-2"
+                        onClick={() => setModuloActivo("inventario")}
+                      >
+                        <Warehouse className="w-5 h-5 mb-1 text-blue-600" />
+                        <span className="text-xs">Inventario</span>
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="h-14 flex flex-col bg-white hover:bg-gray-50 border-2"
+                        onClick={() => setModuloActivo("reportes")}
+                      >
+                        <BarChart3 className="w-5 h-5 mb-1 text-purple-600" />
+                        <span className="text-xs">Reportes</span>
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               </div>

@@ -249,6 +249,12 @@ export default function GestionCitasPage() {
           onCitaActualizada={() => window.location.reload()}
           onVerPerfil={verPerfilPaciente}
           onVerHistorial={verHistorialPaciente}
+          onCrearReceta={() => {
+            setDetallesCitaOpen(false);
+            if (citaSeleccionada) {
+              crearRecetaDesdeCita(citaSeleccionada);
+            }
+          }}
         />
 
         <ModalCrearReceta

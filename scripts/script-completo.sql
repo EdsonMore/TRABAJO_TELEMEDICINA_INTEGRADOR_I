@@ -1,5 +1,5 @@
 -- =====================================================
--- SCRIPT DE BASE DE DATOS - SISTEMA DE SALUD
+-- SCRIPT COMPLETO UNIFICADO - SISTEMA DE SALUD
 -- ORDEN CORRECTO DE EJECUCIÓN PARA POSTGRESQL
 -- =====================================================
 
@@ -292,7 +292,7 @@ CREATE TABLE sesiones_telemedicina (
 CREATE TABLE recetas (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     id_cita UUID NOT NULL REFERENCES citas(id),
-    codigo_receta VARCHAR(20) UNIQUE NOT NULL,
+    codigo_receta VARCHAR(50) UNIQUE NOT NULL,
     diagnostico_principal_id INTEGER REFERENCES codigos_cie10(id),
     diagnostico_principal_texto TEXT,
     diagnosticos_secundarios JSONB,
@@ -497,34 +497,89 @@ INSERT INTO especialidades (nombre, descripcion) VALUES
 ('Oftalmología', 'Enfermedades de los ojos');
 
 -- 10.3 Insertar códigos CIE-10 de ejemplo
-INSERT INTO codigos_cie10 (codigo, nombre, categoria, capitulo) VALUES
-('I10', 'Hipertensión esencial (primaria)', 'Enfermedades cardiovasculares', 'IX'),
-('E11.9', 'Diabetes mellitus tipo 2, sin complicaciones', 'Enfermedades endocrinas', 'IV'),
-('J06.9', 'Infección aguda de las vías respiratorias superiores, no especificada', 'Enfermedades respiratorias', 'X'),
-('K21.9', 'Enfermedad por reflujo gastroesofágico, sin esofagitis', 'Enfermedades digestivas', 'XI'),
-('M54.5', 'Lumbalgia, no especificada', 'Enfermedades musculoesqueléticas', 'XIII'),
-('F41.1', 'Trastorno de ansiedad generalizada', 'Trastornos mentales', 'V'),
-('N39.0', 'Infección de vías urinarias, sitio no especificado', 'Enfermedades genitourinarias', 'XIV');
+INSERT INTO codigos_cie10 (codigo, nombre, descripcion, categoria, capitulo) VALUES
+('I10', 'Hipertensión esencial (primaria)', 'Presión arterial elevada sin causa identificable', 'Enfermedades cardiovasculares', 'IX'),
+('E11.9', 'Diabetes mellitus tipo 2, sin complicaciones', 'Trastorno metabólico de glucosa', 'Enfermedades endocrinas', 'IV'),
+('J06.9', 'Infección aguda de las vías respiratorias superiores', 'Resfriado común, faringitis aguda', 'Enfermedades respiratorias', 'X'),
+('K21.9', 'Enfermedad por reflujo gastroesofágico', 'Acidez estomacal crónica', 'Enfermedades digestivas', 'XI'),
+('M54.5', 'Lumbalgia, no especificada', 'Dolor en la parte baja de la espalda', 'Enfermedades musculoesqueléticas', 'XIII'),
+('F41.1', 'Trastorno de ansiedad generalizada', 'Ansiedad persistente y excesiva', 'Trastornos mentales', 'V'),
+('N39.0', 'Infección de vías urinarias', 'Infección en tracto urinario', 'Enfermedades genitourinarias', 'XIV'),
+('I25.1', 'Enfermedad ateroesclerótica del corazón', 'Enfermedad coronaria arteriosclerótica', 'Enfermedades cardiovasculares', 'IX'),
+('E04.9', 'Bocio no tóxico, no especificado', 'Agrandamiento de la glándula tiroides', 'Enfermedades endocrinas', 'IV'),
+('J45.9', 'Asma, no especificada', 'Enfermedad crónica de las vías respiratorias', 'Enfermedades respiratorias', 'X'),
+('K29.7', 'Gastritis, no especificada', 'Inflamación del revestimiento del estómago', 'Enfermedades digestivas', 'XI'),
+('M17.9', 'Gonartrosis [artrosis de rodilla]', 'Artrosis de rodilla no especificada', 'Enfermedades musculoesqueléticas', 'XIII'),
+('F32.9', 'Episodio depresivo, no especificado', 'Trastorno del estado de ánimo', 'Trastornos mentales', 'V'),
+('N20.0', 'Cálculo del riñón', 'Cálculo renal, nefrolitiasis', 'Enfermedades genitourinarias', 'XIV'),
+('I48.9', 'Fibrilación auricular, no especificada', 'Arritmia cardíaca común', 'Enfermedades cardiovasculares', 'IX'),
+('E66.9', 'Obesidad, no especificada', 'Exceso de grasa corporal', 'Enfermedades endocrinas', 'IV'),
+('J18.9', 'Neumonía, no especificada', 'Infección pulmonar', 'Enfermedades respiratorias', 'X'),
+('K57.9', 'Enfermedad diverticular del intestino', 'Diverticulosis no especificada', 'Enfermedades digestivas', 'XI'),
+('M79.1', 'Mialgia', 'Dolor muscular no especificado', 'Enfermedades musculoesqueléticas', 'XIII'),
+('G43.9', 'Migraña, no especificada', 'Dolor de cabeza intenso', 'Enfermedades del sistema nervioso', 'VI');
 
--- 10.4 Insertar medicamentos de ejemplo
+-- 10.4 Insertar medicamentos de ejemplo (CON CÓDIGOS ÚNICOS)
 INSERT INTO medicamentos (codigo_digemid, nombre_comercial, nombre_generico, forma_farmaceutica, concentracion, laboratorio, principio_activo, categoria_terapeutica) VALUES
+-- Medicamentos originales (1-7)
 ('DIG-123456', 'Losartán Potásico', 'Losartán', 'Tabletas', '50 mg', 'Genfar', 'Losartán', 'Antihipertensivo'),
 ('DIG-789012', 'Metformina', 'Metformina', 'Tabletas', '850 mg', 'Merck', 'Metformina', 'Antidiabético'),
 ('DIG-345678', 'Amoxicilina', 'Amoxicilina', 'Cápsulas', '500 mg', 'Bayer', 'Amoxicilina', 'Antibiótico'),
 ('DIG-901234', 'Omeprazol', 'Omeprazol', 'Cápsulas', '20 mg', 'Pfizer', 'Omeprazol', 'Antiulceroso'),
 ('DIG-567890', 'Atorvastatina', 'Atorvastatina', 'Tabletas', '20 mg', 'Roemmers', 'Atorvastatina', 'Hipolipemiante'),
 ('DIG-112233', 'Ibuprofeno', 'Ibuprofeno', 'Tabletas', '400 mg', 'Mintlab', 'Ibuprofeno', 'Antiinflamatorio'),
-('DIG-445566', 'Sertralina', 'Sertralina', 'Tabletas', '50 mg', 'Pharmax', 'Sertralina', 'Antidepresivo');
+('DIG-445566', 'Sertralina', 'Sertralina', 'Tabletas', '50 mg', 'Pharmax', 'Sertralina', 'Antidepresivo'),
 
--- 10.5 Insertar tratamientos recomendados
+-- Nuevos medicamentos (8-27) con códigos ÚNICOS CORREGIDOS
+('DIG-998877', 'Amlodipino', 'Amlodipino', 'Tabletas', '5 mg', 'Pfizer', 'Amlodipino besilato', 'Antihipertensivo'),
+('DIG-887766', 'Glibenclamida', 'Glibenclamida', 'Tabletas', '5 mg', 'Bayer', 'Glibenclamida', 'Antidiabético'),
+('DIG-776655', 'Azitromicina', 'Azitromicina', 'Tabletas', '500 mg', 'Pfizer', 'Azitromicina', 'Antibiótico'),
+('DIG-665544', 'Pantoprazol', 'Pantoprazol', 'Tabletas', '40 mg', 'Takeda', 'Pantoprazol', 'Antiulceroso'),
+('DIG-554433', 'Diazepam', 'Diazepam', 'Tabletas', '10 mg', 'Roche', 'Diazepam', 'Ansiolítico'),
+('DIG-443322', 'Nitrofurantoína', 'Nitrofurantoína', 'Cápsulas', '100 mg', 'Procter & Gamble', 'Nitrofurantoína', 'Antibiótico urinario'),
+('DIG-332211', 'Atorvastatina Forte', 'Atorvastatina', 'Tabletas', '40 mg', 'Pfizer', 'Atorvastatina cálcica', 'Hipolipemiante'),
+('DIG-221100', 'Levotiroxina', 'Levotiroxina', 'Tabletas', '100 mcg', 'Merck', 'Levotiroxina sódica', 'Hormona tiroidea'),
+('DIG-110099', 'Salbutamol', 'Salbutamol', 'Inhalador', '100 mcg', 'GSK', 'Salbutamol', 'Broncodilatador'),
+('DIG-009988', 'Ibuprofeno Forte', 'Ibuprofeno', 'Tabletas', '600 mg', 'Bayer', 'Ibuprofeno', 'Antiinflamatorio'),
+('DIG-119977', 'Sertralina Plus', 'Sertralina', 'Tabletas', '100 mg', 'Pfizer', 'Sertralina clorhidrato', 'Antidepresivo'),
+('DIG-228866', 'Tamsulosina', 'Tamsulosina', 'Cápsulas', '0.4 mg', 'Astellas', 'Tamsulosina clorhidrato', 'Relajante prostático'),
+('DIG-337755', 'Digoxina', 'Digoxina', 'Tabletas', '0.25 mg', 'Roche', 'Digoxina', 'Cardiotónico'),
+('DIG-446644', 'Orlistat', 'Orlistat', 'Cápsulas', '120 mg', 'GSK', 'Orlistat', 'Antiobesidad'),
+('DIG-555533', 'Amoxicilina/Clavulanato', 'Amoxicilina/Ácido clavulánico', 'Tabletas', '875/125 mg', 'GSK', 'Amoxicilina/Clavulanato', 'Antibiótico'),
+('DIG-664422', 'Mesalazina', 'Mesalazina', 'Tabletas', '800 mg', 'Ferring', 'Mesalazina', 'Antiinflamatorio intestinal'),
+('DIG-773311', 'Naproxeno', 'Naproxeno', 'Tabletas', '500 mg', 'Roche', 'Naproxeno sódico', 'Antiinflamatorio'),
+('DIG-882200', 'Sumatriptán', 'Sumatriptán', 'Tabletas', '50 mg', 'GSK', 'Sumatriptán succinato', 'Antimigrañoso'),
+('DIG-991199', 'Metformina XR', 'Metformina', 'Tabletas', '1000 mg', 'Merck', 'Metformina clorhidrato', 'Antidiabético'),
+('DIG-100088', 'Losartán Plus', 'Losartán', 'Tabletas', '100 mg', 'Merck', 'Losartán potásico', 'Antihipertensivo');
+
+-- 10.5 Insertar tratamientos recomendados (CORREGIDO con IDs correctos)
 INSERT INTO tratamientos_recomendados (codigo_cie10_id, medicamento_id, dosis_recomendada, duracion_tratamiento, linea_tratamiento, evidencia_nivel) VALUES
-(1, 1, '1 tableta cada 24 horas', 'Tratamiento crónico', 1, 'A'),
-(2, 2, '1 tableta cada 12 horas con alimentos', 'Tratamiento crónico', 1, 'A'),
-(3, 3, '1 cápsula cada 8 horas', '7-10 días', 1, 'A'),
-(4, 4, '1 cápsula cada 24 horas antes del desayuno', '4-8 semanas', 1, 'A'),
-(1, 5, '1 tableta cada 24 horas', 'Tratamiento crónico', 2, 'A'),
-(6, 7, '1 tableta cada 24 horas', '6-12 meses', 1, 'A'),
-(5, 6, '1 tableta cada 8 horas según dolor', '3-7 días', 1, 'A');
+-- Tratamientos para códigos CIE-10 1-7
+(1, 1, '1 tableta cada 24 horas', 'Tratamiento crónico', 1, 'A'),  -- Hipertensión -> Losartán
+(2, 2, '1 tableta cada 12 horas con alimentos', 'Tratamiento crónico', 1, 'A'),  -- Diabetes -> Metformina
+(3, 3, '1 cápsula cada 8 horas', '7-10 días', 1, 'A'),  -- Infección respiratoria -> Amoxicilina
+(4, 4, '1 cápsula cada 24 horas antes del desayuno', '4-8 semanas', 1, 'A'),  -- Reflujo -> Omeprazol
+(5, 6, '1 tableta cada 8 horas según dolor', '3-7 días', 1, 'A'),  -- Lumbalgia -> Ibuprofeno
+(6, 7, '1 tableta cada 24 horas', '6-12 meses', 1, 'A'),  -- Ansiedad -> Sertralina
+(7, 13, '1 cápsula cada 6 horas', '7 días', 1, 'A'),  -- Infección urinaria -> Nitrofurantoína
+
+-- Tratamientos para códigos CIE-10 8-14
+(8, 8, '1 tableta cada 24 horas', 'Tratamiento crónico', 1, 'A'),  -- Cardiopatía -> Amlodipino
+(9, 15, '1 tableta cada 24 horas en ayunas', 'Tratamiento crónico', 1, 'A'),  -- Bocio -> Levotiroxina
+(10, 16, '1-2 inhalaciones cada 4-6 horas', 'Según necesidad', 1, 'A'),  -- Asma -> Salbutamol
+(11, 11, '1 tableta cada 24 horas', '4-8 semanas', 1, 'A'),  -- Gastritis -> Pantoprazol
+(12, 17, '1 tableta cada 8-12 horas', 'Según dolor', 1, 'A'),  -- Artrosis rodilla -> Ibuprofeno Forte
+(13, 18, '1 tableta cada 24 horas', '6-12 meses', 1, 'A'),  -- Depresión -> Sertralina Plus
+(14, 17, '1 tableta cada 8 horas', '3-5 días', 1, 'A'),  -- Cálculo renal -> Ibuprofeno Forte (analgésico)
+
+-- Tratamientos para códigos CIE-10 15-20
+(15, 20, '1 tableta cada 24 horas', 'Tratamiento crónico', 1, 'A'),  -- Fibrilación -> Digoxina
+(16, 21, '1 cápsula con cada comida principal', '3-6 meses', 1, 'A'),  -- Obesidad -> Orlistat
+(17, 22, '1 tableta cada 12 horas', '7-10 días', 1, 'A'),  -- Neumonía -> Amoxicilina/Clavulanato
+(18, 23, '1 tableta cada 8 horas', 'Indefinido', 1, 'A'),  -- Enfermedad diverticular -> Mesalazina
+(19, 24, '1 tableta cada 8-12 horas', '3-7 días', 1, 'A'),  -- Mialgia -> Naproxeno
+(20, 25, '1 tableta al inicio del dolor', 'Según necesidad', 1, 'A');  -- Migraña -> Sumatriptán
+
 
 -- 10.6 Insertar tipos de exámenes comunes
 INSERT INTO tipos_examenes (nombre, categoria, descripcion, preparacion_requerida, tiempo_resultado_horas, precio_referencial) VALUES
@@ -668,79 +723,252 @@ VALUES
 );
 
 -- 11.6 INSERTAR INVENTARIO DE FARMACIA (Ejemplos de stock)
-
-INSERT INTO inventario_farmacia (id_farmacia, id_medicamento, stock_actual, stock_minimo, precio_venta, fecha_vencimiento, lote, disponible)
-VALUES 
+INSERT INTO inventario_farmacia (id_farmacia, id_medicamento, stock_actual, stock_minimo, precio_venta, fecha_vencimiento, lote, disponible) VALUES
+-- Medicamentos 1-10 (Originales + Nuevos)
 (
     (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
-    1, -- Losartán
-    150,
-    20,
-    12.50,
-    '2026-12-31',
-    'LOT-2024-001',
-    true
+    1, -- Losartán Potásico
+    150, 20, 12.50, '2026-12-31', 'LOT-2024-001', true
 ),
 (
     (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
     2, -- Metformina
-    200,
-    30,
-    8.00,
-    '2026-10-31',
-    'LOT-2024-002',
-    true
+    200, 30, 8.00, '2026-10-31', 'LOT-2024-002', true
 ),
 (
     (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
     3, -- Amoxicilina
-    100,
-    25,
-    15.00,
-    '2025-08-31',
-    'LOT-2024-003',
-    true
+    100, 25, 15.00, '2025-08-31', 'LOT-2024-003', true
 ),
 (
     (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
     4, -- Omeprazol
-    180,
-    30,
-    10.50,
-    '2026-11-30',
-    'LOT-2024-004',
-    true
+    180, 30, 10.50, '2026-11-30', 'LOT-2024-004', true
 ),
 (
     (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
     5, -- Atorvastatina
-    120,
-    20,
-    18.00,
-    '2026-09-30',
-    'LOT-2024-005',
-    true
+    120, 20, 18.00, '2026-09-30', 'LOT-2024-005', true
 ),
 (
     (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
-    6, -- Ibuprofeno
-    250,
-    40,
-    5.50,
-    '2027-03-31',
-    'LOT-2024-006',
-    true
+    6, -- Ibuprofeno 400mg
+    250, 40, 5.50, '2027-03-31', 'LOT-2024-006', true
 ),
 (
     (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
-    7, -- Sertralina
-    80,
-    15,
-    22.00,
-    '2026-07-31',
-    'LOT-2024-007',
-    true
+    7, -- Sertralina 50mg
+    80, 15, 22.00, '2026-07-31', 'LOT-2024-007', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    8, -- Amlodipino
+    160, 25, 14.80, '2026-08-15', 'LOT-2024-008', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    9, -- Glibenclamida
+    90, 20, 9.25, '2026-05-20', 'LOT-2024-009', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    10, -- Azitromicina
+    110, 30, 28.50, '2025-11-30', 'LOT-2024-010', true
+),
+
+-- Medicamentos 11-20
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    11, -- Pantoprazol
+    140, 25, 16.75, '2026-10-10', 'LOT-2024-011', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    12, -- Diazepam
+    60, 15, 12.30, '2026-04-25', 'LOT-2024-012', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    13, -- Nitrofurantoína
+    85, 20, 18.90, '2025-12-15', 'LOT-2024-013', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    14, -- Atorvastatina Forte
+    95, 15, 24.50, '2026-09-05', 'LOT-2024-014', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    15, -- Levotiroxina
+    70, 10, 15.80, '2026-07-18', 'LOT-2024-015', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    16, -- Salbutamol
+    120, 25, 32.40, '2026-11-22', 'LOT-2024-016', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    17, -- Ibuprofeno Forte 600mg
+    180, 35, 8.75, '2027-02-14', 'LOT-2024-017', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    18, -- Sertralina Plus 100mg
+    55, 10, 35.20, '2026-08-30', 'LOT-2024-018', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    19, -- Tamsulosina
+    45, 8, 42.80, '2026-06-12', 'LOT-2024-019', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    20, -- Digoxina
+    30, 5, 28.90, '2026-03-28', 'LOT-2024-020', true
+),
+
+-- Medicamentos 21-27
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    21, -- Orlistat
+    65, 12, 85.00, '2026-01-20', 'LOT-2024-021', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    22, -- Amoxicilina/Clavulanato
+    125, 30, 45.30, '2025-10-08', 'LOT-2024-022', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    23, -- Mesalazina
+    40, 8, 78.50, '2026-09-17', 'LOT-2024-023', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    24, -- Naproxeno
+    150, 25, 12.80, '2027-01-05', 'LOT-2024-024', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    25, -- Sumatriptán
+    35, 6, 65.40, '2026-05-30', 'LOT-2024-025', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    26, -- Metformina XR 1000mg
+    170, 25, 14.50, '2026-12-10', 'LOT-2024-026', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    27, -- Losartán Plus 100mg
+    110, 20, 18.75, '2026-11-05', 'LOT-2024-027', true
+),
+
+-- Lotes adicionales para medicamentos de alta rotación (28-40)
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    1, -- Losartán Potásico (segundo lote)
+    75, 20, 12.50, '2027-02-28', 'LOT-2024-028', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    2, -- Metformina (segundo lote)
+    100, 30, 8.00, '2027-01-15', 'LOT-2024-029', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    3, -- Amoxicilina (segundo lote)
+    80, 25, 15.00, '2025-12-20', 'LOT-2024-030', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    6, -- Ibuprofeno 400mg (segundo lote)
+    120, 40, 5.50, '2027-06-30', 'LOT-2024-031', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    4, -- Omeprazol (segundo lote)
+    90, 30, 10.50, '2027-03-15', 'LOT-2024-032', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    16, -- Salbutamol (segundo lote)
+    60, 25, 32.40, '2027-04-10', 'LOT-2024-033', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    17, -- Ibuprofeno Forte (segundo lote)
+    95, 35, 8.75, '2027-05-22', 'LOT-2024-034', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    8, -- Amlodipino (segundo lote)
+    80, 25, 14.80, '2027-01-08', 'LOT-2024-035', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    11, -- Pantoprazol (segundo lote)
+    70, 25, 16.75, '2027-02-18', 'LOT-2024-036', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    22, -- Amoxicilina/Clavulanato (segundo lote)
+    60, 30, 45.30, '2026-03-25', 'LOT-2024-037', true
+),
+
+-- Medicamentos con stock bajo para pruebas (41-50)
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    19, -- Tamsulosina (stock bajo)
+    8, 8, 42.80, '2026-06-12', 'LOT-2024-038', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    20, -- Digoxina (stock bajo)
+    6, 5, 28.90, '2026-03-28', 'LOT-2024-039', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    25, -- Sumatriptán (stock bajo)
+    4, 6, 65.40, '2026-05-30', 'LOT-2024-040', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    23, -- Mesalazina (stock bajo)
+    7, 8, 78.50, '2026-09-17', 'LOT-2024-041', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    12, -- Diazepam (stock bajo)
+    12, 15, 12.30, '2026-04-25', 'LOT-2024-042', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    18, -- Sertralina Plus (stock bajo)
+    9, 10, 35.20, '2026-08-30', 'LOT-2024-043', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    15, -- Levotiroxina (stock bajo)
+    8, 10, 15.80, '2026-07-18', 'LOT-2024-044', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    21, -- Orlistat (stock bajo)
+    10, 12, 85.00, '2026-01-20', 'LOT-2024-045', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    13, -- Nitrofurantoína (próximo a vencer)
+    25, 20, 18.90, '2024-12-15', 'LOT-2023-046', true
+),
+(
+    (SELECT id FROM farmacias WHERE nombre_comercial = 'MediFarma - Sucursal Miraflores'),
+    3, -- Amoxicilina (próximo a vencer)
+    30, 25, 15.00, '2024-10-31', 'LOT-2023-047', true
 );
+
 
 -- 11.7 INSERTAR EXPEDIENTES MÉDICOS PARA LOS PACIENTES
 
@@ -766,23 +994,170 @@ VALUES
 );
 
 -- =====================================================
--- FIN DEL SCRIPT
+-- MIGRACIÓN: Sistema de distribución de recetas a farmacias
+-- Fecha: 2025-11-12
+-- Descripción: Agrega campos para que pacientes seleccionen farmacia
 -- =====================================================
 
--- RESUMEN DE EJECUCIÓN:
--- 1. Extensiones creadas
--- 2. Tablas creadas en orden jerárquico (9 niveles)
--- 3. Índices creados para optimización
--- 4. Datos base insertados (ubicaciones, especialidades, CIE-10, medicamentos, etc.)
--- 5. Usuarios de ejemplo creados (2 pacientes, 2 médicos, 1 farmacia, 1 laboratorio)
--- 6. Perfiles completos creados para cada tipo de usuario
--- 7. Inventario de farmacia poblado
--- 8. Expedientes médicos inicializados
+-- 1. Agregar columnas a tabla recetas
+ALTER TABLE recetas
+ADD COLUMN IF NOT EXISTS farmacia_seleccionada_id UUID REFERENCES farmacias(id) ON DELETE SET NULL,
+ADD COLUMN IF NOT EXISTS estado_envio VARCHAR(20) DEFAULT 'no_enviada' CHECK (estado_envio IN ('no_enviada', 'enviada', 'recibida', 'rechazada', 'dispensada')),
+ADD COLUMN IF NOT EXISTS fecha_envio_farmacia TIMESTAMP,
+ADD COLUMN IF NOT EXISTS motivo_rechazo TEXT;
 
--- CREDENCIALES DE EJEMPLO (password: password123):
--- Paciente 1: maria.garcia@email.com
--- Paciente 2: carlos.rodriguez@email.com
--- Médico 1: dr.mendoza@clinica.com (Cardiólogo)
--- Médico 2: dra.torres@clinica.com (Pediatra)
--- Farmacia: admin@medifarma.com
--- Laboratorio: admin@clinilabs.com
+-- 2. Crear índices para búsquedas rápidas
+CREATE INDEX IF NOT EXISTS idx_recetas_farmacia_seleccionada ON recetas(farmacia_seleccionada_id, estado_envio);
+CREATE INDEX IF NOT EXISTS idx_recetas_estado_envio ON recetas(estado_envio, fecha_emision);
+
+-- 3. Crear tabla de historial de envíos de recetas (auditoría)
+CREATE TABLE IF NOT EXISTS historial_envio_recetas (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    receta_id UUID NOT NULL REFERENCES recetas(id) ON DELETE CASCADE,
+    farmacia_id UUID REFERENCES farmacias(id) ON DELETE SET NULL,
+    estado_anterior VARCHAR(20),
+    estado_nuevo VARCHAR(20) NOT NULL,
+    motivo TEXT,
+    usuario_id UUID REFERENCES usuarios(id),
+    fecha_cambio TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_historial_envio_receta ON historial_envio_recetas(receta_id, fecha_cambio);
+CREATE INDEX IF NOT EXISTS idx_historial_envio_farmacia ON historial_envio_recetas(farmacia_id, fecha_cambio);
+
+-- 4. Crear tabla de comparación de opciones farmacia (para registro de búsquedas)
+CREATE TABLE IF NOT EXISTS busquedas_farmacias_recetas (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    receta_id UUID NOT NULL REFERENCES recetas(id) ON DELETE CASCADE,
+    paciente_id UUID NOT NULL REFERENCES pacientes(id) ON DELETE CASCADE,
+    fecha_busqueda TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    farmacias_consultadas JSONB NOT NULL, -- Array con {id, nombre, precio_total, disponibilidad, distancia}
+    farmacia_seleccionada_id UUID REFERENCES farmacias(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_busquedas_receta ON busquedas_farmacias_recetas(receta_id);
+CREATE INDEX IF NOT EXISTS idx_busquedas_paciente ON busquedas_farmacias_recetas(paciente_id, fecha_busqueda);
+
+-- 5. Agregar columnas a inventario_farmacia para mejor gestión
+ALTER TABLE inventario_farmacia
+ADD COLUMN IF NOT EXISTS reservas_activas INTEGER DEFAULT 0,
+ADD COLUMN IF NOT EXISTS ultima_actualizacion_stock TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+-- 6. Crear vista para mostrar disponibilidad resumida por medicamento
+CREATE OR REPLACE VIEW vista_disponibilidad_medicamentos AS
+SELECT 
+    med.id,
+    med.nombre_comercial,
+    med.nombre_generico,
+    farm.id as farmacia_id,
+    farm.nombre_comercial as farmacia_nombre,
+    ub.departamento,
+    ub.provincia,
+    ub.distrito,
+    inv.stock_actual,
+    inv.reservas_activas,
+    (inv.stock_actual - inv.reservas_activas) as stock_disponible,
+    inv.precio_venta,
+    inv.fecha_vencimiento,
+    inv.lote,
+    CASE 
+        WHEN (inv.stock_actual - inv.reservas_activas) <= 0 THEN 'Sin Stock'
+        WHEN inv.fecha_vencimiento <= CURRENT_DATE THEN 'Vencido'
+        WHEN inv.fecha_vencimiento <= CURRENT_DATE + INTERVAL '30 days' THEN 'Por Vencer'
+        ELSE 'Disponible'
+    END as estado_disponibilidad
+FROM medicamentos med
+JOIN inventario_farmacia inv ON med.id = inv.id_medicamento
+JOIN farmacias farm ON inv.id_farmacia = farm.id
+LEFT JOIN ubicaciones ub ON farm.id_ubicacion = ub.id
+WHERE inv.disponible = true
+ORDER BY farm.nombre_comercial, med.nombre_comercial;
+
+-- 7. Crear función para calcular precio total de una receta en una farmacia
+CREATE OR REPLACE FUNCTION calcular_precio_receta_farmacia(
+    p_receta_id UUID,
+    p_farmacia_id UUID
+) RETURNS TABLE (
+    total_precio DECIMAL(10,2),
+    medicamentos_disponibles INT,
+    medicamentos_faltantes INT
+) AS $$
+DECLARE
+    v_total DECIMAL(10,2) := 0;
+    v_disponibles INT := 0;
+    v_faltantes INT := 0;
+    v_medicamento RECORD;
+BEGIN
+    FOR v_medicamento IN
+        SELECT rd.medicamento_id, rd.cantidad
+        FROM receta_detalle rd
+        WHERE rd.id_receta = p_receta_id
+    LOOP
+        SELECT inv.stock_actual, inv.precio_venta INTO v_medicamento
+        FROM inventario_farmacia inv
+        WHERE inv.id_farmacia = p_farmacia_id 
+        AND inv.id_medicamento = v_medicamento.medicamento_id
+        AND inv.disponible = true;
+        
+        IF FOUND THEN
+            IF v_medicamento.stock_actual >= v_medicamento.cantidad THEN
+                v_total := v_total + (v_medicamento.precio_venta * v_medicamento.cantidad);
+                v_disponibles := v_disponibles + 1;
+            ELSE
+                v_faltantes := v_faltantes + 1;
+            END IF;
+        ELSE
+            v_faltantes := v_faltantes + 1;
+        END IF;
+    END LOOP;
+
+    RETURN QUERY SELECT v_total, v_disponibles, v_faltantes;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 8. Crear función para registrar cambio de estado de envío
+CREATE OR REPLACE FUNCTION registrar_cambio_envio_receta(
+    p_receta_id UUID,
+    p_estado_nuevo VARCHAR,
+    p_farmacia_id UUID,
+    p_usuario_id UUID,
+    p_motivo TEXT DEFAULT NULL
+) RETURNS TABLE (
+    exito BOOLEAN,
+    mensaje TEXT
+) AS $$
+DECLARE
+    v_estado_anterior VARCHAR;
+BEGIN
+    -- Obtener estado anterior
+    SELECT estado_envio INTO v_estado_anterior FROM recetas WHERE id = p_receta_id;
+    
+    -- Registrar en historial
+    INSERT INTO historial_envio_recetas 
+    (receta_id, farmacia_id, estado_anterior, estado_nuevo, usuario_id, motivo)
+    VALUES (p_receta_id, p_farmacia_id, v_estado_anterior, p_estado_nuevo, p_usuario_id, p_motivo);
+    
+    -- Retornar éxito
+    RETURN QUERY SELECT true, 'Cambio registrado exitosamente';
+EXCEPTION WHEN OTHERS THEN
+    RETURN QUERY SELECT false, 'Error al registrar cambio: ' || SQLERRM;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 9. Agregar comentarios a las nuevas columnas
+COMMENT ON COLUMN recetas.farmacia_seleccionada_id IS 'Referencia a la farmacia elegida por el paciente para dispensar la receta';
+COMMENT ON COLUMN recetas.estado_envio IS 'Estado del envío: no_enviada, enviada, recibida, rechazada, dispensada';
+COMMENT ON COLUMN recetas.fecha_envio_farmacia IS 'Fecha y hora cuando el paciente envió la receta a la farmacia';
+COMMENT ON COLUMN recetas.motivo_rechazo IS 'Razón por la que la farmacia rechazó la receta (si aplica)';
+COMMENT ON COLUMN inventario_farmacia.reservas_activas IS 'Cantidad de medicamentos reservados en recetas no dispensadas aún';
+
+-- 10. Verificar integridad
+SELECT 
+    'Migración completada exitosamente' as estado,
+    (SELECT COUNT(*) FROM recetas) as total_recetas,
+    (SELECT COUNT(*) FROM farmacias) as total_farmacias,
+    (SELECT COUNT(*) FROM inventario_farmacia) as total_items_inventario;
+
+-- =====================================================
+-- FIN DEL SCRIPT COMPLETO UNIFICADO
+-- =====================================================

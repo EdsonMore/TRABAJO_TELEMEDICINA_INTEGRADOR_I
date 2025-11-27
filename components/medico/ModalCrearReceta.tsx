@@ -1,4 +1,4 @@
-// components/medico/ModalCrearReceta.tsx - VERSIÓN CON FIRMA
+// components/medico/ModalCrearReceta.tsx - VERSIÓN COMPLETA CON FIRMA Y BÚSQUEDA CIE-10
 import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { useAuth } from "@/contexts/auth-context";
@@ -191,13 +191,48 @@ export default function ModalCrearReceta({
 
   const cargarDatosPaciente = async () => {
     try {
-      if (!cita || !cita.paciente) return;
+      if (!cita || !cita.paciente) {
+        console.warn("⚠️ No hay datos de paciente en la cita");
+        return;
+      }
 
       const token = obtenerToken();
       if (!token) return;
 
+      // Intentar obtener ID del paciente de varias fuentes
+      const pacienteId =
+        cita.id_paciente ||
+        cita.paciente.id ||
+        (cita as any).paciente_id;
+
+      if (!pacienteId) {
+        console.warn(
+          "⚠️ No se puede determinar el ID del paciente para cargar datos completos"
+        );
+        // Usar datos básicos de la cita como fallback
+        const pacienteInfo = cita.paciente;
+        const pacienteData: PacienteCompleto = {
+          id: "unknown",
+          nombre: pacienteInfo.nombre || "No disponible",
+          apellido: pacienteInfo.apellido || "No disponible",
+          dni: pacienteInfo.dni || "No disponible",
+          edad: pacienteInfo.edad || 0,
+          sexo: pacienteInfo.sexo || "",
+          tipo_sangre: pacienteInfo.tipo_sangre || "",
+          telefono: pacienteInfo.telefono || "",
+          email: pacienteInfo.email || "",
+          fecha_nacimiento: pacienteInfo.fecha_nacimiento || "",
+          alergias: pacienteInfo.alergias || [],
+          enfermedades_cronicas: pacienteInfo.enfermedades_cronicas || [],
+        };
+        setDatosPaciente(pacienteData);
+        return;
+      }
+
+      console.log("🔍 Cargando datos completos del paciente:", pacienteId);
+
       // Cargar datos completos del paciente desde la BD
-      const response = await fetch(`/api/pacientes/${cita.paciente.id}`, {
+      const response = await fetch(`/api/pacientes/${pacienteId}`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -206,15 +241,43 @@ export default function ModalCrearReceta({
       if (response.ok) {
         const data = await response.json();
         if (data.paciente) {
-          setDatosPaciente(data.paciente);
+          console.log("✅ Datos del paciente cargados exitosamente");
+          // Transformar al formato esperado
+          const pacienteCompleto: PacienteCompleto = {
+            id: data.paciente.id,
+            nombre: data.paciente.usuario.nombre,
+            apellido: data.paciente.usuario.apellido,
+            dni: data.paciente.informacion_personal.dni,
+            edad: data.paciente.informacion_personal.edad,
+            email: data.paciente.usuario.email,
+            telefono: data.paciente.usuario.telefono,
+            sexo: data.paciente.informacion_personal.sexo,
+            tipo_sangre: data.paciente.informacion_medica.tipo_sangre,
+            alergias: data.paciente.informacion_medica.alergias
+              ? typeof data.paciente.informacion_medica.alergias ===
+                "string"
+                ? [data.paciente.informacion_medica.alergias]
+                : data.paciente.informacion_medica.alergias
+              : [],
+            enfermedades_cronicas: data.paciente.informacion_medica
+              .enfermedades_cronicas
+              ? typeof data.paciente.informacion_medica
+                  .enfermedades_cronicas === "string"
+                ? [data.paciente.informacion_medica.enfermedades_cronicas]
+                : data.paciente.informacion_medica.enfermedades_cronicas
+              : [],
+            fecha_nacimiento:
+              data.paciente.informacion_personal.fecha_nacimiento,
+          };
+          setDatosPaciente(pacienteCompleto);
           return;
         }
       }
 
-      // Fallback a datos básicos de la cita
+      // Fallback: Usar datos básicos de la cita
       const pacienteInfo = cita.paciente;
       const pacienteData: PacienteCompleto = {
-        id: cita.id_paciente || cita.paciente.id,
+        id: pacienteId || "unknown",
         nombre: pacienteInfo.nombre || "No disponible",
         apellido: pacienteInfo.apellido || "No disponible",
         dni: pacienteInfo.dni || "No disponible",
@@ -231,6 +294,25 @@ export default function ModalCrearReceta({
       setDatosPaciente(pacienteData);
     } catch (error) {
       console.error("Error cargando datos paciente:", error);
+      // Usar datos básicos de la cita
+      const pacienteInfo = cita?.paciente;
+      if (pacienteInfo) {
+        const pacienteData: PacienteCompleto = {
+          id: cita?.id_paciente || "unknown",
+          nombre: pacienteInfo.nombre || "No disponible",
+          apellido: pacienteInfo.apellido || "No disponible",
+          dni: pacienteInfo.dni || "No disponible",
+          edad: pacienteInfo.edad || 0,
+          sexo: pacienteInfo.sexo || "",
+          tipo_sangre: pacienteInfo.tipo_sangre || "",
+          telefono: pacienteInfo.telefono || "",
+          email: pacienteInfo.email || "",
+          fecha_nacimiento: pacienteInfo.fecha_nacimiento || "",
+          alergias: pacienteInfo.alergias || [],
+          enfermedades_cronicas: pacienteInfo.enfermedades_cronicas || [],
+        };
+        setDatosPaciente(pacienteData);
+      }
     }
   };
 
@@ -248,19 +330,26 @@ export default function ModalCrearReceta({
 
       if (response.ok) {
         const data = await response.json();
-        if (data.success && data.medico) {
+        // El endpoint devuelve directamente los datos sin 'success'
+        if (data.id || data.usuario) {
           setDatosMedico({
-            id: data.medico.id,
-            nombre: data.medico.usuario.nombre || usuario?.nombre || "",
-            apellido: data.medico.usuario.apellido || usuario?.apellido || "",
+            id: data.id || usuario?.id || "",
+            nombre: data.usuario?.nombre || usuario?.nombre || "",
+            apellido: data.usuario?.apellido || usuario?.apellido || "",
             numero_colegiatura:
-              data.medico.informacion_profesional.numero_colegiatura || "",
+              data.informacion_profesional?.numero_colegiatura || "",
             especialidad:
-              data.medico.informacion_profesional.especialidad.nombre || "",
-            tiene_firma: false, // Por defecto, no hay firma configurada
+              data.informacion_profesional?.especialidad?.nombre || "",
+            tiene_firma: false,
           });
+        } else {
+          throw new Error("Formato inesperado en respuesta del perfil");
         }
       } else {
+        console.warn(
+          "⚠️ Error al cargar perfil del médico, usando fallback:",
+          response.status
+        );
         // Fallback a datos básicos del usuario
         const medicoData: MedicoInfo = {
           id: usuario?.id || "",
@@ -586,7 +675,13 @@ export default function ModalCrearReceta({
           : null,
       };
 
-      const response = await fetch("/api/recetas", {
+      console.log("📝 Enviando datos de receta a servidor:", {
+        id_cita: recetaData.id_cita,
+        medicamentos: recetaData.medicamentos.length,
+        diagnostico: recetaData.diagnostico_principal_texto?.substring(0, 50),
+      });
+
+      const response = await fetch("/api/recetas/crear", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -713,13 +808,16 @@ export default function ModalCrearReceta({
                     </div>
                   </div>
                 </div>
-                {datosPaciente.alergias &&
-                  datosPaciente.alergias.length > 0 && (
-                    <div className="text-xs text-red-600 bg-red-100 p-2 rounded">
-                      <strong>⚠ Alergias:</strong>{" "}
-                      {datosPaciente.alergias.join(", ")}
-                    </div>
-                  )}
+                {datosPaciente?.alergias && (
+                  <div className="text-xs text-red-600 bg-red-100 p-2 rounded">
+                    <strong>⚠ Alergias:</strong>{" "}
+                    {
+                      Array.isArray(datosPaciente.alergias)
+                        ? datosPaciente.alergias.join(", ") // Si es array
+                        : datosPaciente.alergias // Si es string
+                    }
+                  </div>
+                )}
                 <div className="text-xs text-blue-600 bg-blue-100 p-2 rounded">
                   <strong>Cita:</strong>{" "}
                   {new Date(cita.fecha_cita).toLocaleDateString("es-PE")}
@@ -754,7 +852,392 @@ export default function ModalCrearReceta({
             <input type="hidden" {...register("diagnostico_principal_id")} />
             <input type="hidden" {...register("firma_medico")} />
 
-            {/* ... (el resto del formulario permanece igual) ... */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="lg:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Diagnóstico Principal *
+                </label>
+                <textarea
+                  {...register("diagnostico_principal_texto", {
+                    required: true,
+                  })}
+                  rows={3}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  placeholder="Describa el diagnóstico principal del paciente..."
+                />
+                {errors.diagnostico_principal_texto && (
+                  <p className="text-red-500 text-sm mt-1">
+                    El diagnóstico principal es requerido
+                  </p>
+                )}
+              </div>
+
+              <div className="relative">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Código CIE-10 (Opcional)
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={busquedaCIE10}
+                    onChange={(e) => {
+                      setBusquedaCIE10(e.target.value);
+                      setMostrarDropdownCIE10(true);
+                    }}
+                    onFocus={() => setMostrarDropdownCIE10(true)}
+                    placeholder="Buscar por código o nombre..."
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white pr-10"
+                  />
+                  {busquedaCIE10 && (
+                    <button
+                      type="button"
+                      onClick={limpiarSeleccionCIE10}
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                {mostrarDropdownCIE10 && enfermedadesFiltradas.length > 0 && (
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    {enfermedadesFiltradas.map((enf) => (
+                      <button
+                        key={enf.id}
+                        type="button"
+                        onClick={() => seleccionarEnfermedad(enf)}
+                        className="w-full px-4 py-2 text-left hover:bg-blue-50 border-b border-gray-100 last:border-b-0"
+                      >
+                        <div className="font-medium text-gray-800">
+                          {enf.codigo} - {enf.nombre}
+                        </div>
+                        {enf.categoria && (
+                          <div className="text-xs text-gray-500 mt-1">
+                            {enf.categoria}
+                          </div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {mostrarDropdownCIE10 &&
+                  enfermedadesFiltradas.length === 0 &&
+                  busquedaCIE10 && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg">
+                      <div className="px-4 py-3 text-center text-gray-500">
+                        No se encontraron resultados para "{busquedaCIE10}"
+                      </div>
+                    </div>
+                  )}
+
+                <p className="text-xs text-gray-500 mt-1">
+                  {enfermedadesCIE10.length} códigos disponibles en BD
+                  {busquedaCIE10 &&
+                    ` - ${enfermedadesFiltradas.length} resultados`}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Fecha de Vencimiento
+                </label>
+                <input
+                  type="date"
+                  {...register("fecha_vencimiento")}
+                  min={new Date().toISOString().split("T")[0]}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Por defecto: 30 días desde hoy
+                </p>
+              </div>
+            </div>
+
+            {/* Tratamientos Recomendados */}
+            {tratamientosRecomendados.length > 0 && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                <h3 className="font-semibold text-green-800 mb-3 flex items-center">
+                  <span className="mr-2">💡</span>
+                  Tratamientos Recomendados para este Diagnóstico
+                </h3>
+                <div className="space-y-2">
+                  {tratamientosRecomendados.map((tratamiento, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between p-3 bg-white rounded border"
+                    >
+                      <div className="flex-1">
+                        <p className="font-medium text-gray-800">
+                          {
+                            catalogoMedicamentos.find(
+                              (m) => m.id === tratamiento.medicamento_id
+                            )?.nombre_comercial
+                          }
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          {tratamiento.dosis_recomendada} •{" "}
+                          {tratamiento.duracion_tratamiento}
+                        </p>
+                        {tratamiento.observaciones && (
+                          <p className="text-xs text-gray-500 mt-1">
+                            {tratamiento.observaciones}
+                          </p>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          agregarMedicamentoRecomendado(tratamiento)
+                        }
+                        className="ml-4 bg-green-500 text-white px-3 py-1 rounded text-sm hover:bg-green-600 transition-colors"
+                      >
+                        Agregar
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Observaciones Generales
+              </label>
+              <textarea
+                {...register("observaciones")}
+                rows={2}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                placeholder="Indicaciones adicionales, recomendaciones, etc."
+              />
+            </div>
+
+            <div className="border-t pt-6">
+              <div className="flex justify-between items-center mb-6">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-800">
+                    Medicamentos
+                  </h3>
+                  <p className="text-sm text-gray-600">
+                    {medicamentos.length} medicamento(s) agregado(s) -{" "}
+                    {catalogoMedicamentos.length} disponibles en BD
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={agregarMedicamento}
+                  disabled={medicamentos.length >= 15 || cargandoCatalogos}
+                  className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 disabled:opacity-50 transition-colors flex items-center"
+                >
+                  <span className="text-lg mr-1">+</span>
+                  Agregar Medicamento
+                </button>
+              </div>
+
+              {medicamentos.map((med, index) => (
+                <div
+                  key={index}
+                  className="border border-gray-200 rounded-lg p-4 mb-4 bg-white shadow-sm"
+                >
+                  <div className="flex justify-between items-center mb-4">
+                    <h4 className="font-medium text-gray-800">
+                      Medicamento {index + 1}
+                    </h4>
+                    <button
+                      type="button"
+                      onClick={() => removerMedicamento(index)}
+                      className="text-red-500 hover:text-red-700 text-sm flex items-center transition-colors"
+                      disabled={cargando}
+                    >
+                      <span>🗑️ Eliminar</span>
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="md:col-span-2 lg:col-span-3">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Seleccionar Medicamento *
+                      </label>
+                      <select
+                        value={med.medicamento_id || ""}
+                        onChange={(e) =>
+                          seleccionarMedicamentoCatalogo(
+                            index,
+                            parseInt(e.target.value)
+                          )
+                        }
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        required
+                      >
+                        <option value="">Seleccionar del catálogo...</option>
+                        {catalogoMedicamentos.map((medicamento) => (
+                          <option key={medicamento.id} value={medicamento.id}>
+                            {medicamento.nombre_comercial} (
+                            {medicamento.nombre_generico}) -{" "}
+                            {medicamento.forma_farmaceutica}
+                          </option>
+                        ))}
+                      </select>
+
+                      {medicamentoSeleccionado[index] && (
+                        <div className="mt-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                          <div className="grid grid-cols-2 gap-2 text-xs text-blue-800">
+                            <div>
+                              <strong>Laboratorio:</strong>{" "}
+                              {medicamentoSeleccionado[index]?.laboratorio}
+                            </div>
+                            <div>
+                              <strong>Principio Activo:</strong>{" "}
+                              {medicamentoSeleccionado[index]?.principio_activo}
+                            </div>
+                            <div>
+                              <strong>Concentración:</strong>{" "}
+                              {medicamentoSeleccionado[index]?.concentracion}
+                            </div>
+                            <div>
+                              <strong>Forma:</strong>{" "}
+                              {
+                                medicamentoSeleccionado[index]
+                                  ?.forma_farmaceutica
+                              }
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Dosis *
+                      </label>
+                      <input
+                        type="text"
+                        value={med.dosis}
+                        onChange={(e) =>
+                          actualizarMedicamento(index, "dosis", e.target.value)
+                        }
+                        placeholder="Ej: 500mg, 1 tableta"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Frecuencia *
+                      </label>
+                      <input
+                        type="text"
+                        value={med.frecuencia}
+                        onChange={(e) =>
+                          actualizarMedicamento(
+                            index,
+                            "frecuencia",
+                            e.target.value
+                          )
+                        }
+                        placeholder="Ej: Cada 8 horas"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Duración (días)
+                      </label>
+                      <input
+                        type="number"
+                        value={med.duracion_dias || ""}
+                        onChange={(e) =>
+                          actualizarMedicamento(
+                            index,
+                            "duracion_dias",
+                            parseInt(e.target.value) || 7
+                          )
+                        }
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        min="1"
+                        max="365"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Cantidad *
+                      </label>
+                      <input
+                        type="number"
+                        value={med.cantidad}
+                        onChange={(e) =>
+                          actualizarMedicamento(
+                            index,
+                            "cantidad",
+                            parseInt(e.target.value) || 1
+                          )
+                        }
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        min="1"
+                        max="999"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Vía de Administración
+                      </label>
+                      <input
+                        type="text"
+                        value={med.via_administracion || ""}
+                        onChange={(e) =>
+                          actualizarMedicamento(
+                            index,
+                            "via_administracion",
+                            e.target.value
+                          )
+                        }
+                        placeholder="Ej: Oral, Tópica"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                      />
+                    </div>
+
+                    <div className="md:col-span-2 lg:col-span-3">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Instrucciones Especiales
+                      </label>
+                      <textarea
+                        value={med.instrucciones_especiales || ""}
+                        onChange={(e) =>
+                          actualizarMedicamento(
+                            index,
+                            "instrucciones_especiales",
+                            e.target.value
+                          )
+                        }
+                        placeholder="Ej: Tomar con alimentos, Evitar manejar, etc."
+                        rows={2}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {medicamentos.length === 0 && (
+                <div className="text-center py-12 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50">
+                  <div className="text-gray-400 mb-2 text-4xl">💊</div>
+                  <p className="text-gray-500 mb-1">
+                    No hay medicamentos agregados
+                  </p>
+                  <p className="text-sm text-gray-400">
+                    {catalogoMedicamentos.length > 0
+                      ? `${catalogoMedicamentos.length} medicamentos disponibles en BD`
+                      : "Cargando catálogo de medicamentos desde base de datos..."}
+                  </p>
+                </div>
+              )}
+            </div>
 
             {/* Configuración de Firma Digital */}
             <div className="border-t pt-6">
