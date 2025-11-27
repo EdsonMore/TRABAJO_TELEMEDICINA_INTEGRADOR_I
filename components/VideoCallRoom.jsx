@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useWebRTC } from "@/hooks/useWebRTC";
 import ModalCrearReceta from "./medico/ModalCrearReceta";
-import { GestionCitaMedicoModal } from "./medico/gestion-cita-medico-modal"; // Importamos el nuevo modal
+import GestionCitaMedicoModal from "./medico/gestion-cita-medico-modal"; // Importamos el nuevo modal
 import { useAuth } from "@/contexts/auth-context";
 
 export default function VideoCallRoom({ roomId, userData, onLeave, citaData }) {
@@ -22,6 +22,7 @@ export default function VideoCallRoom({ roomId, userData, onLeave, citaData }) {
   const [citaParaModal, setCitaParaModal] = useState(null);
   const [citaParaReceta, setCitaParaReceta] = useState(null);
   const [loadingCita, setLoadingCita] = useState(false);
+  const [loadingReceta, setLoadingReceta] = useState(false);
 
   const localVideoRef = useRef();
   const messagesEndRef = useRef(null);
@@ -186,17 +187,45 @@ export default function VideoCallRoom({ roomId, userData, onLeave, citaData }) {
     setCitaParaReceta(null);
   };
 
-  // Función para abrir el modal de gestión de cita
+  // En el VideoCallRoom.jsx, modifica la función handleAbrirGestionCitaModal:
   const handleAbrirGestionCitaModal = async () => {
     console.log("🩺 Abriendo modal de gestión de cita");
-    await cargarCitaParaModal();
-    setShowGestionCitaModal(true);
+    try {
+      const citaCargada = await cargarCitaParaModal();
+
+      // ✅ ENRIQUECER la cita con el roomId para que el modal pueda buscar la cita real
+      const citaConRoomId = {
+        ...citaCargada,
+        sesionId: roomId, // ← ESTO ES LO QUE FALTA
+        roomId: roomId, // ← Y ESTO TAMBIÉN
+      };
+
+      setCitaParaModal(citaConRoomId);
+      setShowGestionCitaModal(true);
+    } catch (error) {
+      console.error("❌ Error al abrir modal de gestión:", error);
+      // Cita de emergencia con roomId
+      const citaEmergencia = {
+        id: `emergency-${Date.now()}`,
+        paciente: { nombre: "Paciente", apellido: "En Consulta" },
+        fecha_cita: new Date().toISOString(),
+        hora_cita: "08:00",
+        tipo_cita: "virtual",
+        estado: "en_curso",
+        sesionId: roomId, // ← AQUÍ TAMBIÉN
+        roomId: roomId, // ← AQUÍ TAMBIÉN
+      };
+      setCitaParaModal(citaEmergencia);
+      setShowGestionCitaModal(true);
+    }
   };
 
   // Función para cerrar el modal de gestión de cita
   const handleCerrarGestionCitaModal = () => {
+    console.log("🗑️ Cerrando modal de gestión de cita");
     setShowGestionCitaModal(false);
-    setCitaParaModal(null);
+    // No limpiar citaParaModal inmediatamente para evitar flickering
+    setTimeout(() => setCitaParaModal(null), 500);
   };
 
   // Función cuando se actualiza la cita
@@ -247,6 +276,11 @@ export default function VideoCallRoom({ roomId, userData, onLeave, citaData }) {
 
   // Función para obtener la cita REAL desde la base de datos
   const obtenerCitaReal = async () => {
+    if (!token) {
+      console.log("⚠️ No hay token, usando datos de sesión");
+      return null;
+    }
+
     try {
       console.log("🔍 Buscando cita real en BD...");
 
@@ -264,12 +298,50 @@ export default function VideoCallRoom({ roomId, userData, onLeave, citaData }) {
 
       if (response.ok) {
         const data = await response.json();
-        console.log("✅ Cita real encontrada:", data.cita);
-        return data.cita;
-      } else {
-        console.log("⚠️ No se encontró cita real, usando datos de sesión");
-        return null;
+        if (data.success && data.cita) {
+          console.log("✅ Cita real encontrada:", data.cita.id);
+
+          // ✅ GARANTIZAR QUE SIEMPRE TIENE hora_cita formateada
+          if (!data.cita.hora_cita || data.cita.hora_cita === "") {
+            data.cita.hora_cita = new Date().toLocaleTimeString("es-PE", {
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+          } else if (
+            data.cita.hora_cita &&
+            !data.cita.hora_cita.includes(":")
+          ) {
+            // Si viene como número, convertir a formato HH:MM
+            const horaNum = parseInt(data.cita.hora_cita);
+            data.cita.hora_cita = `${horaNum.toString().padStart(2, "0")}:00`;
+          }
+
+          // Enriquecer con datos del paciente si es necesario
+          if (data.cita.id_paciente) {
+            try {
+              const perfilResponse = await fetch(
+                `/api/pacientes/${data.cita.id_paciente}`,
+                {
+                  headers: { Authorization: `Bearer ${token}` },
+                }
+              );
+
+              if (perfilResponse.ok) {
+                const perfilData = await perfilResponse.json();
+                data.cita.paciente = {
+                  ...data.cita.paciente,
+                  ...perfilData.paciente,
+                };
+              }
+            } catch (error) {
+              console.log("⚠️ No se pudo obtener perfil completo del paciente");
+            }
+          }
+
+          return data.cita;
+        }
       }
+      return null;
     } catch (error) {
       console.error("❌ Error buscando cita real:", error);
       return null;
@@ -279,16 +351,128 @@ export default function VideoCallRoom({ roomId, userData, onLeave, citaData }) {
   const cargarCitaParaModal = async () => {
     setLoadingCita(true);
     try {
-      const cita = await crearCitaParaModal();
-      setCitaParaModal(cita);
-      return cita;
+      console.log("🔄 Cargando datos para modal de gestión...");
+      console.log("🔍 Room ID:", roomId);
+
+      // ✅ EXTRAER el codigo_acceso del roomId
+      // roomId = "medilink-GMMI1RI9NJ", necesitamos "GMMI1RI9NJ"
+      const codigoAcceso = roomId.includes("medilink-") 
+        ? roomId.split("medilink-")[1] 
+        : roomId;
+
+      console.log("🔍 Código de acceso para búsqueda:", codigoAcceso);
+
+      // ✅ PRIMERO: Buscar cita por sesión usando el codigo_acceso
+      const response = await fetch(
+        `/api/telemedicina/sesiones?codigo_acceso=${codigoAcceso}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.sesiones && data.sesiones.length > 0) {
+          const sesion = data.sesiones[0];
+          console.log("✅ Sesión encontrada:", sesion);
+
+          // ✅ AHORA BUSCAR LA CITA COMPLETA usando el id_cita REAL
+          const citaResponse = await fetch(`/api/citas/${sesion.id_cita}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+
+          if (citaResponse.ok) {
+            const citaData = await citaResponse.json();
+            console.log("🎯 CITA REAL ENCONTRADA:", {
+              id: citaData.cita?.id,
+              fecha: citaData.cita?.fecha_cita,
+              hora: citaData.cita?.hora_cita,
+              estado: citaData.cita?.estado,
+            });
+
+            if (citaData.cita) {
+              // ✅ ENRIQUECER con datos del paciente Y EL ROOMID
+              const citaCompleta = {
+                ...citaData.cita,
+                sesionId: roomId,
+                roomId: roomId,
+                codigo_acceso: sesion.codigo_acceso,
+                id_sesion: sesion.id,
+                paciente: {
+                  id: sesion.paciente_id,
+                  nombre: sesion.paciente_nombre,
+                  apellido: sesion.paciente_apellido,
+                  dni: sesion.paciente_dni,
+                  ...(citaData.cita.paciente || {}),
+                },
+              };
+
+              console.log("📋 Cita completa para modal:", citaCompleta);
+              setCitaParaModal(citaCompleta);
+              return citaCompleta;
+            }
+          }
+        }
+      }
+
+      // ✅ SEGUNDO: Si no se encuentra por sesión, usar citaData de props
+      if (citaData && citaData.id && !citaData.id.startsWith("temp-")) {
+        console.log("✅ Usando citaData REAL de props:", citaData.id);
+        const citaConRoomId = {
+          ...citaData,
+          sesionId: roomId,
+          roomId: roomId,
+        };
+        setCitaParaModal(citaConRoomId);
+        return citaConRoomId;
+      }
+
+      // ✅ TERCERO: Si todo falla, crear temporal CON ROOMID
+      console.log("⚠️ Creando cita temporal para modal");
+      const paciente = obtenerDatosPaciente();
+      const citaTemporal = {
+        id: `temp-${roomId}-${Date.now()}`,
+        paciente: paciente,
+        fecha_cita: new Date().toISOString(),
+        hora_cita: new Date().toLocaleTimeString("es-PE", {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+        tipo_cita: "virtual",
+        estado: "en_curso",
+        motivo_consulta: "Consulta virtual en curso",
+        sesionId: roomId,
+        roomId: roomId,
+        codigo_acceso: codigoAcceso,
+      };
+
+      setCitaParaModal(citaTemporal);
+      return citaTemporal;
     } catch (error) {
-      console.error("❌ Error cargando cita:", error);
-      return null;
+      console.error("❌ Error cargando cita para modal:", error);
+      // Cita de emergencia CON ROOMID
+      const codigoAcceso = roomId.includes("medilink-") 
+        ? roomId.split("medilink-")[1] 
+        : roomId;
+      
+      const citaEmergencia = {
+        id: `emergency-${Date.now()}`,
+        paciente: { nombre: "Paciente", apellido: "En Consulta" },
+        fecha_cita: new Date().toISOString(),
+        hora_cita: "08:00",
+        tipo_cita: "virtual",
+        estado: "en_curso",
+        sesionId: roomId,
+        roomId: roomId,
+        codigo_acceso: codigoAcceso,
+      };
+      setCitaParaModal(citaEmergencia);
+      return citaEmergencia;
     } finally {
       setLoadingCita(false);
     }
   };
+
 
   const cargarCitaParaReceta = async () => {
     setLoadingCita(true);
@@ -331,7 +515,7 @@ export default function VideoCallRoom({ roomId, userData, onLeave, citaData }) {
 
           // ✅ ENRQUECER los datos del paciente desde el perfil real
           const perfilPacienteResponse = await fetch(
-            `/api/paciente/perfil?id=${data.cita.id_paciente}`,
+            `/api/pacientes/${data.cita.id_paciente}`,
             {
               headers: {
                 Authorization: `Bearer ${token}`,
@@ -342,12 +526,25 @@ export default function VideoCallRoom({ roomId, userData, onLeave, citaData }) {
           let pacienteCompleto = paciente;
           if (perfilPacienteResponse.ok) {
             const perfilData = await perfilPacienteResponse.json();
-            pacienteCompleto = {
-              ...paciente,
-              ...perfilData.usuario,
-              ...perfilData.informacion_personal,
-              ...perfilData.informacion_medica,
-            };
+            if (perfilData.paciente) {
+              pacienteCompleto = {
+                ...paciente,
+                id: perfilData.paciente.id,
+                nombre: perfilData.paciente.usuario.nombre,
+                apellido: perfilData.paciente.usuario.apellido,
+                email: perfilData.paciente.usuario.email,
+                telefono: perfilData.paciente.usuario.telefono,
+                dni: perfilData.paciente.informacion_personal.dni,
+                edad: perfilData.paciente.informacion_personal.edad,
+                sexo: perfilData.paciente.informacion_personal.sexo,
+                tipo_sangre: perfilData.paciente.informacion_medica.tipo_sangre,
+                alergias: perfilData.paciente.informacion_medica.alergias,
+                enfermedades_cronicas:
+                  perfilData.paciente.informacion_medica.enfermedades_cronicas,
+                fecha_nacimiento:
+                  perfilData.paciente.informacion_personal.fecha_nacimiento,
+              };
+            }
           }
 
           return {
@@ -384,6 +581,7 @@ export default function VideoCallRoom({ roomId, userData, onLeave, citaData }) {
     console.log("⚠️ Usando cita simulada (sin ID real)");
     return {
       id: `cita-temporal-${roomId}-${Date.now()}`,
+      id_paciente: paciente.id || 1, // ✅ IMPORTANTE para modal
       paciente: paciente,
       paciente_nombre: paciente.nombre,
       paciente_apellido: paciente.apellido,
@@ -402,9 +600,9 @@ export default function VideoCallRoom({ roomId, userData, onLeave, citaData }) {
   return (
     <div className="flex flex-col h-screen bg-gradient-to-b from-gray-900 to-gray-800 text-white overflow-hidden">
       {/* Modal de gestión de cita médica */}
-      {showGestionCitaModal && esMedico && citaParaModal && (
+      {showGestionCitaModal && (
         <GestionCitaMedicoModal
-          cita={citaParaModal} // ✅ Usa el estado, no llamada directa
+          cita={citaParaModal}
           isOpen={showGestionCitaModal}
           onClose={handleCerrarGestionCitaModal}
           onCitaActualizada={handleCitaActualizada}
@@ -672,18 +870,39 @@ export default function VideoCallRoom({ roomId, userData, onLeave, citaData }) {
               <>
                 <button
                   onClick={handleAbrirGestionCitaModal}
-                  className="p-3 sm:p-4 lg:p-5 rounded-full bg-blue-500 hover:bg-blue-600 border-2 sm:border-2 lg:border-2 border-blue-600 transition-all transform hover:scale-110 text-2xl sm:text-3xl lg:text-4xl font-bold shadow-lg"
+                  disabled={loadingCita}
+                  className="bg-blue-500 hover:bg-blue-600 active:bg-blue-700 px-3 sm:px-4 lg:px-6 py-2 sm:py-2 lg:py-3 rounded-lg sm:rounded-xl transition-colors font-bold text-xs sm:text-sm lg:text-base shadow-lg transform hover:scale-105 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   title="Gestionar cita médica"
                 >
-                  🩺
+                  {loadingCita ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      <span className="hidden sm:inline">Cargando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>🩺</span>
+                      <span className="hidden sm:inline">Gestionar Cita</span>
+                    </>
+                  )}
                 </button>
-
                 <button
                   onClick={handleAbrirRecetaModal}
-                  className="p-3 sm:p-4 lg:p-5 rounded-full bg-green-500 hover:bg-green-600 border-2 sm:border-2 lg:border-2 border-green-600 transition-all transform hover:scale-110 text-2xl sm:text-3xl lg:text-4xl font-bold shadow-lg"
-                  title="Generar receta médica"
+                  disabled={loadingReceta}
+                  className="bg-blue-500 hover:bg-blue-600 active:bg-blue-700 px-3 sm:px-4 lg:px-6 py-2 sm:py-2 lg:py-3 rounded-lg sm:rounded-xl transition-colors font-bold text-xs sm:text-sm lg:text-base shadow-lg transform hover:scale-105 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Gestionar cita médica"
                 >
-                  📝
+                  {loadingReceta ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      <span className="hidden sm:inline">Cargando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>📝</span>
+                      <span className="hidden sm:inline">Crear Receta</span>
+                    </>
+                  )}
                 </button>
               </>
             )}

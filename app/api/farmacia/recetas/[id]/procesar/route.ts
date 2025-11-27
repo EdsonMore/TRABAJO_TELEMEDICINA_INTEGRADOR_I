@@ -54,7 +54,7 @@ export async function PATCH(
     // Verificar que la receta existe y pertenece a esta farmacia
     const recetaResult = await client.query(
       `SELECT r.* FROM recetas r 
-       WHERE r.id = $1 AND r.id_farmacia_dispensadora = $2`,
+       WHERE r.id = $1 AND r.farmacia_seleccionada_id = $2`,
       [recetaId, farmaciaId]
     );
 

@@ -1,10 +1,21 @@
-//App/api/citas/paciente/route.ts
-// MediLink+ - API para gestión de citas del paciente
-// Permite crear, ver y gestionar citas médicas
-
+// App/api/citas/paciente/route.ts - VERSIÓN CORREGIDA
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/database";
 import { verificarToken } from "@/lib/auth";
+
+// Función para obtener fecha actual en timezone de Perú
+function getFechaActualPeru(): Date {
+  const ahora = new Date();
+  // Perú está en UTC-5
+  const offsetPeru = -5 * 60 * 60 * 1000; // milisegundos para UTC-5
+  return new Date(ahora.getTime() + offsetPeru);
+}
+
+// Función para convertir fecha a formato Perú
+function convertirFechaAPeru(fecha: string): string {
+  const fechaObj = new Date(fecha + "T00:00:00-05:00");
+  return fechaObj.toISOString().split("T")[0];
+}
 
 export async function GET(request: Request) {
   try {
@@ -35,32 +46,34 @@ export async function GET(request: Request) {
     u.nombre AS medico_nombre,
     u.apellido AS medico_apellido,
     m.numero_colegiatura,
-    e.nombre AS especialidad  -- ✅ CAMBIAR: de especialidad_id a nombre
+    e.nombre AS especialidad
   FROM citas c
   JOIN medicos m ON c.id_medico = m.id
   JOIN usuarios u ON m.id_usuario = u.id
-  JOIN especialidades e ON m.id_especialidad = e.id  -- ✅ NUEVO JOIN
+  JOIN especialidades e ON m.id_especialidad = e.id
   WHERE c.id_paciente = (SELECT id FROM pacientes WHERE id_usuario = $1)
   ORDER BY c.fecha_cita DESC, c.hora_cita DESC
   `,
       [usuario.id]
     );
 
-    // Estadísticas de citas
+    // Estadísticas de citas - CORREGIDO: usar fecha actual Perú
+    const fechaHoyPeru = getFechaActualPeru().toISOString().split("T")[0];
+
     const estadisticasResult = await pool.query(
       `
       SELECT 
         COUNT(*) AS total,
         COUNT(CASE WHEN estado = 'completada' THEN 1 END) AS completadas,
-        COUNT(CASE WHEN estado = 'confirmada' AND fecha_cita >= CURRENT_DATE THEN 1 END) AS programadas,
+        COUNT(CASE WHEN estado = 'confirmada' AND fecha_cita >= $2 THEN 1 END) AS programadas,
         COUNT(CASE WHEN estado = 'cancelada' THEN 1 END) AS canceladas
       FROM citas
       WHERE id_paciente = (SELECT id FROM pacientes WHERE id_usuario = $1)
       `,
-      [usuario.id]
+      [usuario.id, fechaHoyPeru]
     );
 
-    // Próxima cita - CON ESPECIALIDAD
+    // Próxima cita - CORREGIDO: usar fecha actual Perú
     const proximaCitaResult = await pool.query(
       `
   SELECT 
@@ -71,18 +84,18 @@ export async function GET(request: Request) {
     c.motivo_consulta,
     u.nombre AS medico_nombre,
     u.apellido AS medico_apellido,
-    e.nombre AS especialidad  -- ✅ AGREGAR ESTA LÍNEA
+    e.nombre AS especialidad
   FROM citas c
   JOIN medicos m ON c.id_medico = m.id
   JOIN usuarios u ON m.id_usuario = u.id
-  JOIN especialidades e ON m.id_especialidad = e.id  -- ✅ AGREGAR ESTE JOIN
+  JOIN especialidades e ON m.id_especialidad = e.id
   WHERE c.id_paciente = (SELECT id FROM pacientes WHERE id_usuario = $1)
     AND c.estado = 'confirmada'
-    AND c.fecha_cita >= CURRENT_DATE
+    AND c.fecha_cita >= $2
   ORDER BY c.fecha_cita ASC, c.hora_cita ASC
   LIMIT 1
   `,
-      [usuario.id]
+      [usuario.id, fechaHoyPeru]
     );
 
     return NextResponse.json({
@@ -102,7 +115,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const client = await pool.connect(); // ✅ Obtener conexión al inicio
+  const client = await pool.connect();
 
   try {
     const token = request.headers.get("authorization")?.replace("Bearer ", "");
@@ -135,10 +148,23 @@ export async function POST(request: Request) {
       );
     }
 
+    // ✅ VALIDACIÓN CRÍTICA: Verificar que la fecha no sea pasada
+    const fechaSeleccionada = new Date(fecha_cita + "T00:00:00-05:00");
+    const fechaHoyPeru = getFechaActualPeru();
+    const fechaMinimaValida = new Date(
+      fechaHoyPeru.toISOString().split("T")[0] + "T00:00:00-05:00"
+    );
+
+    if (fechaSeleccionada < fechaMinimaValida) {
+      return NextResponse.json(
+        { error: "No puedes agendar citas en fechas pasadas" },
+        { status: 400 }
+      );
+    }
+
     // Formatear la hora de cita para la consulta
     let horaFormateada = hora_cita;
 
-    // Si es solo un número o string tipo "9" o "9:0", convertirlo
     if (!hora_cita.includes(":")) {
       horaFormateada = `${hora_cita.padStart(2, "0")}:00`;
     } else if (hora_cita.split(":")[1].length === 1) {
@@ -156,7 +182,10 @@ export async function POST(request: Request) {
       usuario_id: usuario.id,
     });
 
-    // ✅ Verificar disponibilidad usando pool.query consistentemente
+    // ✅ CORREGIDO: Convertir fecha a timezone Perú para la consulta
+    const fechaCitaPeru = convertirFechaAPeru(fecha_cita);
+
+    // ✅ Verificar disponibilidad
     const disponibilidadResult = await client.query(
       `SELECT COUNT(*) AS conflictos
        FROM citas
@@ -164,7 +193,7 @@ export async function POST(request: Request) {
          AND fecha_cita = $2
          AND hora_cita = $3
          AND estado IN ('confirmada', 'programada')`,
-      [medico_id, fecha_cita, horaFormateada]
+      [medico_id, fechaCitaPeru, horaFormateada]
     );
 
     if (Number.parseInt(disponibilidadResult.rows[0].conflictos, 10) > 0) {
@@ -226,16 +255,16 @@ export async function POST(request: Request) {
     // ✅ Calcular costo según tipo de cita
     let costoFinal = tarifaBase;
     if (tipoNormalizado === "virtual") {
-      costoFinal = Math.max(tarifaBase - 20, 50); // Descuento de 20, mínimo 50
+      costoFinal = Math.max(tarifaBase - 20, 50);
     } else if (tipoNormalizado === "domicilio") {
-      costoFinal = tarifaBase + 50; // Recargo de 50
+      costoFinal = tarifaBase + 50;
     }
-    // Si es presencial, mantiene la tarifa base
 
     console.log("Verificaciones completadas:", {
       paciente_id,
       medico_id,
-      medico_existe: true,
+      fecha_cita_original: fecha_cita,
+      fecha_cita_peru: fechaCitaPeru,
       tarifa_base: tarifaBase,
       tipo_cita: tipoNormalizado,
       costo_final: costoFinal,
@@ -245,7 +274,7 @@ export async function POST(request: Request) {
     await client.query("BEGIN");
 
     try {
-      // ✅ Insertar cita con costo calculado
+      // ✅ CORREGIDO: Usar fecha convertida a Perú
       const citaResult = await client.query(
         `INSERT INTO citas (
      id_paciente, id_medico, fecha_cita, hora_cita, tipo_cita, 
@@ -256,17 +285,16 @@ export async function POST(request: Request) {
         [
           paciente_id,
           medico_id,
-          fecha_cita,
+          fechaCitaPeru, // ✅ USAR FECHA CORREGIDA
           horaFormateada,
           tipoNormalizado,
           motivo_consulta,
-          "programada", // ✅ Estado inicial
-          false, // ✅ pagado = false (pendiente)
-          costoFinal, // ✅ Costo real calculado según tipo de consulta
+          "programada",
+          false,
+          costoFinal,
         ]
       );
 
-      // ✅ Confirmar transacción
       await client.query("COMMIT");
 
       const nuevaCita = citaResult.rows[0];
@@ -281,11 +309,9 @@ export async function POST(request: Request) {
         { status: 201 }
       );
     } catch (insertError) {
-      // ✅ Revertir transacción en caso de error
       await client.query("ROLLBACK");
       console.error("Error en la inserción:", insertError);
 
-      // ✅ Mensaje de error más específico
       if (insertError.code === "23505") {
         return NextResponse.json(
           { error: "Ya existe una cita en este horario" },
@@ -309,7 +335,6 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   } finally {
-    // ✅ IMPORTANTE: Siempre liberar la conexión
     client.release();
   }
 }

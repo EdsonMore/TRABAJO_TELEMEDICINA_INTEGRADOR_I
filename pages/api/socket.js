@@ -1,5 +1,5 @@
 // pages/api/socket.js
-import { configureSocketServer } from '@/lib/socketServer';
+import { configureSocketServer } from '@/lib/websocket-server';
 
 export default function SocketHandler(req, res) {
     if (res.socket.server.io) {

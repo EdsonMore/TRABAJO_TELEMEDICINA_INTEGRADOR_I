@@ -513,45 +513,26 @@ export function RecetasPacienteSection() {
     }));
   };
 
+  const puedeEnviarReceta = (receta: Receta): boolean => {
+    return (
+      receta.estado === "activa" &&
+      (!receta.estado || receta.estado !== "dispensada") &&
+      (!receta.estado_envio || receta.estado_envio === "no_enviada")
+    );
+  };
+
   const enviarSolicitud = async (tipo: 'retirar' | 'enviar') => {
-    if (!token || !recetaSeleccionada) return;
-    const meds = Object.keys(selectedMedicamentos)
-      .filter((id) => selectedMedicamentos[id].selected)
-      .map((id) => ({ id_medicamento: Number(id) || id, cantidad: selectedMedicamentos[id].cantidad }));
+    if (!recetaSeleccionada) return;
 
-    if (meds.length === 0) {
-      alert('Seleccione al menos 1 medicamento');
+    // Bloquear si ya fue enviada
+    if (!puedeEnviarReceta(recetaSeleccionada)) {
       return;
     }
 
-    if (tipo === 'retirar' && !selectedFarmaciaId) {
-      alert('Seleccione la farmacia donde desea retirar');
-      return;
-    }
-
-    try {
-      setEnviarLoading(true);
-      const res = await fetch('/api/paciente/despachos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ receta_id: recetaSeleccionada.id, farmacia_id: selectedFarmaciaId, medicamentos: meds, tipo_envio: tipo }),
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        alert('Solicitud enviada correctamente');
-        setMostrarDetalles(false);
-        // refrescar recetas
-        cargarRecetas();
-      } else {
-        alert(data.error || data.message || 'Error al enviar solicitud');
-      }
-    } catch (error) {
-      console.error('Error enviando solicitud:', error);
-      alert('Error enviando solicitud');
-    } finally {
-      setEnviarLoading(false);
-    }
+    // Redirigir al nuevo flujo de envío de recetas
+    // Usar la ruta /dashboard/paciente/farmacias/[recetaId] para el proceso de selección de farmacia
+    const url = `/dashboard/paciente/farmacias/${recetaSeleccionada.id}`;
+    window.location.href = url;
   };
 
   // ✅ FUNCIÓN MEJORADA PARA QR
@@ -1111,16 +1092,18 @@ export function RecetasPacienteSection() {
 
                     <div className="flex gap-2 justify-end">
                       <Button
-                        disabled={enviarLoading}
+                        disabled={enviarLoading || !puedeEnviarReceta(recetaSeleccionada)}
                         onClick={() => enviarSolicitud('retirar')}
-                        className="bg-green-600 text-white hover:bg-green-700"
+                        className="bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title={!puedeEnviarReceta(recetaSeleccionada) ? "Esta receta ya fue enviada a una farmacia" : ""}
                       >
                         {enviarLoading ? 'Enviando...' : 'Comprar en farmacia (Retirar)'}
                       </Button>
                       <Button
-                        disabled={enviarLoading}
+                        disabled={enviarLoading || !puedeEnviarReceta(recetaSeleccionada)}
                         onClick={() => enviarSolicitud('enviar')}
-                        className="bg-blue-600 text-white hover:bg-blue-700"
+                        className="bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title={!puedeEnviarReceta(recetaSeleccionada) ? "Esta receta ya fue enviada a una farmacia" : ""}
                       >
                         {enviarLoading ? 'Enviando...' : 'Enviar a farmacia (que despache)'}
                       </Button>

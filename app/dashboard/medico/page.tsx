@@ -12,6 +12,7 @@ import {
   getEtiquetaCita,
 } from "@/lib/cita-utils";
 import { DetallesCitaModalMedico } from "@/components/medico/detalles-cita-modal";
+import GestionCitaMedicoModal from "@/components/medico/gestion-cita-medico-modal";
 import ModalCrearReceta from "@/components/medico/ModalCrearReceta";
 import { ModalPerfilPaciente } from "@/components/medico/modal-perfil-paciente";
 import { ModalHistorialPaciente } from "@/components/medico/modal-historial-paciente";
@@ -52,6 +53,7 @@ import {
   Search,
   LogOut,
   Eye,
+  ClipboardList,
   Video,
   User,
   FileText,
@@ -97,15 +99,20 @@ interface PerfilMedico {
 
 interface CitaAgenda {
   id: string;
+  id_paciente?: string; // ✨ NUEVO: ID del paciente
+  fecha_cita?: string; // Se añade para compatibilidad con Cita
   hora_cita: string;
   tipo_cita: string;
   estado: string;
   motivo_consulta: string;
-  paciente: {
+  paciente_nombre?: string; // Se añade para compatibilidad
+  paciente?: {
+    id?: string; // Se añade para compatibilidad
     nombre: string;
     apellido: string;
     edad: number;
     telefono: string;
+    email?: string; // Se añade para compatibilidad
   };
 }
 
@@ -144,6 +151,7 @@ export default function DashboardMedicoPage() {
   const [detallesCitaOpen, setDetallesCitaOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mostrarTodasLasCitas, setMostrarTodasLasCitas] = useState(false);
+  const [gestionCitaOpen, setGestionCitaOpen] = useState(false);
 
   // ESTADOS PARA MODALES - ACTUALIZADOS
   const [buscarPacientesOpen, setBuscarPacientesOpen] = useState(false);
@@ -187,18 +195,21 @@ export default function DashboardMedicoPage() {
         if (pacientesRes.ok) {
           const pacientesData = await pacientesRes.json();
           // Normalizar forma para compatibilidad con componentes existentes
-          const pacientesNormalized = (pacientesData.pacientes || []).map((p: any) => ({
-            id: p.id,
-            nombre: p.usuario?.nombre || p.nombre || "",
-            apellido: p.usuario?.apellido || p.apellido || "",
-            edad: p.informacion_personal?.edad || p.edad || null,
-            telefono: p.usuario?.telefono || p.telefono || "",
-            email: p.usuario?.email || p.email || "",
-            dni: p.informacion_personal?.dni || p.dni || "",
-            tipo_sangre: p.informacion_personal?.tipo_sangre || p.tipo_sangre || "",
-            // Mantener el objeto original por si otros modales lo necesitan
-            _raw: p,
-          }));
+          const pacientesNormalized = (pacientesData.pacientes || []).map(
+            (p: any) => ({
+              id: p.id,
+              nombre: p.usuario?.nombre || p.nombre || "",
+              apellido: p.usuario?.apellido || p.apellido || "",
+              edad: p.informacion_personal?.edad || p.edad || null,
+              telefono: p.usuario?.telefono || p.telefono || "",
+              email: p.usuario?.email || p.email || "",
+              dni: p.informacion_personal?.dni || p.dni || "",
+              tipo_sangre:
+                p.informacion_personal?.tipo_sangre || p.tipo_sangre || "",
+              // Mantener el objeto original por si otros modales lo necesitan
+              _raw: p,
+            })
+          );
           setPacientes(pacientesNormalized);
         }
       } catch (error) {
@@ -229,16 +240,159 @@ export default function DashboardMedicoPage() {
     setBuscarPacientesOpen(true);
   };
 
-  // FUNCIÓN: Crear receta desde cita
+  // FUNCIÓN HELPER: Verificar si puede unirse a videollamada CON LOGS
+  const puedeUnirseAVideollamadaConLogs = (cita: any): boolean => {
+    console.log("📹 Verificando si puede unirse a videollamada:", {
+      id: cita.id,
+      tipo_cita: cita.tipo_cita,
+      estado: cita.estado,
+      fecha_cita: cita.fecha_cita,
+    });
+
+    if (!cita) {
+      console.warn("❌ Cita es nula");
+      return false;
+    }
+
+    const esVirtual = cita.tipo_cita === "virtual";
+    console.log(
+      `  - ¿Es virtual? ${esVirtual} (tipo_cita="${cita.tipo_cita}")`
+    );
+
+    const estadoValido = ["confirmada", "programada", "iniciada"].includes(
+      cita.estado
+    );
+    console.log(
+      `  - ¿Estado válido? ${estadoValido} (estado="${cita.estado}")`
+    );
+
+    // Validación correcta de fecha
+    const hoyDate = new Date();
+    hoyDate.setHours(0, 0, 0, 0); // Establecer hora a inicio del día
+
+    // Parsear fecha_cita (formato: "2025-11-15")
+    const [año, mes, día] = cita.fecha_cita.split("-");
+    const fechaCitaDate = new Date(
+      parseInt(año),
+      parseInt(mes) - 1,
+      parseInt(día)
+    );
+    fechaCitaDate.setHours(0, 0, 0, 0);
+
+    const esFechaValida = fechaCitaDate >= hoyDate;
+    console.log(
+      `  - ¿Fecha válida? ${esFechaValida} (fecha_cita="${
+        cita.fecha_cita
+      }", hoy="${hoyDate.toISOString().split("T")[0]}")`
+    );
+
+    const resultado = esVirtual && estadoValido && esFechaValida;
+    console.log(`  ✅ Resultado: ${resultado}`);
+
+    return resultado;
+  };
+  const enriquecerCita = (cita: CitaAgenda, fechaDia: string): CitaAgenda => {
+    // Ahora la API devuelve id_paciente directamente
+    const paciente_id = cita.id_paciente;
+    const fecha_cita = cita.fecha_cita || fechaDia;
+
+    if (!paciente_id) {
+      console.warn("⚠️ Aviso: La cita no tiene id_paciente", {
+        id: cita.id,
+        id_paciente: cita.id_paciente,
+        paciente: cita.paciente,
+      });
+    }
+
+    const citaEnriquecida: CitaAgenda = {
+      ...cita,
+      id_paciente: paciente_id,
+      fecha_cita: fecha_cita,
+      paciente_nombre:
+        cita.paciente_nombre ||
+        `${cita.paciente?.nombre} ${cita.paciente?.apellido}`,
+    };
+
+    console.log("🔍 Cita enriquecida:", {
+      id: citaEnriquecida.id,
+      tipo: citaEnriquecida.tipo_cita,
+      id_paciente: citaEnriquecida.id_paciente,
+      paciente_nombre: citaEnriquecida.paciente_nombre,
+      fecha_cita: citaEnriquecida.fecha_cita,
+    });
+
+    return citaEnriquecida;
+  };
+
+  const gestionarCita = (cita: any) => {
+    if (!cita) {
+      console.error("❌ Error: La cita no existe");
+      alert("Error: No se pudo cargar la información de la cita");
+      return;
+    }
+
+    if (!cita.id) {
+      console.error("❌ Error: La cita no tiene ID", cita);
+      alert("Error: La cita no tiene un ID válido");
+      return;
+    }
+
+    console.log("✅ Abriendo gestión completa de cita:", cita.id);
+    setCitaSeleccionada(cita);
+    setGestionCitaOpen(true);
+  };
+
+  // FUNCIÓN: Crear receta desde cita - MEJORADA CON VALIDACIONES INTELIGENTES
   const crearRecetaDesdeCita = (cita: any) => {
+    console.log("📝 Intentando crear receta. Datos de cita:", {
+      id: cita.id,
+      id_paciente: cita.id_paciente,
+      paciente: cita.paciente,
+    });
+
+    if (!cita) {
+      console.error("❌ Error: La cita no existe");
+      alert("Error: No se pudo cargar la información de la cita");
+      return;
+    }
+
+    if (!cita.id) {
+      console.error("❌ Error: La cita no tiene ID", cita);
+      alert("Error: La cita no tiene un ID válido");
+      return;
+    }
+
+    // Extraer paciente_id de varias posibles ubicaciones
+    const paciente_id = cita.id_paciente || (cita.paciente as any)?.id;
+
+    if (!paciente_id) {
+      console.error("⚠️ Aviso: No se encontró paciente_id en la cita", {
+        cita_id: cita.id,
+        id_paciente: cita.id_paciente,
+        paciente_object: cita.paciente,
+      });
+      // Permitir que se abra el modal de todas formas - puede ser que no sea necesario el paciente_id para crear receta
+      console.log(
+        "⚠️ Continuando sin paciente_id, el modal puede obtenerlo de otro lado"
+      );
+    }
+
+    console.log("✅ Abriendo modal de receta para cita:", {
+      cita_id: cita.id,
+      paciente_id: paciente_id,
+    });
+
     setCitaParaReceta(cita);
     setCrearRecetaOpen(true);
   };
 
   // FUNCIÓN: Receta creada exitosamente
   const handleRecetaCreada = () => {
+    console.log("✅ Receta creada exitosamente. Cerrando modal...");
     setCrearRecetaOpen(false);
     setCitaParaReceta(null);
+    // Opcional: Recargar agenda después de crear receta
+    // cargarAgenda();
   };
 
   // FUNCIONES EXISTENTES (se mantienen igual)
@@ -310,73 +464,180 @@ export default function DashboardMedicoPage() {
   };
 
   const verDetallesCita = (cita: any) => {
+    if (!cita) {
+      console.error("❌ Error: La cita no existe");
+      alert("Error: No se pudo cargar la información de la cita");
+      return;
+    }
+
+    if (!cita.id) {
+      console.error("❌ Error: La cita no tiene ID", cita);
+      alert("Error: La cita no tiene un ID válido");
+      return;
+    }
+
+    console.log("✅ Abriendo detalles de cita:", cita.id);
     setCitaSeleccionada(cita);
     setDetallesCitaOpen(true);
   };
 
-  // EN EL DASHBOARD DEL MÉDICO - Actualizar la función
+  // EN EL DASHBOARD DEL MÉDICO - Función mejorada para videollamada
   const unirseAVideollamada = async (cita: any) => {
     try {
-      console.log("Médico iniciando proceso de videollamada para cita:", cita);
-
-      if (cita.tipo_cita !== "virtual") {
-        alert("❌ Esta cita no es de tipo virtual.");
+      // ===== VALIDACIONES PREVIAS =====
+      if (!cita) {
+        console.error("❌ Error: La cita no existe");
+        alert("Error: No se pudo cargar la información de la cita");
         return;
       }
+
+      if (!cita.id) {
+        console.error("❌ Error: La cita no tiene ID", cita);
+        alert("Error: La cita no tiene un ID válido");
+        return;
+      }
+
+      if (cita.tipo_cita !== "virtual") {
+        console.warn("⚠️ Aviso: Esta cita no es de tipo virtual");
+        alert(
+          "❌ Esta cita no es de tipo virtual.\n\nSolo las citas virtuales pueden tener videollamadas."
+        );
+        return;
+      }
+
+      if (!["confirmada", "programada", "activa"].includes(cita.estado)) {
+        console.warn(
+          "⚠️ Aviso: La cita no está en estado válido para iniciar videollamada"
+        );
+        alert(
+          `❌ La cita no está en estado válido para iniciar videollamada.\n\nEstado actual: ${cita.estado}`
+        );
+        return;
+      }
+
+      if (!token) {
+        console.error("❌ Error: No hay token de autenticación");
+        alert("Error: No estás autenticado. Por favor recarga la página.");
+        return;
+      }
+
+      console.log("🎥 Iniciando videollamada para cita:", {
+        id: cita.id,
+        tipo: cita.tipo_cita,
+        estado: cita.estado,
+        paciente_id: cita.paciente_id,
+      });
 
       const headers = {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       };
 
-      // Buscar sesión existente
+      // ===== BUSCAR SESIÓN EXISTENTE =====
+      console.log("🔍 Buscando sesión existente para cita:", cita.id);
+
       const sesionesResponse = await fetch(
         `/api/telemedicina/sesiones?cita_id=${cita.id}`,
         { headers }
       );
 
+      if (!sesionesResponse.ok) {
+        throw new Error(`Error al buscar sesiones: ${sesionesResponse.status}`);
+      }
+
       const sesionesData = await sesionesResponse.json();
+      console.log("📋 Respuesta de sesiones:", sesionesData);
 
       let sesionId;
 
-      if (sesionesData.success && sesionesData.sesiones.length > 0) {
+      if (
+        sesionesData.success &&
+        sesionesData.sesiones &&
+        sesionesData.sesiones.length > 0
+      ) {
         // Usar sesión existente
         sesionId = sesionesData.sesiones[0].id;
-        console.log("✅ Sesión encontrada:", sesionId);
+        console.log("✅ Sesión existente encontrada:", sesionId);
       } else {
-        // Crear nueva sesión
-        console.log("🆕 Creando nueva sesión automáticamente...");
+        // ===== CREAR NUEVA SESIÓN =====
+        console.log(
+          "🆕 No hay sesión existente. Creando nueva sesión automáticamente..."
+        );
 
         const programarResponse = await fetch("/api/telemedicina/programar", {
           method: "POST",
           headers: headers,
           body: JSON.stringify({
             id_cita: cita.id,
-            titulo: "Consulta Virtual",
-            descripcion: "Sesión de telemedicina automática",
+            titulo: `Consulta Virtual - ${cita.paciente_nombre || "Paciente"}`,
+            descripcion: "Sesión de telemedicina iniciada por médico",
             fecha_programada: new Date().toISOString(),
             duracion_minutos: 30,
           }),
         });
 
+        if (!programarResponse.ok) {
+          throw new Error(`Error al crear sesión: ${programarResponse.status}`);
+        }
+
         const programarData = await programarResponse.json();
+        console.log("📋 Respuesta de programar:", programarData);
 
         if (!programarData.success) {
-          throw new Error(programarData.error || "Error al crear sesión");
+          throw new Error(
+            programarData.error || "Error desconocido al crear sesión"
+          );
+        }
+
+        if (!programarData.sesion || !programarData.sesion.id) {
+          throw new Error("La respuesta de sesión no contiene un ID válido");
         }
 
         sesionId = programarData.sesion.id;
         console.log("✅ Nueva sesión creada:", sesionId);
       }
 
-      // Redirigir
-      console.log("🚀 Redirigiendo médico a videollamada...");
-      window.open(`/telemedicina/sesion/${sesionId}`, "_blank");
+      // ===== VALIDAR SESIÓN ID =====
+      if (!sesionId) {
+        throw new Error("No se pudo obtener un ID de sesión válido");
+      }
+
+      // ===== REDIRIGIR A VIDEOLLAMADA =====
+      console.log("🚀 Abriendo videollamada con sesión:", sesionId);
+      const urlVideollamada = `/telemedicina/sesion/${sesionId}`;
+      console.log("🔗 URL:", urlVideollamada);
+
+      const nuevaVentana = window.open(urlVideollamada, "_blank");
+
+      if (!nuevaVentana) {
+        alert(
+          "⚠️ No se pudo abrir la ventana de videollamada.\n\nPor favor, desactiva los bloqueadores de ventanas emergentes."
+        );
+      } else {
+        console.log("✅ Ventana de videollamada abierta correctamente");
+      }
     } catch (error: any) {
-      console.error("Error médico uniéndose a videollamada:", error);
-      alert(
-        `❌ Error: ${error.message || "No se pudo conectar a la videollamada"}`
-      );
+      console.error("❌ Error crítico al unirse a videollamada:", {
+        mensaje: error.message,
+        stack: error.stack,
+        error: error,
+      });
+
+      // Mostrar mensaje de error amigable al usuario
+      let mensajeError = "No se pudo conectar a la videollamada";
+
+      if (error.message.includes("404")) {
+        mensajeError =
+          "La sesión de videollamada no se encontró. Intenta nuevamente.";
+      } else if (error.message.includes("401")) {
+        mensajeError = "Tu sesión ha expirado. Por favor recarga la página.";
+      } else if (error.message.includes("500")) {
+        mensajeError = "Error del servidor. Intenta nuevamente más tarde.";
+      } else if (error.message) {
+        mensajeError = error.message;
+      }
+
+      alert(`❌ Error: ${mensajeError}`);
     }
   };
 
@@ -605,116 +866,135 @@ export default function DashboardMedicoPage() {
                           {(mostrarTodasLasCitas
                             ? citasHoy.citas
                             : citasHoy.citas.slice(0, 5)
-                          ).map((cita) => (
-                            <div
-                              key={cita.id}
-                              className="p-3 sm:p-4 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors cursor-pointer shadow-sm"
-                              onClick={() => verDetallesCita(cita)}
-                            >
-                              <div className="flex items-start justify-between">
-                                <div className="flex items-start space-x-3 sm:space-x-4 flex-1 min-w-0">
-                                  {/* Hora */}
-                                  <div className="text-center min-w-[70px] sm:min-w-[80px] flex-shrink-0">
-                                    <div className="text-base sm:text-lg font-bold text-blue-600">
-                                      {cita.hora_cita?.slice(0, 5) || "--:--"}
-                                    </div>
-                                    <Badge
-                                      variant={
-                                        cita.estado === "completada"
-                                          ? "default"
-                                          : cita.estado === "confirmada"
-                                          ? "secondary"
-                                          : cita.estado === "iniciada"
-                                          ? "default"
-                                          : "outline"
-                                      }
-                                      className="capitalize text-xs mt-1"
-                                    >
-                                      {cita.estado}
-                                    </Badge>
-                                  </div>
-
-                                  {/* Información del Paciente */}
-                                  <div className="flex-1 min-w-0">
-                                    <h4 className="font-semibold text-sm sm:text-base truncate">
-                                      {cita.paciente.nombre}{" "}
-                                      {cita.paciente.apellido}
-                                    </h4>
-                                    <div className="flex items-center space-x-2 mt-1 sm:mt-2 flex-wrap">
+                          ).map((citaBase, index) => {
+                            // ← Agregar index aquí
+                            const cita = enriquecerCita(
+                              citaBase,
+                              citasHoy.fecha
+                            );
+                            return (
+                              <div
+                                key={`${cita.id}-${index}`} // ← Ahora index está definido
+                                className="p-3 sm:p-4 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors cursor-pointer shadow-sm"
+                                onClick={() => verDetallesCita(cita)}
+                              >
+                                <div className="flex items-start justify-between">
+                                  <div className="flex items-start space-x-3 sm:space-x-4 flex-1 min-w-0">
+                                    {/* Hora */}
+                                    <div className="text-center min-w-[70px] sm:min-w-[80px] flex-shrink-0">
+                                      <div className="text-base sm:text-lg font-bold text-blue-600">
+                                        {cita.hora_cita?.slice(0, 5) || "--:--"}
+                                      </div>
                                       <Badge
-                                        variant="outline"
-                                        className={`text-xs ${
-                                          cita.tipo_cita === "virtual"
-                                            ? "bg-blue-50 text-blue-700 border-blue-300"
-                                            : cita.tipo_cita === "presencial"
-                                            ? "bg-green-50 text-green-700 border-green-300"
-                                            : cita.tipo_cita === "domicilio"
-                                            ? "bg-purple-50 text-purple-700 border-purple-300"
-                                            : ""
-                                        }`}
+                                        variant={
+                                          cita.estado === "completada"
+                                            ? "default"
+                                            : cita.estado === "confirmada"
+                                            ? "secondary"
+                                            : cita.estado === "iniciada"
+                                            ? "default"
+                                            : "outline"
+                                        }
+                                        className="capitalize text-xs mt-1"
                                       >
-                                        {getEtiquetaCita(cita.tipo_cita)}
+                                        {cita.estado}
                                       </Badge>
-                                      <p className="text-xs sm:text-sm text-gray-600">
-                                        {cita.paciente.edad} años
-                                      </p>
                                     </div>
-                                    {cita.motivo_consulta && (
-                                      <p className="text-xs sm:text-sm text-gray-500 mt-2 truncate">
-                                        {cita.motivo_consulta}
-                                      </p>
-                                    )}
+
+                                    {/* Información del Paciente */}
+                                    <div className="flex-1 min-w-0">
+                                      <h4 className="font-semibold text-sm sm:text-base truncate">
+                                        {cita.paciente?.nombre || ""}{" "}
+                                        {cita.paciente?.apellido || ""}
+                                      </h4>
+                                      <div className="flex items-center space-x-2 mt-1 sm:mt-2 flex-wrap">
+                                        <Badge
+                                          variant="outline"
+                                          className={`text-xs ${
+                                            cita.tipo_cita === "virtual"
+                                              ? "bg-blue-50 text-blue-700 border-blue-300"
+                                              : cita.tipo_cita === "presencial"
+                                              ? "bg-green-50 text-green-700 border-green-300"
+                                              : cita.tipo_cita === "domicilio"
+                                              ? "bg-purple-50 text-purple-700 border-purple-300"
+                                              : ""
+                                          }`}
+                                        >
+                                          {getEtiquetaCita(cita.tipo_cita)}
+                                        </Badge>
+                                        <p className="text-xs sm:text-sm text-gray-600">
+                                          {cita.paciente?.edad || 0} años
+                                        </p>
+                                      </div>
+                                      {cita.motivo_consulta && (
+                                        <p className="text-xs sm:text-sm text-gray-500 mt-2 truncate">
+                                          {cita.motivo_consulta}
+                                        </p>
+                                      )}
+                                    </div>
                                   </div>
-                                </div>
 
-                                {/* Estado y Acciones */}
-                                <div className="flex flex-col items-end space-y-2 sm:space-y-3 ml-2 sm:ml-4">
-                                  <div
-                                    className="flex space-x-1 sm:space-x-2"
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-8 w-8 sm:h-9 sm:w-9 p-0 hover:bg-blue-50"
-                                      onClick={() => verDetallesCita(cita)}
-                                      title="Ver detalles de la cita"
+                                  {/* Estado y Acciones */}
+                                  <div className="flex flex-col items-end space-y-2 sm:space-y-3 ml-2 sm:ml-4">
+                                    <div
+                                      className="flex space-x-1 sm:space-x-2"
+                                      onClick={(e) => e.stopPropagation()}
                                     >
-                                      <Eye className="w-4 h-4 text-blue-600" />
-                                    </Button>
-
-                                    {puedeCrearReceta(cita) && (
                                       <Button
                                         variant="ghost"
                                         size="sm"
-                                        className="h-8 w-8 sm:h-9 sm:w-9 p-0 hover:bg-green-50"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          crearRecetaDesdeCita(cita);
-                                        }}
-                                        title="Crear receta"
+                                        className="h-8 w-8 sm:h-9 sm:w-9 p-0 hover:bg-purple-50"
+                                        onClick={() => gestionarCita(cita)}
+                                        title="Gestionar cita completa"
                                       >
-                                        <FileText className="w-4 h-4 text-green-600" />
+                                        <ClipboardList className="w-4 h-4 text-purple-600" />
                                       </Button>
-                                    )}
 
-                                    {puedeUnirseAVideollamada(cita) && (
                                       <Button
+                                        variant="ghost"
                                         size="sm"
-                                        className="h-8 sm:h-9 px-2 sm:px-3 bg-green-600 hover:bg-green-700 text-white"
-                                        onClick={() =>
-                                          unirseAVideollamada(cita)
-                                        }
-                                        title="Iniciar videollamada"
+                                        className="h-8 w-8 sm:h-9 sm:w-9 p-0 hover:bg-blue-50"
+                                        onClick={() => verDetallesCita(cita)}
+                                        title="Ver detalles de la cita"
                                       >
-                                        <Video className="w-4 h-4" />
+                                        <Eye className="w-4 h-4 text-blue-600" />
                                       </Button>
-                                    )}
+
+                                      {puedeCrearReceta(cita as any) && (
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-8 w-8 sm:h-9 sm:w-9 p-0 hover:bg-green-50"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            crearRecetaDesdeCita(cita);
+                                          }}
+                                          title="Crear receta"
+                                        >
+                                          <FileText className="w-4 h-4 text-green-600" />
+                                        </Button>
+                                      )}
+
+                                      {puedeUnirseAVideollamadaConLogs(
+                                        cita
+                                      ) && (
+                                        <Button
+                                          size="sm"
+                                          className="h-8 sm:h-9 px-2 sm:px-3 bg-green-600 hover:bg-green-700 text-white"
+                                          onClick={() =>
+                                            unirseAVideollamada(cita)
+                                          }
+                                          title="Iniciar videollamada"
+                                        >
+                                          <Video className="w-4 h-4" />
+                                        </Button>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
 
                           {/* Botón "Ver más" / "Ver menos" */}
                           {citasHoy.citas.length > 5 && (
@@ -1242,6 +1522,19 @@ export default function DashboardMedicoPage() {
         {/* MODALES */}
 
         {/* MODAL DE BÚSQUEDA DE PACIENTES - ACTUALIZADO */}
+
+        <GestionCitaMedicoModal
+          isOpen={gestionCitaOpen}
+          onClose={() => {
+            setGestionCitaOpen(false);
+            setCitaSeleccionada(null);
+          }}
+          cita={citaSeleccionada}
+          onCitaActualizada={() => {
+            window.location.reload();
+          }}
+        />
+
         <ModalPerfilPaciente
           isOpen={mostrarPerfilPaciente}
           onClose={() => setMostrarPerfilPaciente(false)}
@@ -1280,7 +1573,19 @@ export default function DashboardMedicoPage() {
           cita={citaSeleccionada}
           onCitaActualizada={() => window.location.reload()}
           onVerPerfil={(pacienteId: string) => verPerfilPaciente(pacienteId)}
-          onVerHistorial={(pacienteId: string) => verHistorialPaciente(pacienteId)}
+          onVerHistorial={(pacienteId: string) =>
+            verHistorialPaciente(pacienteId)
+          }
+          onCrearReceta={() => {
+            // Abrir modal de crear receta con la cita seleccionada
+            if (citaSeleccionada) {
+              crearRecetaDesdeCita(citaSeleccionada);
+            }
+          }}
+          onGestionarCita={() => {
+            // Placeholder para futura implementación
+            alert("Función de gestionar cita - Próximamente");
+          }}
         />
       </div>
     </ProtectedRoute>

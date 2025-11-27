@@ -37,6 +37,7 @@ import {
   Home,
   Users,
   MoreVertical,
+  Stethoscope, // Icono añadido para gestión médica
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -56,6 +57,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getEtiquetaCita, getAccionesCita } from "@/lib/cita-utils";
+import GestionCitaMedicoModal from "./gestion-cita-medico-modal"; // Importar el modal
 
 interface Cita {
   id: string;
@@ -91,6 +93,10 @@ export function CalendarioCitas({
   const [filtroTipo, setFiltroTipo] = useState<string>("todos");
   const [busqueda, setBusqueda] = useState("");
 
+  // Estados para el modal de gestión
+  const [modalGestionAbierto, setModalGestionAbierto] = useState(false);
+  const [citaSeleccionada, setCitaSeleccionada] = useState<Cita | null>(null);
+
   // Obtener días del mes
   const primerDia = startOfMonth(mesActual);
   const ultimoDia = endOfMonth(mesActual);
@@ -118,9 +124,26 @@ export function CalendarioCitas({
 
   // Obtener citas para un día específico
   const obtenerCitasDelDia = (dia: Date) => {
-    return citasFiltradas.filter((cita) =>
-      isSameDay(new Date(cita.fecha_cita), dia)
+    const citasDelDia = citasFiltradas.filter((cita) =>
+      isSameDay(convertirFechaAPeru(cita.fecha_cita), dia)
     );
+
+    // Eliminar duplicados por ID + Hora para este día específico
+    const clavesUnicas = new Set();
+    return citasDelDia.filter((cita) => {
+      const clave = `${cita.id}-${cita.hora_cita}`;
+      if (clavesUnicas.has(clave)) {
+        console.warn(`⚠️ Duplicado en día ${format(dia, "yyyy-MM-dd")}:`, cita);
+        return false;
+      }
+      clavesUnicas.add(clave);
+      return true;
+    });
+  };
+
+  const convertirFechaAPeru = (fecha: string): Date => {
+    // Ya viene convertida del backend, solo crear Date object
+    return new Date(fecha + "T00:00:00-05:00");
   };
 
   // Obtener estadísticas
@@ -139,19 +162,36 @@ export function CalendarioCitas({
 
   // Obtener citas próximas (hoy y próximos días)
   const citasProximas = useMemo(() => {
-    return citasFiltradas
+    // Eliminar duplicados por ID usando Set
+    const idsUnicos = new Set();
+    const citasSinDuplicados = citasFiltradas.filter((cita) => {
+      if (idsUnicos.has(cita.id)) {
+        console.warn(`⚠️ Cita duplicada encontrada: ${cita.id}`);
+        return false;
+      }
+      idsUnicos.add(cita.id);
+      return true;
+    });
+
+    return citasSinDuplicados
       .filter((c) => {
-        const fechaCita = new Date(`${c.fecha_cita} ${c.hora_cita}`);
-        const ahora = new Date();
+        const fechaCitaPeru = convertirFechaAPeru(c.fecha_cita);
+        const horaParts = c.hora_cita?.split(":") || ["00", "00"];
+        fechaCitaPeru.setHours(parseInt(horaParts[0]), parseInt(horaParts[1]));
+
+        const ahoraPeru = new Date();
+        const offsetPeru = -5 * 60 * 60 * 1000;
+        const ahoraPeruAjustado = new Date(ahoraPeru.getTime() + offsetPeru);
+
         return (
-          fechaCita >= ahora &&
+          fechaCitaPeru >= ahoraPeruAjustado &&
           (c.estado === "confirmada" || c.estado === "programada")
         );
       })
       .sort(
         (a, b) =>
-          new Date(`${a.fecha_cita} ${a.hora_cita}`).getTime() -
-          new Date(`${b.fecha_cita} ${b.hora_cita}`).getTime()
+          convertirFechaAPeru(a.fecha_cita).getTime() -
+          convertirFechaAPeru(b.fecha_cita).getTime()
       )
       .slice(0, 6);
   }, [citasFiltradas]);
@@ -200,6 +240,25 @@ export function CalendarioCitas({
       default:
         return "bg-gray-500 hover:bg-gray-600";
     }
+  };
+
+  // Función para abrir el modal de gestión
+  const abrirModalGestion = (cita: Cita) => {
+    setCitaSeleccionada(cita);
+    setModalGestionAbierto(true);
+  };
+
+  // Función para cerrar el modal
+  const cerrarModalGestion = () => {
+    setModalGestionAbierto(false);
+    setCitaSeleccionada(null);
+  };
+
+  // Función para manejar actualización de cita
+  const manejarCitaActualizada = () => {
+    // Aquí puedes recargar las citas o actualizar el estado
+    console.log("Cita actualizada, recargando datos...");
+    // Podrías llamar a una función prop para recargar las citas
   };
 
   return (
@@ -521,14 +580,25 @@ export function CalendarioCitas({
 
                         <p className="text-gray-500 text-sm">
                           {format(
-                            new Date(cita.fecha_cita),
+                            convertirFechaAPeru(cita.fecha_cita),
                             "EEEE, d 'de' MMMM",
                             { locale: es }
                           )}
                         </p>
                       </div>
 
-                      <div className="flex gap-2 sm:flex-col">
+                      <div className="flex gap-2 flex-wrap">
+                        {/* Botón para gestión médica - Siempre visible */}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => abrirModalGestion(cita)}
+                          className="bg-green-50 text-green-700 border-green-200 hover:bg-green-100"
+                        >
+                          <Stethoscope className="w-4 h-4 mr-1" />
+                          Gestionar
+                        </Button>
+
                         {getAccionesCita(cita).videollamada && (
                           <Button
                             size="sm"
@@ -569,6 +639,14 @@ export function CalendarioCitas({
           </Card>
         </div>
       </div>
+
+      {/* Modal de Gestión de Citas */}
+      <GestionCitaMedicoModal
+        isOpen={modalGestionAbierto}
+        onClose={cerrarModalGestion}
+        cita={citaSeleccionada}
+        onCitaActualizada={manejarCitaActualizada}
+      />
     </div>
   );
 }

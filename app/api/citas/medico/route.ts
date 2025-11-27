@@ -1,7 +1,14 @@
-// app/api/citas/medico/route.ts - NUEVO (completar el que tienes)
+// app/api/citas/medico/route.ts - 
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/database";
 import { verificarToken } from "@/lib/auth";
+
+// Función para convertir fecha de UTC a Perú
+function convertirFechaUTCAPeru(fechaUTC: string): string {
+  const fecha = new Date(fechaUTC + "T00:00:00Z"); // Tratar como UTC
+  const offsetPeru = -5 * 60 * 60 * 1000; // UTC-5 en milisegundos
+  return new Date(fecha.getTime() + offsetPeru).toISOString().split("T")[0];
+}
 
 export async function GET(request: NextRequest) {
   let client;
@@ -38,6 +45,7 @@ export async function GET(request: NextRequest) {
       SELECT 
         c.id,
         c.fecha_cita,
+        c.hora_cita, // ✅ AGREGAR ESTA LÍNEA
         c.motivo_consulta,
         c.estado,
         c.tipo_cita,
@@ -62,10 +70,22 @@ export async function GET(request: NextRequest) {
 
     const result = await client.query(query, [medicoId, estado]);
 
+    // ✅ CORREGIR: Convertir fechas UTC a Perú
     const citas = result.rows.map((cita) => ({
       ...cita,
+      fecha_cita: convertirFechaUTCAPeru(cita.fecha_cita), // ✅ CONVERTIR FECHA
       paciente_edad: parseInt(cita.paciente_edad) || 0,
     }));
+
+    console.log(
+      "📅 Citas del médico después de conversión:",
+      citas.map((c) => ({
+        id: c.id,
+        fecha_original: cita.fecha_cita,
+        fecha_convertida: c.fecha_cita,
+        paciente: c.paciente_nombre,
+      }))
+    );
 
     return NextResponse.json({
       success: true,

@@ -73,31 +73,37 @@ export async function GET(
       );
     }
 
-    // Verificar que la cita pertenece al médico y al paciente
-    const citaResult = await query(
-      "SELECT id, fecha_cita FROM citas WHERE id = $1 AND id_medico = $2 AND id_paciente = $3",
-      [citaId, medicoId, pacienteId]
-    );
-
-    if (citaResult.rows.length === 0) {
-      return NextResponse.json(
-        { error: "Cita no encontrada o no autorizada" },
-        { status: 403 }
+    // ✅ Si es cita temporal (comienza con "temp-"), permitir acceso directo
+    // Sin validar en BD
+    const esTemportal = citaId.startsWith("temp-");
+    
+    if (!esTemportal) {
+      // Verificar que la cita pertenece al médico y al paciente (solo si es real en BD)
+      const citaResult = await query(
+        "SELECT id, fecha_cita FROM citas WHERE id = $1 AND id_medico = $2 AND id_paciente = $3",
+        [citaId, medicoId, pacienteId]
       );
-    }
 
-    const fechaCita = new Date(citaResult.rows[0].fecha_cita);
-    const ahora = new Date();
+      if (citaResult.rows.length === 0) {
+        return NextResponse.json(
+          { error: "Cita no encontrada o no autorizada" },
+          { status: 403 }
+        );
+      }
 
-    // Acceso permitido sólo durante 7 días después de la cita (y si la cita ya ocurrió)
-    const diffMs = ahora.getTime() - fechaCita.getTime();
-    const sieteDiasMs = 7 * 24 * 60 * 60 * 1000;
+      const fechaCita = new Date(citaResult.rows[0].fecha_cita);
+      const ahora = new Date();
 
-    if (fechaCita > ahora || diffMs > sieteDiasMs) {
-      return NextResponse.json(
-        { error: "El acceso al historial de este paciente expiró para esta cita" },
-        { status: 403 }
-      );
+      // Acceso permitido sólo durante 7 días después de la cita (y si la cita ya ocurrió)
+      const diffMs = ahora.getTime() - fechaCita.getTime();
+      const sieteDiasMs = 7 * 24 * 60 * 60 * 1000;
+
+      if (fechaCita > ahora || diffMs > sieteDiasMs) {
+        return NextResponse.json(
+          { error: "El acceso al historial de este paciente expiró para esta cita" },
+          { status: 403 }
+        );
+      }
     }
 
     // Obtener información básica del paciente

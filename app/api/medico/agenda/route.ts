@@ -51,17 +51,19 @@ export async function GET(request: NextRequest) {
     const fechaFin = new Date(fechaInicio)
     fechaFin.setDate(fechaFin.getDate() + dias)
 
-    // Obtener citas del médico en el rango de fechas
+    // Obtener citas del médico en el rango de fechas - CON DATOS DE SESIÓN TELEMEDICINA
     const citasResult = await query(
       `
       SELECT 
         c.*,
         p.dni, p.fecha_nacimiento, p.sexo, p.tipo_sangre, p.alergias, p.enfermedades_cronicas,
         u.nombre as paciente_nombre, u.apellido as paciente_apellido, u.telefono as paciente_telefono,
-        u.email as paciente_email
+        u.email as paciente_email,
+        st.id as id_sesion, st.codigo_acceso, st.estado as estado_sesion
       FROM citas c
       JOIN pacientes p ON c.id_paciente = p.id
       JOIN usuarios u ON p.id_usuario = u.id
+      LEFT JOIN sesiones_telemedicina st ON st.id_cita = c.id
       WHERE c.id_medico = $1 
         AND c.fecha_cita >= $2 
         AND c.fecha_cita <= $3
@@ -87,6 +89,10 @@ export async function GET(request: NextRequest) {
 
       citasPorDia.get(fechaCita).push({
         id: cita.id,
+        id_paciente: cita.id_paciente,
+        id_sesion: cita.id_sesion, // ✨ NUEVO: ID de sesión telemedicina
+        codigo_acceso: cita.codigo_acceso, // ✨ NUEVO: Código para generar roomId
+        estado_sesion: cita.estado_sesion, // ✨ NUEVO: Estado de sesión
         hora_cita: cita.hora_cita,
         tipo_cita: cita.tipo_cita,
         estado: cita.estado,
@@ -97,7 +103,9 @@ export async function GET(request: NextRequest) {
         observaciones_medico: cita.observaciones_medico,
         costo: cita.costo,
         pagado: cita.pagado,
+        fecha_cita: fechaCita,
         paciente: {
+          id: cita.id_paciente,
           nombre: cita.paciente_nombre,
           apellido: cita.paciente_apellido,
           dni: cita.dni,

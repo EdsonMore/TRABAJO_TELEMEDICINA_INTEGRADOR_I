@@ -1,12 +1,8 @@
-// app/api/recetas/[id]/enviar-farmacia/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/database";
 import { verificarToken } from "@/lib/auth";
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function POST(request: NextRequest) {
   let client: any = null;
   try {
     const token = request.headers.get("authorization")?.replace("Bearer ", "");
@@ -21,36 +17,16 @@ export async function POST(
       return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
     }
 
-    const { id: recetaId } = await params;
-    const body = await request.json();
-    const { farmacia_id, tipo_entrega, direccion_entrega, costo_entrega } =
-      body;
+    const {
+      receta_id,
+      farmacia_id,
+      metodo_pago,
+      monto,
+    } = await request.json();
 
-    if (!recetaId || !farmacia_id) {
+    if (!receta_id || !farmacia_id || !metodo_pago || !monto) {
       return NextResponse.json(
-        { error: "ID de receta y farmacia son requeridos" },
-        { status: 400 }
-      );
-    }
-
-    // Validar tipo de entrega
-    if (
-      tipo_entrega &&
-      !["recojo", "domicilio"].includes(tipo_entrega)
-    ) {
-      return NextResponse.json(
-        { error: "Tipo de entrega inválido" },
-        { status: 400 }
-      );
-    }
-
-    // Si es domicilio, requiere dirección
-    if (
-      tipo_entrega === "domicilio" &&
-      (!direccion_entrega || !direccion_entrega.trim())
-    ) {
-      return NextResponse.json(
-        { error: "Dirección requerida para envío a domicilio" },
+        { error: "Parámetros requeridos faltantes" },
         { status: 400 }
       );
     }
@@ -59,12 +35,12 @@ export async function POST(
 
     // Verificar que la receta pertenece al paciente
     const recetaResult = await client.query(
-      `SELECT r.* 
+      `SELECT r.id 
        FROM recetas r
        JOIN citas c ON r.id_cita = c.id
        JOIN pacientes p ON c.id_paciente = p.id
        WHERE r.id = $1 AND p.id_usuario = $2`,
-      [recetaId, usuario.id]
+      [receta_id, usuario.id]
     );
 
     if (recetaResult.rows.length === 0) {
@@ -87,36 +63,49 @@ export async function POST(
       );
     }
 
-    // Actualizar receta con la farmacia seleccionada y opciones de entrega
-    // Nota: estado debe permanecer como 'activa', solo se actualiza estado_envio a 'enviada'
+    // IMPORTANTE: En una aplicación real, aquí se integraría con una pasarela de pagos
+    // Por ahora, simulamos que todo pago es exitoso
+
+    // Registrar el pago en la BD
+    const pagoResult = await client.query(
+      `INSERT INTO pagos (usuario_id, entidad_tipo, entidad_id, monto, metodo_pago, estado, referencia_pago, fecha_pago)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+       RETURNING id`,
+      [
+        usuario.id,
+        "medicamento", // Las recetas son consideradas medicamentos en el contexto de pagos
+        receta_id,
+        monto,
+        metodo_pago,
+        "completado",
+        `${metodo_pago.toUpperCase()}-${Date.now()}`,
+      ]
+    );
+
+    const pagoId = pagoResult.rows[0].id;
+
+    // Actualizar la receta con farmacia y estado_envio = 'enviada'
+    // SOLO se actualiza después de pago exitoso
     // CRÍTICO: Usar farmacia_seleccionada_id (no id_farmacia_dispensadora)
     await client.query(
       `UPDATE recetas 
        SET farmacia_seleccionada_id = $1,
            fecha_envio_farmacia = NOW(),
-           estado_envio = 'enviada',
-           tipo_entrega = $2,
-           direccion_entrega = $3,
-           costo_entrega = $4
-       WHERE id = $5`,
-      [
-        farmacia_id,
-        tipo_entrega || "recojo",
-        direccion_entrega || null,
-        costo_entrega || 0,
-        recetaId,
-      ]
+           estado_envio = 'enviada'
+       WHERE id = $2`,
+      [farmacia_id, receta_id]
     );
-
-    // NOTA: Sin tabla de notificaciones, la farmacia verá la receta en su lista normal
-    // cuando consulte las recetas pendientes
 
     return NextResponse.json({
       success: true,
-      message: "Receta enviada a la farmacia correctamente",
+      message: "Pago procesado correctamente y receta enviada a farmacia",
+      pago_id: pagoId,
+      receta_id,
+      metodo_pago,
+      monto,
     });
   } catch (error: any) {
-    console.error("Error enviando receta a farmacia:", error);
+    console.error("Error procesando pago de receta:", error);
     return NextResponse.json(
       { error: "Error interno del servidor" },
       { status: 500 }

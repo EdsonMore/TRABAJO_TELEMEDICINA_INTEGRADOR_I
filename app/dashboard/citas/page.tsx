@@ -140,8 +140,12 @@ export default function AgendarCitaPage() {
 
   // Cargar médicos al montar el componente
   useEffect(() => {
-    cargarMedicos();
-  }, []);
+    // Esperar a que el token esté disponible después de la recarga
+    if (token) {
+      cargarMedicos();
+    }
+    // Si no hay token, no hacer nada - el ProtectedRoute redirigirá o mostrará loading
+  }, [token]); // ✅ Dependencia en token
 
   // Aplicar filtros cuando cambien
   useEffect(() => {
@@ -171,10 +175,37 @@ export default function AgendarCitaPage() {
 
   // Función para obtener fecha y hora actual en Lima/Perú
   const getFechaHoraActual = () => {
+    // Usar la hora real del servidor o del cliente ajustada a Perú
     const ahora = new Date();
-    // Ajustar a zona horaria de Perú (UTC-5)
-    const offset = -5 * 60; // UTC-5 en minutos
-    const fechaPeru = new Date(ahora.getTime() + offset * 60 * 1000);
+
+    // Obtener la zona horaria de Perú (UTC-5)
+    const opciones: Intl.DateTimeFormatOptions = {
+      timeZone: "America/Lima",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    };
+
+    const formatter = new Intl.DateTimeFormat("es-PE", opciones);
+    const partes = formatter.formatToParts(ahora);
+
+    const getParte = (type: string) =>
+      partes.find((part) => part.type === type)?.value;
+
+    // Reconstruir la fecha en zona horaria Perú
+    const fechaPeru = new Date(
+      parseInt(getParte("year")!),
+      parseInt(getParte("month")!) - 1,
+      parseInt(getParte("day")!),
+      parseInt(getParte("hour")!),
+      parseInt(getParte("minute")!),
+      parseInt(getParte("second")!)
+    );
+
     return fechaPeru;
   };
 
@@ -186,34 +217,79 @@ export default function AgendarCitaPage() {
   // Función para verificar si una fecha/hora es en el pasado
   const esFechaHoraPasada = (fecha: string, hora: number): boolean => {
     const ahora = getFechaHoraActual();
-    const fechaCita = new Date(fecha);
-    fechaCita.setHours(hora, 0, 0, 0);
 
-    // Ajustar a UTC-5 para comparación correcta
-    const offset = -5 * 60 * 60 * 1000;
-    const fechaCitaPeru = new Date(fechaCita.getTime() + offset);
-    const ahoraPeru = new Date(ahora.getTime() + offset);
+    // ✅ CORREGIR: Crear la fecha de la cita correctamente
+    // Usar la fecha proporcionada + la hora, en zona horaria Perú
+    const fechaCita = new Date(
+      `${fecha}T${hora.toString().padStart(2, "0")}:00:00-05:00`
+    );
 
-    return fechaCitaPeru < ahoraPeru;
+    const MARGEN_MINUTOS = 5;
+    const limite = new Date(ahora.getTime() + MARGEN_MINUTOS * 60 * 1000);
+
+    const esPasado = fechaCita <= limite;
+
+    console.log("🔍 Validación CORREGIDA:", {
+      fecha,
+      hora: `${hora}:00`,
+      ahora: ahora.toLocaleString("es-PE"),
+      cita: fechaCita.toLocaleString("es-PE"), // ✅ Debe mostrar 17/11/2025, 8:00:00 a. m.
+      esPasado,
+    });
+
+    return esPasado;
   };
+
+  // 5 minutos en milisegundos
+  // Solo marca como pasada si ya pasó + margen
+
+  // MEJORA esta función en el modal:
 
   const cargarMedicos = async () => {
     setIsLoadingMedicos(true);
     try {
+      // ✅ VERIFICAR TOKEN PRIMERO
+      if (!token) {
+        console.error("❌ No hay token disponible en la página");
+        toast({
+          title: "Error de autenticación",
+          description: "Por favor inicia sesión nuevamente",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      console.log("🔐 Página: Intentando cargar médicos con token:", {
+        tokenLength: token?.length,
+        tokenPreview: token ? token.substring(0, 20) + "..." : "NO TOKEN",
+      });
+
       const response = await fetch("/api/medicos", {
         headers: {
           Authorization: `Bearer ${token}`,
         },
       });
 
+      console.log("📡 Página: Response status:", response.status);
+
       if (response.ok) {
         const data = await response.json();
+        console.log("✅ Página: Médicos cargados:", data.medicos?.length || 0);
         setMedicos(data.medicos || []);
+      } else if (response.status === 401) {
+        console.error("❌ Página: Token expirado o inválido");
+        toast({
+          title: "Sesión expirada",
+          description: "Por favor inicia sesión nuevamente",
+          variant: "destructive",
+        });
       } else {
-        throw new Error("Error al cargar médicos");
+        const errorData = await response.json().catch(() => ({}));
+        console.error("❌ Página: Error del servidor:", errorData);
+        throw new Error(errorData.error || "Error al cargar médicos");
       }
     } catch (error) {
-      console.error("Error cargando médicos:", error);
+      console.error("Error cargando médicos en página:", error);
       toast({
         title: "Error",
         description: "No se pudieron cargar los médicos disponibles",
@@ -282,18 +358,42 @@ export default function AgendarCitaPage() {
 
       if (response.ok) {
         const data = await response.json();
+
+        console.log("🕒 Horarios recibidos del API:", data.data);
+
         const horariosFormateados = (data.data || []).map((hora: any) => {
           const esPasado = esFechaHoraPasada(formData.fecha_cita, hora.hora);
+          const disponible = hora.disponible && !esPasado;
+
+          console.log(
+            `⏰ Hora ${hora.hora}: ${
+              disponible ? "✅ Disponible" : "❌ No disponible"
+            }`,
+            {
+              disponibleBD: hora.disponible,
+              esPasado,
+              horaActual: getFechaHoraActual().toLocaleTimeString(),
+            }
+          );
+
           return {
             ...hora,
             formato_12h: formatHora12h(hora.hora),
             formato_24h: `${hora.hora.toString().padStart(2, "0")}:00`,
             esPasado,
-            // Si es pasado, forzar como no disponible
-            disponible: hora.disponible && !esPasado,
+            disponible,
           };
         });
+
         setHorariosDisponibles(horariosFormateados);
+
+        // Debug: mostrar resumen
+        const totalDisponibles = horariosFormateados.filter(
+          (h: any) => h.disponible
+        ).length;
+        console.log(
+          `📊 Resumen: ${totalDisponibles}/${horariosFormateados.length} horarios disponibles`
+        );
       } else {
         throw new Error("Error al cargar horarios");
       }
@@ -495,7 +595,9 @@ export default function AgendarCitaPage() {
 
   const procesarPago = async (citaId: string) => {
     // ✅ Usar el monto real de la cita creada (que ya incluye ajustes por tipo)
-    const montoReal = citaCreada?.costo ? parseFloat(citaCreada.costo) : precioFinal;
+    const montoReal = citaCreada?.costo
+      ? parseFloat(citaCreada.costo)
+      : precioFinal;
 
     const pagoPayload = {
       tipo_pago: "cita",

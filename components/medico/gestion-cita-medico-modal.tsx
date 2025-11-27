@@ -1,18 +1,10 @@
 // components/medico/gestion-cita-medico-modal.tsx
-// VERSIÓN CORREGIDA CON ESTILOS CONSISTENTES
 
 "use client";
 
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/auth-context";
 import { useToast } from "@/hooks/use-toast";
-import {
-  puedeUnirseAVideollamada,
-  puedeCrearReceta,
-  puedeSolicitarExamenes,
-  getEtiquetaCita,
-  getDescripcionCita,
-} from "@/lib/cita-utils";
 import {
   Calendar,
   Clock,
@@ -23,15 +15,12 @@ import {
   Stethoscope,
   Pill,
   Eye,
-  Save,
   X,
   Loader2,
   AlertCircle,
   Heart,
-  Thermometer,
-  Weight,
-  Ruler,
   BadgeCheck,
+  Phone,
 } from "lucide-react";
 import { ModalHistorialPaciente } from "./modal-historial-paciente";
 
@@ -50,7 +39,7 @@ interface PacienteData {
   fecha_nacimiento: string;
   tipo_sangre: string;
   alergias: string;
-  edad?: number;
+  edad?: number; // Cambiado a opcional en lugar de number | undefined
 }
 
 interface CitaData {
@@ -63,7 +52,113 @@ interface CitaData {
   observaciones_paciente: string;
 }
 
-export function GestionCitaMedicoModal({
+function safeFormatDate(value: any) {
+  if (!value) return "-";
+  try {
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return "-";
+    return d.toLocaleDateString("es-PE", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+  } catch (e) {
+    return "-";
+  }
+}
+
+function calcularEdad(fechaNacimiento: string | undefined): number | undefined {
+  if (!fechaNacimiento) return undefined;
+
+  try {
+    const fecha = new Date(fechaNacimiento);
+    const hoy = new Date();
+
+    if (isNaN(fecha.getTime())) return undefined;
+
+    let edad = hoy.getFullYear() - fecha.getFullYear();
+    const mes = hoy.getMonth() - fecha.getMonth();
+
+    if (mes < 0 || (mes === 0 && hoy.getDate() < fecha.getDate())) {
+      edad--;
+    }
+
+    return edad > 0 ? edad : undefined;
+  } catch (e) {
+    console.error("Error calculando edad:", e);
+    return undefined;
+  }
+}
+
+function formatHora(hora: string): string {
+  if (!hora) return "--:--";
+
+  console.log("🕒 Procesando hora original de BD:", hora);
+
+  // Si ya está en formato HH:MM (24 horas), devolver directamente
+  if (
+    hora.includes(":") &&
+    hora.length >= 5 &&
+    !hora.includes("a. m.") &&
+    !hora.includes("p. m.") &&
+    !hora.includes("AM") &&
+    !hora.includes("PM")
+  ) {
+    const horaFormateada = hora.slice(0, 5);
+    console.log("✅ Hora formateada (24h):", horaFormateada);
+    return horaFormateada;
+  }
+
+  // Si está en formato 12 horas (ej: "8:00 AM", "01:54 p. m.")
+  if (
+    hora.includes("a. m.") ||
+    hora.includes("p. m.") ||
+    hora.includes("AM") ||
+    hora.includes("PM")
+  ) {
+    try {
+      // Normalizar la cadena
+      const horaNormalizada = hora
+        .replace("a. m.", "AM")
+        .replace("p. m.", "PM");
+
+      // Extraer hora, minutos y periodo
+      const [horaPart, periodo] = horaNormalizada.split(" ");
+      const [horasStr, minutosStr] = horaPart.split(":");
+
+      let horas = parseInt(horasStr);
+      const minutos = minutosStr?.padStart(2, "0") || "00";
+
+      console.log("🔍 Analizando hora:", { horas, minutos, periodo });
+
+      // Convertir a formato 24 horas
+      if (periodo?.toUpperCase().includes("PM") && horas < 12) {
+        horas += 12;
+      } else if (periodo?.toUpperCase().includes("AM") && horas === 12) {
+        horas = 0;
+      }
+
+      const hora24 = `${horas.toString().padStart(2, "0")}:${minutos}`;
+      console.log("✅ Hora convertida (12h→24h):", hora24);
+      return hora24;
+    } catch (e) {
+      console.error("Error formateando hora 12h:", e);
+    }
+  }
+
+  // Si es un número simple (ej: "8" para 8:00 AM)
+  const horaNum = parseInt(hora);
+  if (!isNaN(horaNum)) {
+    const horaFormateada = `${horaNum.toString().padStart(2, "0")}:00`;
+    console.log("✅ Hora formateada (número):", horaFormateada);
+    return horaFormateada;
+  }
+
+  console.warn("⚠️ Formato de hora no reconocido:", hora);
+  return hora;
+}
+
+export default function GestionCitaMedicoModal({
   isOpen,
   onClose,
   cita,
@@ -80,14 +175,12 @@ export function GestionCitaMedicoModal({
     tratamiento: "",
     observaciones_medico: "",
     costo: "",
-    // Campos adicionales para signos vitales
     presion_arterial: "",
     frecuencia_cardiaca: "",
     temperatura: "",
     peso: "",
     altura: "",
     saturacion_oxigeno: "",
-    // Estado de la cita
     estado: "completada",
   });
 
@@ -118,47 +211,299 @@ export function GestionCitaMedicoModal({
   // Cargar datos de la cita cuando se abre el modal
   useEffect(() => {
     if (cita && isOpen) {
-      // Cargar datos del formulario
-      setFormData({
-        diagnostico: cita.diagnostico || "",
-        tratamiento: cita.tratamiento || "",
-        observaciones_medico: cita.observaciones_medico || "",
-        costo: cita.costo?.toString() || "80.00",
-        presion_arterial: cita.presion_arterial || "",
-        frecuencia_cardiaca: cita.frecuencia_cardiaca || "",
-        temperatura: cita.temperatura || "",
-        peso: cita.peso || "",
-        altura: cita.altura || "",
-        saturacion_oxigeno: cita.saturacion_oxigeno || "",
-        estado: cita.estado || "completada",
+      console.log("🩺 Abriendo modal con cita:", cita);
+
+      const cargarDatosReales = async () => {
+        // Buscar cita real si es temporal
+        const citaReal = await buscarCitaReal(cita);
+        console.log("📋 Cita a usar:", citaReal);
+
+        // Primero establecer datos básicos del formulario
+        setFormData({
+          diagnostico: citaReal.diagnostico || "",
+          tratamiento: citaReal.tratamiento || "",
+          observaciones_medico: citaReal.observaciones_medico || "",
+          costo: citaReal.costo?.toString() || "80.00",
+          presion_arterial: citaReal.presion_arterial || "",
+          frecuencia_cardiaca: citaReal.frecuencia_cardiaca || "",
+          temperatura: citaReal.temperatura || "",
+          peso: citaReal.peso || "",
+          altura: citaReal.altura || "",
+          saturacion_oxigeno: citaReal.saturacion_oxigeno || "",
+          estado: citaReal.estado || "completada",
+        });
+
+        // Obtener datos de la cita
+        const citaInfo = getCitaData(citaReal);
+        console.log("📋 Datos extraídos de la cita:", citaInfo);
+        setCitaData(citaInfo);
+
+        // 🔥 SIEMPRE cargar datos del paciente desde BD si tenemos ID
+        const pacienteId = citaReal.id_paciente || citaReal.paciente?.id;
+        if (pacienteId && !pacienteId.startsWith("temp-")) {
+          console.log("🔄 Cargando datos del paciente desde BD con ID:", pacienteId);
+          await cargarDatosPacienteCompletos(pacienteId);
+        } else {
+          // Si no hay ID válido, usar datos básicos de la cita
+          const pacienteInfo = getPacienteData(citaReal);
+          console.log("👤 Usando datos básicos del paciente:", pacienteInfo);
+          setPacienteData(pacienteInfo);
+        }
+      };
+
+      cargarDatosReales();
+    }
+  }, [cita, isOpen, token]);
+
+  const cargarDatosPacienteCompletos = async (pacienteId: string) => {
+    if (!pacienteId || pacienteId.startsWith("temp-")) {
+      console.log("⏭️ Saltando carga de paciente temporal:", pacienteId);
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      console.log("🔍 Cargando datos completos del paciente desde BD:", pacienteId);
+
+      // ✅ PRIMERO: Intentar con API de pacientes específica
+      let response = await fetch(`/api/pacientes/${pacienteId}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
       });
 
-      // Cargar datos del paciente
-      const pacienteInfo = getPacienteData(cita);
-      setPacienteData(pacienteInfo);
+      if (response.ok) {
+        const data = await response.json();
+        console.log("✅ Datos desde /api/pacientes:", data);
 
-      // Cargar datos de la cita
-      const citaInfo = getCitaData(cita);
-      setCitaData(citaInfo);
+        // Manejar respuesta con estructura 'cita' o directa
+        const paciente = data.cita?.paciente || data.paciente || data;
+
+        // Construir datos del paciente de forma robusta
+        const pacienteCompleto: PacienteData = {
+          nombre:
+            paciente.usuario?.nombre ||
+            paciente.nombre_paciente ||
+            paciente.nombre ||
+            "",
+          apellido:
+            paciente.usuario?.apellido ||
+            paciente.apellido_paciente ||
+            paciente.apellido ||
+            "",
+          dni:
+            paciente.informacion_personal?.dni ||
+            paciente.dni_paciente ||
+            paciente.dni ||
+            "",
+          telefono:
+            paciente.usuario?.telefono ||
+            paciente.telefono_paciente ||
+            paciente.telefono ||
+            "",
+          fecha_nacimiento:
+            paciente.informacion_personal?.fecha_nacimiento ||
+            paciente.fecha_nacimiento ||
+            "",
+          tipo_sangre:
+            paciente.informacion_medica?.tipo_sangre ||
+            paciente.tipo_sangre ||
+            "",
+          alergias:
+            paciente.informacion_medica?.alergias || paciente.alergias || "",
+          edad:
+            paciente.informacion_personal?.edad ||
+            paciente.edad ||
+            calcularEdad(
+              paciente.informacion_personal?.fecha_nacimiento ||
+                paciente.fecha_nacimiento
+            ) ||
+            undefined,
+        };
+
+        console.log("✅ Paciente completo obtenido:", pacienteCompleto);
+        setPacienteData(pacienteCompleto);
+        return;
+      }
+
+      // ✅ SEGUNDO: Si falla, intentar con API de perfil del paciente logueado
+      if (response.status === 404 || !response.ok) {
+        console.log(
+          "🔄 Intentando con /api/paciente/perfil (paciente logueado)..."
+        );
+        response = await fetch(`/api/paciente/perfil`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          console.log("✅ Datos desde /api/paciente/perfil:", data);
+
+          const paciente = data.paciente || data;
+
+          setPacienteData({
+            nombre: paciente.usuario?.nombre || paciente.nombre || "",
+            apellido: paciente.usuario?.apellido || paciente.apellido || "",
+            dni:
+              paciente.informacion_personal?.dni ||
+              paciente.dni ||
+              paciente.dni_paciente ||
+              "",
+            telefono: paciente.usuario?.telefono || paciente.telefono || "",
+            fecha_nacimiento:
+              paciente.informacion_personal?.fecha_nacimiento ||
+              paciente.fecha_nacimiento ||
+              "",
+            tipo_sangre:
+              paciente.informacion_medica?.tipo_sangre ||
+              paciente.tipo_sangre ||
+              "",
+            alergias:
+              paciente.informacion_medica?.alergias || paciente.alergias || "",
+            edad:
+              paciente.informacion_personal?.edad ||
+              paciente.edad ||
+              calcularEdad(
+                paciente.informacion_personal?.fecha_nacimiento ||
+                  paciente.fecha_nacimiento
+              ) ||
+              undefined,
+          });
+          return;
+        }
+      }
+
+      // ✅ TERCERO: Si todo falla, intentar cargar desde cita actual y enriquecer
+      console.warn(
+        "⚠️ No se pudieron obtener datos completos del paciente, usando parciales"
+      );
+
+      // Aunque no tengamos todos los datos, al menos retornar lo que tenemos
+      // para que el modal funcione (aunque sea con datos incompletos)
+    } catch (error) {
+      console.error("❌ Error cargando datos del paciente:", error);
+      // No fallar completamente, permitir que siga con datos parciales
+    } finally {
+      setIsLoading(false);
     }
-  }, [cita, isOpen]);
+  };
 
-  // Función para obtener los datos del paciente
+  const buscarCitaReal = async (citaTemporal: any) => {
+    try {
+      console.log("🔍 Buscando cita en BD para:", {
+        id: citaTemporal.id,
+        es_temporal: citaTemporal.id?.startsWith("temp-"),
+      });
+
+      // Si ya es una cita real de BD (no empieza con temp), usarla directamente
+      if (citaTemporal.id && !citaTemporal.id.startsWith("temp-")) {
+        console.log("✅ Ya es cita real de BD:", citaTemporal.id);
+        return citaTemporal;
+      }
+
+      // Si es temporal, intentar buscar por codigo_acceso
+      if (citaTemporal.roomId || citaTemporal.sesionId) {
+        const codigoAcceso = citaTemporal.roomId || citaTemporal.sesionId;
+        
+        // Extraer el código limpio si está en formato "medilink-XXXXX"
+        const codigo = codigoAcceso.includes("medilink-") 
+          ? codigoAcceso.split("medilink-")[1] 
+          : codigoAcceso;
+
+        console.log("🔍 Intentando buscar por codigo_acceso:", codigo);
+
+        const sesionResponse = await fetch(
+          `/api/telemedicina/sesiones?codigo_acceso=${codigo}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        if (sesionResponse.ok) {
+          const sesionData = await sesionResponse.json();
+          if (sesionData.sesiones && sesionData.sesiones.length > 0) {
+            const sesion = sesionData.sesiones[0];
+            const citaRealId = sesion.id_cita;
+            console.log("✅ Sesión encontrada, obteniendo cita:", citaRealId);
+
+            const citaResponse = await fetch(`/api/citas/${citaRealId}`, {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            });
+
+            if (citaResponse.ok) {
+              const citaData = await citaResponse.json();
+              const citaCompleta = citaData.cita || citaData;
+              console.log("✅ CITA REAL ENCONTRADA:", {
+                id: citaCompleta.id,
+                fecha: citaCompleta.fecha_cita,
+                hora: citaCompleta.hora_cita,
+              });
+              citaCompleta.id_sesion = sesion.id;
+              citaCompleta.codigo_acceso = sesion.codigo_acceso;
+              return citaCompleta;
+            }
+          }
+        }
+      }
+
+      // Si no encontró en BD, usar la temporal tal como está
+      console.log("⚠️ No se encontró en BD, usando cita temporal");
+      return citaTemporal;
+    } catch (error) {
+      console.error("❌ Error buscando cita real:", error);
+      return citaTemporal;
+    }
+  };
+
   const getPacienteData = (cita: any): PacienteData => {
-    if (cita.paciente) {
+    console.log("📋 Datos de cita recibidos para paciente:", cita);
+
+    // Caso 1: Estructura completa desde BD (con usuario e informacion_personal)
+    if (cita.paciente && cita.paciente.usuario) {
+      console.log("✅ Usando estructura completa de BD");
+      const fechaNacimiento =
+        cita.paciente.informacion_personal?.fecha_nacimiento;
+      const edad = calcularEdad(fechaNacimiento);
+
       return {
-        // si existe id del paciente, lo podemos mantener en el objeto
-        ...(cita.paciente.id ? { id: cita.paciente.id } : {}),
-        nombre: cita.paciente.nombre || "",
+        nombre: cita.paciente.usuario.nombre || "",
+        apellido: cita.paciente.usuario.apellido || "",
+        dni: cita.paciente.informacion_personal?.dni || "",
+        telefono: cita.paciente.usuario.telefono || "",
+        fecha_nacimiento: fechaNacimiento || "",
+        tipo_sangre: cita.paciente.informacion_medica?.tipo_sangre || "",
+        alergias: cita.paciente.informacion_medica?.alergias || "",
+        edad: edad !== null ? edad : undefined,
+      };
+    }
+
+    // Caso 2: Estructura simplificada (datos planos en cita.paciente)
+    if (cita.paciente) {
+      console.log("✅ Usando estructura simplificada");
+      const edad = calcularEdad(cita.paciente.fecha_nacimiento);
+      return {
+        nombre: cita.paciente.nombre || cita.paciente.nombre_paciente || "",
         apellido: cita.paciente.apellido || "",
         dni: cita.paciente.dni || "",
-        telefono: cita.paciente.telefono || "",
+        telefono:
+          cita.paciente.telefono || cita.paciente.telefono_paciente || "",
         fecha_nacimiento: cita.paciente.fecha_nacimiento || "",
         tipo_sangre: cita.paciente.tipo_sangre || "",
         alergias: cita.paciente.alergias || "",
-        edad: calcularEdad(cita.paciente.fecha_nacimiento),
+        edad: edad !== null ? edad : undefined,
       };
-    } else if (cita.nombre_paciente) {
+    }
+
+    // Caso 3: Datos desde lista de citas (campos planos en la cita)
+    if (cita.nombre_paciente) {
+      console.log("✅ Usando datos desde lista de citas");
+      const edad = calcularEdad(cita.fecha_nacimiento);
       return {
         nombre: cita.nombre_paciente.split(" ")[0] || "",
         apellido: cita.nombre_paciente.split(" ").slice(1).join(" ") || "",
@@ -167,66 +512,31 @@ export function GestionCitaMedicoModal({
         fecha_nacimiento: cita.fecha_nacimiento || "",
         tipo_sangre: cita.tipo_sangre || "",
         alergias: cita.alergias || "",
-        edad: calcularEdad(cita.fecha_nacimiento),
-      };
-    } else {
-      return {
-        nombre: "",
-        apellido: "",
-        dni: "",
-        telefono: "",
-        fecha_nacimiento: "",
-        tipo_sangre: "",
-        alergias: "",
+        edad: edad !== null ? edad : undefined,
       };
     }
+
+    // Caso 4: Extraer datos de campos directos en la cita
+    console.log("🔍 Buscando datos en campos directos de la cita");
+    const edad = calcularEdad(
+      cita.fecha_nacimiento_paciente || cita.fecha_nacimiento
+    );
+    return {
+      nombre: cita.nombre_paciente || cita.nombre || "",
+      apellido: cita.apellido_paciente || cita.apellido || "",
+      dni: cita.dni_paciente || cita.dni || "",
+      telefono: cita.telefono_paciente || cita.telefono || "",
+      fecha_nacimiento:
+        cita.fecha_nacimiento_paciente || cita.fecha_nacimiento || "",
+      tipo_sangre: cita.tipo_sangre || "",
+      alergias: cita.alergias || "",
+      edad: edad !== null ? edad : undefined,
+    };
   };
 
-  // Solicitar historial al backend usando la cita actual como comprobante de acceso
-  const verHistorialCompleto = async () => {
-    const pacienteId = cita?.paciente?.id || cita?.id_paciente || null;
-    const citaId = citaData.id || cita?.cita_id || null;
-
-    if (!pacienteId || !citaId) {
-      toast({
-        title: "No se puede obtener historial",
-        description: "Faltan datos de paciente o cita",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setLoadingHistorial(true);
-    try {
-      const res = await fetch(
-        `/api/medico/pacientes/${pacienteId}/historial?cita_id=${citaId}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: "Error" }));
-        throw new Error(err.error || "No autorizado");
-      }
-
-      const data = await res.json();
-      setHistorialData(data);
-      setHistorialOpen(true);
-    } catch (error: any) {
-      console.error("Error cargando historial:", error);
-      toast({
-        title: "Error al cargar historial",
-        description: error.message || "No se pudo obtener el historial",
-        variant: "destructive",
-      });
-    } finally {
-      setLoadingHistorial(false);
-    }
-  };
-
-  // Función para obtener datos de la cita
   const getCitaData = (cita: any): CitaData => {
+    console.log("📅 Procesando datos de cita:", cita);
+
     return {
       id: cita.id || cita.cita_id || "",
       fecha_cita: cita.fecha_cita || cita.fecha || "",
@@ -239,20 +549,97 @@ export function GestionCitaMedicoModal({
     };
   };
 
-  // Calcular edad a partir de la fecha de nacimiento
   const calcularEdad = (fechaNacimiento: string): number | null => {
     if (!fechaNacimiento) return null;
-    const nacimiento = new Date(fechaNacimiento);
-    const hoy = new Date();
-    let edad = hoy.getFullYear() - nacimiento.getFullYear();
-    const mes = hoy.getMonth() - nacimiento.getMonth();
-    if (mes < 0 || (mes === 0 && hoy.getDate() < nacimiento.getDate())) {
-      edad--;
+    try {
+      const nacimiento = new Date(fechaNacimiento);
+      const hoy = new Date();
+      let edad = hoy.getFullYear() - nacimiento.getFullYear();
+      const mes = hoy.getMonth() - nacimiento.getMonth();
+      if (mes < 0 || (mes === 0 && hoy.getDate() < nacimiento.getDate())) {
+        edad--;
+      }
+      return edad;
+    } catch (e) {
+      return null;
     }
-    return edad;
   };
 
-  // Guardar datos médicos
+  const verHistorialCompleto = async () => {
+    // Validar acceso temporal primero
+    if (!canViewHistorial) {
+      toast({
+        title: "⏰ Acceso Restringido",
+        description: historialAccess.reason,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const pacienteId = cita?.paciente?.id || cita?.id_paciente || null;
+    const citaId = citaData.id || cita?.cita_id || null;
+
+    if (!pacienteId || !citaId) {
+      toast({
+        title: "❌ Datos Incompletos",
+        description:
+          "No se encontraron los datos necesarios del paciente o cita",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setLoadingHistorial(true);
+    try {
+      console.log(
+        "📋 Solicitando historial para paciente:",
+        pacienteId,
+        "con cita:",
+        citaId
+      );
+
+      const res = await fetch(
+        `/api/medico/pacientes/${pacienteId}/historial?cita_id=${citaId}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Error desconocido" }));
+        console.error("Error de API:", res.status, err);
+        throw new Error(
+          err.error || `Error ${res.status}: No se pudo obtener el historial`
+        );
+      }
+
+      const data = await res.json();
+      console.log("✅ Historial cargado:", data);
+      setHistorialData(data);
+      setHistorialOpen(true);
+
+      toast({
+        title: "✅ Historial Médico",
+        description: "Se cargó el historial completo del paciente",
+      });
+    } catch (error: any) {
+      console.error("❌ Error cargando historial:", error);
+      toast({
+        title: "Error al Cargar Historial",
+        description:
+          error.message ||
+          "No se pudo obtener el historial médico. Intenta nuevamente.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingHistorial(false);
+    }
+  };
+
   const guardarDatosMedicos = async () => {
     if (!formData.diagnostico.trim()) {
       toast({
@@ -263,30 +650,49 @@ export function GestionCitaMedicoModal({
       return;
     }
 
+    // Validar que tengamos un ID de cita válido
+    if (!citaData.id || citaData.id.startsWith("temp-")) {
+      toast({
+        title: "Cita no válida",
+        description: "No se puede guardar para una cita temporal",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsSaving(true);
     try {
+      console.log("💾 Guardando datos médicos para cita:", citaData.id);
+
+      const payload = {
+        estado: formData.estado,
+        diagnostico: formData.diagnostico,
+        tratamiento: formData.tratamiento,
+        observaciones_medico: formData.observaciones_medico,
+        costo: parseFloat(formData.costo) || 80.0,
+        presion_arterial: formData.presion_arterial,
+        frecuencia_cardiaca: formData.frecuencia_cardiaca,
+        temperatura: formData.temperatura,
+        peso: formData.peso ? parseFloat(formData.peso) : null,
+        altura: formData.altura ? parseFloat(formData.altura) : null,
+        saturacion_oxigeno: formData.saturacion_oxigeno,
+      };
+
+      console.log("📤 Payload a enviar:", payload);
+
       const response = await fetch(`/api/citas/${citaData.id}`, {
         method: "PUT",
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          estado: formData.estado,
-          diagnostico: formData.diagnostico,
-          tratamiento: formData.tratamiento,
-          observaciones_medico: formData.observaciones_medico,
-          costo: parseFloat(formData.costo) || 80.0,
-          presion_arterial: formData.presion_arterial,
-          frecuencia_cardiaca: formData.frecuencia_cardiaca,
-          temperatura: formData.temperatura,
-          peso: formData.peso,
-          altura: formData.altura,
-          saturacion_oxigeno: formData.saturacion_oxigeno,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (response.ok) {
+        const result = await response.json();
+        console.log("✅ Respuesta del servidor:", result);
+
         toast({
           title: "✅ Expediente médico guardado",
           description:
@@ -295,11 +701,14 @@ export function GestionCitaMedicoModal({
         onCitaActualizada();
         handleClose();
       } else {
-        const errorData = await response.json();
+        const errorData = await response
+          .json()
+          .catch(() => ({ error: "Error desconocido" }));
+        console.error("❌ Error del servidor:", errorData);
         throw new Error(errorData.error || "Error al guardar datos médicos");
       }
     } catch (error: any) {
-      console.error("Error guardando datos médicos:", error);
+      console.error("❌ Error guardando datos médicos:", error);
       toast({
         title: "Error al guardar",
         description:
@@ -311,7 +720,6 @@ export function GestionCitaMedicoModal({
     }
   };
 
-  // Cambiar estado de la cita
   const cambiarEstadoCita = async (nuevoEstado: string) => {
     setIsLoading(true);
     try {
@@ -349,65 +757,126 @@ export function GestionCitaMedicoModal({
     }
   };
 
-  // Obtener configuración del estado
   const getEstadoConfig = (estado: string) => {
     const configs: any = {
       programada: {
         label: "Programada",
-        color: "bg-yellow-100 text-yellow-800 border-yellow-200",
+        color: "bg-yellow-100 text-yellow-800",
       },
-      confirmada: {
-        label: "Confirmada",
-        color: "bg-blue-100 text-blue-800 border-blue-200",
+      confirmada: { label: "Confirmada", color: "bg-blue-100 text-blue-800" },
+      en_curso: { label: "En Curso", color: "bg-orange-100 text-orange-800" },
+      completada: { label: "Completada", color: "bg-green-100 text-green-800" },
+      cancelada: { label: "Cancelada", color: "bg-red-100 text-red-800" },
+      no_asistio: { label: "No Asistió", color: "bg-gray-100 text-gray-800" },
+    };
+    return (
+      configs[estado] || { label: estado, color: "bg-gray-100 text-gray-800" }
+    );
+  };
+
+  const getTipoCitaConfig = (tipo: string) => {
+    const configs: any = {
+      virtual: {
+        icon: Video,
+        label: "Virtual",
+        color: "bg-blue-100 text-blue-800",
       },
-      en_curso: {
-        label: "En Curso",
-        color: "bg-orange-100 text-orange-800 border-orange-200",
+      presencial: {
+        icon: MapPin,
+        label: "Presencial",
+        color: "bg-green-100 text-green-800",
       },
-      completada: {
-        label: "Completada",
-        color: "bg-green-100 text-green-800 border-green-200",
-      },
-      cancelada: {
-        label: "Cancelada",
-        color: "bg-red-100 text-red-800 border-red-200",
-      },
-      no_asistio: {
-        label: "No Asistió",
-        color: "bg-gray-100 text-gray-800 border-gray-200",
+      domicilio: {
+        icon: User,
+        label: "Domicilio",
+        color: "bg-purple-100 text-purple-800",
       },
     };
     return (
-      configs[estado] || {
-        label: estado,
-        color: "bg-gray-100 text-gray-800 border-gray-200",
+      configs[tipo] || {
+        icon: User,
+        label: tipo,
+        color: "bg-gray-100 text-gray-800",
       }
     );
   };
 
   const estadoConfig = getEstadoConfig(citaData.estado);
+  const tipoCitaConfig = getTipoCitaConfig(citaData.tipo_cita);
+  const TipoCitaIcon = tipoCitaConfig.icon;
 
-  // Formatear hora para mostrar
-  const formatHora = (hora: string) => {
-    if (!hora) return "--:--";
-    if (hora.includes(":")) return hora.slice(0, 5);
-    const horaNum = parseInt(hora);
-    return `${horaNum.toString().padStart(2, "0")}:00`;
+  // Calcular acceso al historial con ventana de 7 días
+  const calculateHistorialAccess = (): {
+    canAccess: boolean;
+    reason: string;
+    daysRemaining: number | null;
+    expiryDate: Date | null;
+  } => {
+    try {
+      if (!citaData?.fecha_cita) {
+        return {
+          canAccess: false,
+          reason: "Datos de cita no disponibles",
+          daysRemaining: null,
+          expiryDate: null,
+        };
+      }
+
+      const fechaCita = new Date(citaData.fecha_cita);
+      const ahora = new Date();
+
+      // Si la cita es en el futuro, no permitir acceso
+      if (fechaCita > ahora) {
+        return {
+          canAccess: false,
+          reason: `La cita es el ${fechaCita.toLocaleDateString("es-PE")}. El historial estará disponible después de esta fecha.`,
+          daysRemaining: null,
+          expiryDate: null,
+        };
+      }
+
+      const diffMs = ahora.getTime() - fechaCita.getTime();
+      const sieteDiasMs = 7 * 24 * 60 * 60 * 1000;
+      const daysPassedMs = diffMs;
+      const daysRemaining = Math.max(
+        0,
+        Math.ceil((sieteDiasMs - daysPassedMs) / (24 * 60 * 60 * 1000))
+      );
+
+      // Calcular fecha de expiración
+      const expiryDate = new Date(fechaCita.getTime() + sieteDiasMs);
+
+      // Si pasó la ventana de 7 días
+      if (diffMs > sieteDiasMs) {
+        return {
+          canAccess: false,
+          reason: `El acceso al historial expiró el ${expiryDate.toLocaleDateString(
+            "es-PE"
+          )}. Solo puedes acceder durante 7 días después de la cita.`,
+          daysRemaining: 0,
+          expiryDate,
+        };
+      }
+
+      return {
+        canAccess: true,
+        reason: `Acceso disponible por ${daysRemaining} ${daysRemaining === 1 ? "día" : "días"} más (hasta ${expiryDate.toLocaleDateString("es-PE")})`,
+        daysRemaining,
+        expiryDate,
+      };
+    } catch (e) {
+      console.error("Error calculando acceso al historial:", e);
+      return {
+        canAccess: false,
+        reason: "Error al validar acceso",
+        daysRemaining: null,
+        expiryDate: null,
+      };
+    }
   };
 
-  // Permiso local: permitir ver historial solo si la cita ya ocurrió y está dentro de los 7 días posteriores
-  const canViewHistorial = (() => {
-    try {
-      if (!citaData?.fecha_cita) return false;
-      const fecha = new Date(citaData.fecha_cita);
-      const ahora = new Date();
-      const diff = ahora.getTime() - fecha.getTime();
-      const sieteDiasMs = 7 * 24 * 60 * 60 * 1000;
-      return fecha <= ahora && diff <= sieteDiasMs;
-    } catch (e) {
-      return false;
-    }
-  })();
+  const historialAccess = calculateHistorialAccess();
+  const canViewHistorial = historialAccess.canAccess;
 
   const handleClose = () => {
     setFormData({
@@ -426,188 +895,405 @@ export function GestionCitaMedicoModal({
     onClose();
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || !cita) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+      role="dialog"
+      aria-modal="true"
+    >
       <div className="bg-white rounded-lg max-w-6xl w-full max-h-[95vh] overflow-y-auto">
         <div className="p-6">
-          {/* HEADER */}
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold text-gray-800 flex items-center">
-              <Stethoscope className="w-6 h-6 mr-3 text-blue-600" />
-              Gestión de Consulta Médica
-            </h2>
+          {/* Header */}
+          <div className="flex justify-between items-start mb-6">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-800">
+                Gestión de Consulta Médica
+              </h2>
+              <p className="text-gray-600">Código: {citaData.id}</p>
+            </div>
             <button
               onClick={handleClose}
-              className="text-gray-500 hover:text-gray-700 text-2xl transition-colors"
-              disabled={isSaving}
+              className="text-gray-500 hover:text-gray-700 text-2xl"
+              aria-label="Cerrar"
             >
               ✕
             </button>
           </div>
 
-          {/* INFORMACIÓN DEL PACIENTE - ESTILO MEJORADO */}
-          <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg mb-6">
-            <h3 className="font-semibold text-blue-800 mb-3 flex items-center">
-              <span className="mr-2">👤</span>
-              Información del Paciente
-            </h3>
-            <div className="space-y-2">
-              <div className="flex flex-wrap gap-4">
-                <div>
-                  <span className="font-medium text-blue-900 text-lg">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Información principal */}
+            <div className="lg:col-span-2 space-y-6">
+              {/* Datos del paciente y cita */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <h3 className="font-semibold text-blue-800 mb-2">Paciente</h3>
+                  <p className="text-sm font-medium text-blue-800">
                     {pacienteData.nombre} {pacienteData.apellido}
+                  </p>
+                  <p className="text-xs text-blue-600">
+                    DNI: {pacienteData.dni}
+                  </p>
+                  <p className="text-xs text-blue-600">
+                    Edad:{" "}
+                    {pacienteData.edad
+                      ? `${pacienteData.edad} años`
+                      : "No disponible"}
+                  </p>
+                  {pacienteData.tipo_sangre && (
+                    <p className="text-xs text-blue-600">
+                      Grupo: {pacienteData.tipo_sangre}
+                    </p>
+                  )}
+                </div>
+
+                <div className="bg-green-50 p-4 rounded-lg">
+                  <h3 className="font-semibold text-green-800 mb-2">Cita</h3>
+                  <div className="flex items-center text-sm mb-1 text-gray-900">
+                    <Calendar className="w-4 h-4 mr-2 text-green-600 " />
+                    {safeFormatDate(citaData.fecha_cita)}
+                  </div>
+                  <div className="flex items-center text-sm mb-1 text-gray-900">
+                    <Clock className="w-4 h-4 mr-2 text-green-600" />
+                    {formatHora(citaData.hora_cita)} horas
+                  </div>
+                  <div className="flex items-center text-sm text-gray-900">
+                    <TipoCitaIcon className="w-4 h-4 mr-2 text-green-600" />
+                    {tipoCitaConfig.label}
+                  </div>
+                </div>
+              </div>
+
+              {/* Estado de la cita */}
+              <div className="bg-gray-50 p-4 rounded-lg text-gray-900">
+                <h3 className="font-semibold text-gray-800 mb-3">
+                  Estado de la Cita
+                </h3>
+                <div className="flex flex-wrap gap-4 items-center">
+                  <span
+                    className={`inline-flex px-3 py-1 text-sm font-semibold rounded-full ${estadoConfig.color}`}
+                  >
+                    {estadoConfig.label}
                   </span>
-                </div>
-                <div className="text-sm text-blue-700 space-y-1">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <span>DNI: {pacienteData.dni || "No disponible"}</span>
-                    <span>
-                      Edad:{" "}
-                      {pacienteData.edad
-                        ? `${pacienteData.edad} años`
-                        : "No disponible"}
-                    </span>
-                    {pacienteData.tipo_sangre && (
-                      <span>Grupo: {pacienteData.tipo_sangre}</span>
-                    )}
-                    <span
-                      className={`px-2 py-1 rounded-full text-xs font-medium ${estadoConfig.color} border`}
-                    >
-                      {estadoConfig.label}
-                    </span>
-                  </div>
+                  <select
+                    value={formData.estado}
+                    onChange={(e) => cambiarEstadoCita(e.target.value)}
+                    disabled={isLoading}
+                    className="border border-gray-300 rounded-lg px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-black-800"
+                  >
+                    <option value="en_curso">En Curso</option>
+                    <option value="completada">Completada</option>
+                    <option value="no_asistio">No Asistió</option>
+                    <option value="cancelada">Cancelada</option>
+                  </select>
                 </div>
               </div>
-              <div className="text-xs text-blue-600 bg-blue-100 p-2 rounded">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                  <div>
-                    <strong>Cita:</strong>{" "}
-                    {new Date(citaData.fecha_cita).toLocaleDateString("es-PE", {
-                      weekday: "long",
-                      year: "numeric",
-                      month: "long",
-                      day: "numeric",
-                    })}
-                  </div>
-                  <div>
-                    <strong>Hora:</strong> {formatHora(citaData.hora_cita)}{" "}
-                    horas
-                  </div>
-                  <div>
-                    <strong>Tipo:</strong> {getEtiquetaCita(citaData.tipo_cita)}
-                  </div>
+
+              {/* Información del paciente */}
+              <div className="border border-gray-200 rounded-lg text-gray-900">
+                <div className="bg-gray-50 px-4 py-3 border-b">
+                  <h3 className="font-semibold text-gray-800 flex items-center">
+                    <FileText className="w-5 h-5 mr-2 text-gray-600" />
+                    Información del Paciente
+                  </h3>
                 </div>
-                {citaData.motivo_consulta && (
-                  <div className="mt-1">
-                    <strong>Motivo:</strong> {citaData.motivo_consulta}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* CONTENIDO PRINCIPAL */}
-          <div className="space-y-6">
-            {/* SELECTOR DE ESTADO */}
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Cambiar Estado de la Cita
-              </label>
-              <select
-                value={formData.estado}
-                onChange={(e) => cambiarEstadoCita(e.target.value)}
-                disabled={isLoading}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base 
-text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 
-focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-              >
-                <option value="en_curso">En Curso</option>
-                <option value="completada">Completada</option>
-                <option value="no_asistio">No Asistió</option>
-                <option value="cancelada">Cancelada</option>
-              </select>
-            </div>
-
-            {/* GRID PRINCIPAL */}
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-              {/* COLUMNA IZQUIERDA - INFORMACIÓN CLÍNICA */}
-              <div className="xl:col-span-1 space-y-6">
-                {/* HISTORIAL MÉDICO */}
-                <div className="border border-gray-200 rounded-lg p-4 bg-white">
-                  <h4 className="font-semibold text-gray-800 mb-3 flex items-center">
-                    <FileText className="w-5 h-5 mr-2 text-blue-600" />
-                    Historial Médico
-                    <button
-                      type="button"
-                      onClick={verHistorialCompleto}
-                      disabled={loadingHistorial || !canViewHistorial}
-                      title={
-                        !canViewHistorial
-                          ? "Acceso disponible solo durante 7 días después de la cita"
-                          : undefined
-                      }
-                      className="ml-3 text-sm px-2 py-1 border rounded-md text-blue-700 hover:bg-blue-50 disabled:opacity-50"
-                    >
-                      {loadingHistorial
-                        ? "Cargando..."
-                        : canViewHistorial
-                        ? "Ver historial"
-                        : "Acceso expirado"}
-                    </button>
-                  </h4>
-
-                  {pacienteData.alergias ? (
-                    <div className="mb-4">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Alergias Conocidas
-                      </label>
-                      <div className="text-sm text-gray-700 bg-yellow-50 p-3 rounded border border-yellow-200">
-                        {pacienteData.alergias}
-                      </div>
+                <div className="p-4 space-y-4">
+                  {isLoading ? (
+                    <div className="flex items-center space-x-2 text-blue-600">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                      <span className="text-sm">
+                        Cargando datos completos del paciente...
+                      </span>
                     </div>
                   ) : (
-                    <div className="text-center py-4 text-gray-500 bg-gray-50 rounded border">
-                      <AlertCircle className="w-8 h-8 mx-auto mb-2" />
-                      <p className="text-sm">No hay alergias registradas</p>
-                    </div>
-                  )}
-
-                  {/* Motivo de Consulta */}
-                  <div className="mb-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Motivo de Consulta
-                    </label>
-                    <div className="text-sm text-gray-700 bg-gray-50 p-3 rounded border border-gray-200 whitespace-pre-wrap">
-                      {citaData.motivo_consulta || "No especificado"}
-                    </div>
-                  </div>
-
-                  {/* Observaciones del Paciente */}
-                  {citaData.observaciones_paciente && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Observaciones del Paciente
-                      </label>
-                      <div className="text-sm text-gray-700 bg-blue-50 p-3 rounded border border-blue-200 whitespace-pre-wrap">
-                        {citaData.observaciones_paciente}
+                    <>
+                      {/* Datos personales */}
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-700 mb-2">
+                          Datos Personales
+                        </h4>
+                        <div className="bg-blue-50 p-3 rounded border border-blue-200 space-y-2">
+                          <p className="text-sm">
+                            <span className="font-medium text-gray-700">
+                              Nombre:
+                            </span>{" "}
+                            {pacienteData.nombre}{" "}
+                            {pacienteData.apellido || (
+                              <span className="text-gray-500 italic">
+                                No disponible
+                              </span>
+                            )}
+                          </p>
+                          <p className="text-sm">
+                            <span className="font-medium text-gray-700">
+                              DNI:
+                            </span>{" "}
+                            {pacienteData.dni || (
+                              <span className="text-gray-500 italic">
+                                No disponible
+                              </span>
+                            )}
+                          </p>
+                          <p className="text-sm">
+                            <span className="font-medium text-gray-700">
+                              Edad:
+                            </span>{" "}
+                            {pacienteData.edad ? (
+                              `${pacienteData.edad} años`
+                            ) : (
+                              <span className="text-gray-500 italic">
+                                No disponible
+                              </span>
+                            )}
+                          </p>
+                          {pacienteData.fecha_nacimiento && (
+                            <p className="text-sm">
+                              <span className="font-medium text-gray-700">
+                                Nacimiento:
+                              </span>{" "}
+                              {new Date(
+                                pacienteData.fecha_nacimiento
+                              ).toLocaleDateString("es-PE")}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                    </div>
+
+                      {/* Información médica */}
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-700 mb-2">
+                          Información Médica
+                        </h4>
+                        <div className="bg-purple-50 p-3 rounded border border-purple-200 space-y-2">
+                          <p className="text-sm">
+                            <span className="font-medium text-gray-700">
+                              Tipo de Sangre:
+                            </span>{" "}
+                            {pacienteData.tipo_sangre || "No disponible"}
+                          </p>
+                          <p className="text-sm">
+                            <span className="font-medium text-gray-700">
+                              Fecha de Nacimiento:
+                            </span>{" "}
+                            {pacienteData.fecha_nacimiento
+                              ? new Date(
+                                  pacienteData.fecha_nacimiento
+                                ).toLocaleDateString("es-PE")
+                              : "No disponible"}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Contacto */}
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-700 mb-2">
+                          Contacto
+                        </h4>
+                        <div className="space-y-1 text-sm">
+                          <p className="flex items-center">
+                            <Phone className="w-4 h-4 mr-2 text-gray-500" />
+                            {pacienteData.telefono || "No disponible"}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Sección de Historial con Control de Acceso Temporal */}
+                      <div className="border-t pt-3 mt-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="text-sm font-semibold text-gray-700 flex items-center">
+                            📋 Historial Médico
+                          </h4>
+                          {canViewHistorial && (
+                            <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
+                              Disponible
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Botón de Historial */}
+                        <button
+                          onClick={verHistorialCompleto}
+                          disabled={loadingHistorial || !canViewHistorial}
+                          className={`w-full px-4 py-2 rounded-lg text-sm font-medium transition ${
+                            canViewHistorial
+                              ? "bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800"
+                              : "bg-gray-100 text-gray-500 cursor-not-allowed"
+                          } flex items-center justify-center gap-2`}
+                        >
+                          {loadingHistorial ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              Cargando historial...
+                            </>
+                          ) : canViewHistorial ? (
+                            <>
+                              <FileText className="w-4 h-4" />
+                              Ver Historial Completo
+                            </>
+                          ) : (
+                            <>
+                              <AlertCircle className="w-4 h-4" />
+                              Acceso Restringido
+                            </>
+                          )}
+                        </button>
+
+                        {/* Información sobre acceso temporal */}
+                        <div
+                          className={`mt-2 p-2 rounded text-xs ${
+                            canViewHistorial
+                              ? "bg-blue-50 text-blue-700 border border-blue-200"
+                              : "bg-yellow-50 text-yellow-700 border border-yellow-200"
+                          }`}
+                        >
+                          {canViewHistorial ? (
+                            <p>
+                              ✅ <strong>{historialAccess.reason}</strong>
+                            </p>
+                          ) : (
+                            <>
+                              <p>
+                                <strong>⏰ Restricción Temporal:</strong>
+                              </p>
+                              <p className="mt-1">{historialAccess.reason}</p>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      {pacienteData.alergias && (
+                        <div className="bg-yellow-50 p-3 rounded border border-yellow-200">
+                          <h4 className="text-sm font-semibold text-yellow-800 mb-1">
+                            ⚠ Alergias Conocidas
+                          </h4>
+                          <p className="text-sm text-yellow-700">
+                            {pacienteData.alergias}
+                          </p>
+                        </div>
+                      )}
+
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-700 mb-2">
+                          Motivo de Consulta
+                        </h4>
+                        <p className="text-sm text-gray-900 bg-gray-50 rounded-lg p-3">
+                          {citaData.motivo_consulta || "No especificado"}
+                        </p>
+                      </div>
+
+                      {citaData.observaciones_paciente && (
+                        <div>
+                          <h4 className="text-sm font-semibold text-gray-700 mb-2">
+                            Observaciones del Paciente
+                          </h4>
+                          <p className="text-sm text-gray-900 bg-blue-50 rounded-lg p-3">
+                            {citaData.observaciones_paciente}
+                          </p>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
+              </div>
 
-                {/* SIGNOS VITALES - ESTILOS CORREGIDOS */}
-                <div className="border border-gray-200 rounded-lg p-4 bg-white">
-                  <h4 className="font-semibold text-gray-800 mb-3 flex items-center">
-                    <Heart className="w-5 h-5 mr-2 text-red-600" />
-                    Signos Vitales
-                  </h4>
+              {/* Formulario médico */}
+              <div className="border border-gray-200 rounded-lg text-gray-900">
+                <div className="bg-gray-50 px-4 py-3 border-b">
+                  <h3 className="font-semibold text-gray-800 flex items-center">
+                    <Stethoscope className="w-5 h-5 mr-2 text-gray-600" />
+                    Evaluación Médica
+                  </h3>
+                </div>
+                <div className="p-4 space-y-6">
+                  {/* Diagnóstico */}
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
+                      Diagnóstico Principal
+                      <span className="text-red-500 ml-1">*</span>
+                    </h4>
+                    <textarea
+                      value={formData.diagnostico}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          diagnostico: e.target.value,
+                        }))
+                      }
+                      placeholder="Ingrese el diagnóstico del paciente..."
+                      rows={3}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                      required
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      {formData.diagnostico.length}/1000 caracteres
+                    </p>
+                  </div>
+
+                  {/* Tratamiento */}
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
+                      <Pill className="w-4 h-4 mr-2 text-blue-600" />
+                      Tratamiento y Receta Médica
+                    </h4>
+                    <textarea
+                      value={formData.tratamiento}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          tratamiento: e.target.value,
+                        }))
+                      }
+                      placeholder="Describa el tratamiento, medicamentos, dosis, frecuencia, duración..."
+                      rows={4}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      {formData.tratamiento.length}/1500 caracteres
+                    </p>
+                  </div>
+
+                  {/* Observaciones médicas */}
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
+                      <Eye className="w-4 h-4 mr-2 text-purple-600" />
+                      Observaciones Médicas
+                    </h4>
+                    <textarea
+                      value={formData.observaciones_medico}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          observaciones_medico: e.target.value,
+                        }))
+                      }
+                      placeholder="Observaciones adicionales, recomendaciones, seguimiento requerido..."
+                      rows={3}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      {formData.observaciones_medico.length}/500 caracteres
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Panel lateral */}
+            <div className="space-y-6 text-gray-900">
+              {/* Signos vitales */}
+              <div className="bg-white border border-gray-200 rounded-lg p-4">
+                <h3 className="font-semibold text-gray-800 mb-3 flex items-center">
+                  <Heart className="w-5 h-5 mr-2 text-red-600" />
+                  Signos Vitales
+                </h3>
+
+                <div className="space-y-3">
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <span className="text-xs text-gray-600">
                         Presión Arterial
-                      </label>
+                      </span>
                       <input
                         type="text"
                         value={formData.presion_arterial}
@@ -618,15 +1304,13 @@ focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                           }))
                         }
                         placeholder="120/80"
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base 
-text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 
-focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <span className="text-xs text-gray-600">
                         Frec. Cardíaca
-                      </label>
+                      </span>
                       <input
                         type="text"
                         value={formData.frecuencia_cardiaca}
@@ -637,15 +1321,14 @@ focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                           }))
                         }
                         placeholder="72 lpm"
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base 
-text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 
-focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                       />
                     </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Temperatura (°C)
-                      </label>
+                      <span className="text-xs text-gray-600">Temperatura</span>
                       <input
                         type="text"
                         value={formData.temperatura}
@@ -655,16 +1338,12 @@ focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                             temperatura: e.target.value,
                           }))
                         }
-                        placeholder="36.5"
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base 
-text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 
-focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        placeholder="36.5 °C"
+                        className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Sat. O₂ (%)
-                      </label>
+                      <span className="text-xs text-gray-600">Sat. O₂</span>
                       <input
                         type="text"
                         value={formData.saturacion_oxigeno}
@@ -674,16 +1353,15 @@ focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                             saturacion_oxigeno: e.target.value,
                           }))
                         }
-                        placeholder="98"
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base 
-text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 
-focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        placeholder="98%"
+                        className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                       />
                     </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Peso (kg)
-                      </label>
+                      <span className="text-xs text-gray-600">Peso</span>
                       <input
                         type="text"
                         value={formData.peso}
@@ -693,16 +1371,12 @@ focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                             peso: e.target.value,
                           }))
                         }
-                        placeholder="70"
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base 
-text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 
-focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        placeholder="70 kg"
+                        className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Altura (cm)
-                      </label>
+                      <span className="text-xs text-gray-600">Altura</span>
                       <input
                         type="text"
                         value={formData.altura}
@@ -712,171 +1386,96 @@ focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                             altura: e.target.value,
                           }))
                         }
-                        placeholder="170"
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base 
-text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 
-focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        placeholder="170 cm"
+                        className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                       />
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* COLUMNA DERECHA - FORMULARIO MÉDICO */}
-              <div className="xl:col-span-2 space-y-6">
-                {/* DIAGNÓSTICO */}
-                <div className="border border-gray-200 rounded-lg p-4 bg-white">
-                  <h4 className="font-semibold text-gray-800 mb-3 flex items-center">
-                    <Stethoscope className="w-5 h-5 mr-2 text-green-600" />
-                    Diagnóstico Principal
-                    <span className="text-red-500 ml-1">*</span>
-                  </h4>
-                  <textarea
-                    value={formData.diagnostico}
-                    onChange={(e) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        diagnostico: e.target.value,
-                      }))
-                    }
-                    placeholder="Ingrese el diagnóstico del paciente..."
-                    rows={4}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base 
-text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 
-focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                    required
-                  />
-                  <p className="text-sm text-gray-500 mt-2">
-                    {formData.diagnostico.length}/1000 caracteres
-                  </p>
-                </div>
+              {/* Información de costo */}
+              <div className="bg-white border border-gray-200 rounded-lg p-4">
+                <h3 className="font-semibold text-gray-800 mb-3">
+                  Información de Costo
+                </h3>
 
-                {/* TRATAMIENTO */}
-                <div className="border border-gray-200 rounded-lg p-4 bg-white">
-                  <h4 className="font-semibold text-gray-800 mb-3 flex items-center">
-                    <Pill className="w-5 h-5 mr-2 text-blue-600" />
-                    Tratamiento y Receta Médica
-                  </h4>
-                  <textarea
-                    value={formData.tratamiento}
-                    onChange={(e) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        tratamiento: e.target.value,
-                      }))
-                    }
-                    placeholder="Describa el tratamiento, medicamentos, dosis, frecuencia, duración..."
-                    rows={5}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base 
-text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 
-focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                  />
-                  <p className="text-sm text-gray-500 mt-2">
-                    {formData.tratamiento.length}/1500 caracteres
-                  </p>
-                </div>
-
-                {/* OBSERVACIONES MÉDICAS */}
-                <div className="border border-gray-200 rounded-lg p-4 bg-white">
-                  <h4 className="font-semibold text-gray-800 mb-3 flex items-center">
-                    <Eye className="w-5 h-5 mr-2 text-purple-600" />
-                    Observaciones Médicas
-                  </h4>
-                  <textarea
-                    value={formData.observaciones_medico}
-                    onChange={(e) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        observaciones_medico: e.target.value,
-                      }))
-                    }
-                    placeholder="Observaciones adicionales, recomendaciones, seguimiento requerido..."
-                    rows={3}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base 
-text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 
-focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                  />
-                  <p className="text-sm text-gray-500 mt-2">
-                    {formData.observaciones_medico.length}/500 caracteres
-                  </p>
-                </div>
-
-                {/* INFORMACIÓN DE COSTO */}
-                <div className="border border-gray-200 rounded-lg p-4 bg-white">
-                  <h4 className="font-semibold text-gray-800 mb-3">
-                    Información de Costo
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Costo de la Consulta (S/)
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={formData.costo}
-                        onChange={(e) =>
-                          setFormData((prev) => ({
-                            ...prev,
-                            costo: e.target.value,
-                          }))
-                        }
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base 
-text-gray-800 placeholder:text-gray-500 placeholder:opacity-100 
-focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                      />
-                    </div>
-                    <div className="flex items-end">
-                      <button
-                        type="button"
-                        className="w-full border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center text-base"
-                      >
-                        <FileText className="w-4 h-4 mr-2" />
-                        Generar Receta Formal
-                      </button>
-                    </div>
+                <div className="space-y-3">
+                  <div>
+                    <span className="text-xs text-gray-600">
+                      Costo de la Consulta (S/)
+                    </span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={formData.costo}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          costo: e.target.value,
+                        }))
+                      }
+                      className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
                   </div>
+
+                  <button
+                    type="button"
+                    className="w-full border border-gray-300 text-gray-700 px-3 py-2 rounded text-sm hover:bg-gray-50 transition-colors flex items-center justify-center"
+                  >
+                    <FileText className="w-4 h-4 mr-2" />
+                    Generar Receta Formal
+                  </button>
                 </div>
               </div>
-            </div>
 
-            {/* BOTONES DE ACCIÓN */}
-            <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">
-              <button
-                type="button"
-                onClick={handleClose}
-                disabled={isSaving}
-                className="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors text-base"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={guardarDatosMedicos}
-                disabled={isSaving || !formData.diagnostico.trim()}
-                className="px-8 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center text-base"
-              >
-                {isSaving ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Guardando...
-                  </>
-                ) : (
-                  <>
-                    <BadgeCheck className="w-4 h-4 mr-2" />
-                    Guardar Expediente
-                  </>
-                )}
-              </button>
+              {/* Acciones */}
+              <div className="bg-white border border-gray-200 rounded-lg p-4">
+                <h3 className="font-semibold text-gray-800 mb-3">Acciones</h3>
+
+                <div className="space-y-2">
+                  <button
+                    onClick={guardarDatosMedicos}
+                    disabled={isSaving || !formData.diagnostico.trim()}
+                    className="w-full bg-green-600 text-white py-2 px-4 rounded text-sm font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                  >
+                    {isSaving ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Guardando...
+                      </>
+                    ) : (
+                      <>
+                        <BadgeCheck className="w-4 h-4 mr-2" />
+                        Guardar Expediente
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    onClick={handleClose}
+                    disabled={isSaving}
+                    className="w-full border border-gray-300 text-gray-700 py-2 px-4 rounded text-sm font-medium hover:bg-gray-50 disabled:opacity-50 flex items-center justify-center"
+                  >
+                    <X className="w-4 h-4 mr-2" />
+                    Cancelar
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
+
       {historialOpen && (
         <ModalHistorialPaciente
           isOpen={historialOpen}
           onClose={() => setHistorialOpen(false)}
           historial={historialData}
+          canAccess={canViewHistorial}
+          accessDenialReason={historialAccess.reason}
+          citaFecha={citaData?.fecha_cita ? new Date(citaData.fecha_cita) : undefined}
         />
       )}
     </div>

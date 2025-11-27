@@ -19,7 +19,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     // Obtener receta con paciente, médico, diagnóstico y medicamentos en una sola consulta
     const recetaRes = await query(
-      `SELECT r.id, r.codigo_receta, r.fecha_emision, r.fecha_vencimiento, r.estado, r.observaciones, r.fecha_dispensacion, r.id_farmacia_dispensadora,
+      `SELECT r.id, r.codigo_receta, r.fecha_emision, r.fecha_vencimiento, r.estado, r.observaciones, r.fecha_dispensacion, r.id_farmacia_dispensadora, r.estado_envio,
               r.diagnostico_principal_texto as diagnostico,
               p.id as id_paciente, p.dni, p.fecha_nacimiento,
               up.nombre as paciente_nombre, up.apellido as paciente_apellido,
@@ -75,6 +75,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         fecha_emision: recetaRow.fecha_emision,
         fecha_vencimiento: recetaRow.fecha_vencimiento,
         estado: recetaRow.estado,
+        estado_envio: recetaRow.estado_envio || "no_enviada",
         diagnostico: recetaRow.diagnostico || recetaRow.diagnostico_principal_texto || null,
         observaciones_generales: recetaRow.observaciones,
         fecha_dispensacion: recetaRow.fecha_dispensacion,

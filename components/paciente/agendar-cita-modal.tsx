@@ -67,8 +67,8 @@ export function AgendarCitaModal({
   onClose,
   onCitaCreada,
 }: AgendarCitaModalProps) {
-  const { token } = useAuth();
   const { toast } = useToast();
+  const { token } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMedicos, setIsLoadingMedicos] = useState(false);
   const [isLoadingHorarios, setIsLoadingHorarios] = useState(false);
@@ -91,10 +91,16 @@ export function AgendarCitaModal({
   // Resetear formulario al abrir
   useEffect(() => {
     if (isOpen) {
-      resetForm();
-      cargarMedicos();
+      console.log("🔄 Modal abierto - Debug Auth:", {
+        tieneToken: !!token,
+        token: token ? `${token.substring(0, 30)}...` : "NO TOKEN",
+        timestamp: new Date().toISOString(),
+      });
+
+      // ✅ LLAMAR A LA FUNCIÓN CORRECTA DEL MODAL
+      cargarMedicosModal();
     }
-  }, [isOpen]);
+  }, [isOpen, token]);
 
   // Cargar horarios cuando cambie médico o fecha
   useEffect(() => {
@@ -117,21 +123,105 @@ export function AgendarCitaModal({
     setHorariosDisponibles([]);
   };
 
-  // Cargar lista de médicos desde la base de datos - ENDPOINT CORREGIDO
-  const cargarMedicos = async () => {
+  const cargarMedicosModal = async () => {
     setIsLoadingMedicos(true);
     try {
+      // ✅ VERIFICAR TOKEN PRIMERO
+      if (!token) {
+        console.error("❌ Modal: No hay token disponible");
+        toast({
+          title: "Error de autenticación",
+          description: "Por favor inicia sesión nuevamente",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      console.log("🔐 Modal: Intentando cargar médicos con token:", {
+        tokenLength: token?.length,
+        tokenPreview: token ? token.substring(0, 20) + "..." : "NO TOKEN",
+      });
+
       const response = await fetch("/api/medicos", {
         headers: {
           Authorization: `Bearer ${token}`,
         },
       });
 
+      console.log("📡 Modal: Response status:", response.status);
+
       if (response.ok) {
         const data = await response.json();
+        console.log("✅ Modal: Médicos cargados:", data.medicos?.length || 0);
         setMedicos(data.medicos || []);
+      } else if (response.status === 401) {
+        console.error("❌ Modal: Token expirado o inválido");
+        toast({
+          title: "Sesión expirada",
+          description: "Por favor inicia sesión nuevamente",
+          variant: "destructive",
+        });
       } else {
-        throw new Error("Error al cargar médicos");
+        const errorData = await response.json().catch(() => ({}));
+        console.error("❌ Modal: Error del servidor:", errorData);
+        throw new Error(errorData.error || "Error al cargar médicos");
+      }
+    } catch (error) {
+      console.error("Error cargando médicos en modal:", error);
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar los médicos disponibles",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingMedicos(false);
+    }
+  };
+
+  // Cargar lista de médicos desde la base de datos - ENDPOINT CORREGIDO
+  const cargarMedicos = async () => {
+    setIsLoadingMedicos(true);
+    try {
+      // ✅ VERIFICAR TOKEN PRIMERO
+      if (!token) {
+        console.error("❌ No hay token disponible");
+        toast({
+          title: "Error de autenticación",
+          description: "Por favor inicia sesión nuevamente",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      console.log("🔐 Intentando cargar médicos con token:", {
+        tokenLength: token.length,
+        tokenPreview: token.substring(0, 20) + "...",
+      });
+
+      const response = await fetch("/api/medicos", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      console.log("📡 Response status:", response.status);
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log("✅ Médicos cargados:", data.medicos?.length || 0);
+        setMedicos(data.medicos || []);
+      } else if (response.status === 401) {
+        // Token expirado
+        console.error("❌ Token expirado o inválido");
+        toast({
+          title: "Sesión expirada",
+          description: "Por favor inicia sesión nuevamente",
+          variant: "destructive",
+        });
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        console.error("❌ Error del servidor:", errorData);
+        throw new Error(errorData.error || "Error al cargar médicos");
       }
     } catch (error) {
       console.error("Error cargando médicos:", error);
@@ -162,10 +252,39 @@ export function AgendarCitaModal({
 
       if (response.ok) {
         const data = await response.json();
-        const horariosFormateados = (data.data || []).map((hora: any) => ({
+
+        // ✅ DEBUG: Ver qué devuelve el backend
+        console.log("🔍 DEBUG - Respuesta del backend:", {
+          medico_id: formData.medico_id,
+          fecha: formData.fecha_cita,
+          data_completa: data.data,
+          hora_actual: new Date().getHours(),
+          fecha_hoy: new Date().toISOString().split("T")[0],
+        });
+
+        // ✅ FILTRAR HORAS PASADAS SI ES HOY
+        const hoy = new Date().toISOString().split("T")[0];
+        const esHoy = formData.fecha_cita === hoy;
+        const horaActual = new Date().getHours();
+
+        let horariosFiltrados = data.data || [];
+
+        if (esHoy) {
+          horariosFiltrados = horariosFiltrados.filter(
+            (hora: any) => hora.hora > horaActual // Solo horas futuras de hoy
+          );
+        }
+
+        const horariosFormateados = horariosFiltrados.map((hora: any) => ({
           ...hora,
           formato_12h: formatHora12h(hora.hora),
         }));
+
+        console.log(
+          "🕒 DEBUG - Horarios después de filtrar:",
+          horariosFormateados
+        );
+
         setHorariosDisponibles(horariosFormateados);
       } else {
         throw new Error("Error al cargar horarios");
@@ -269,11 +388,13 @@ export function AgendarCitaModal({
   };
 
   // Fechas mínima y máxima (hoy hasta 3 meses)
+
   const hoy = new Date();
   const fechaMinima = hoy.toISOString().split("T")[0];
-  const fechaMaxima = new Date(hoy.setMonth(hoy.getMonth() + 3))
-    .toISOString()
-    .split("T")[0];
+
+  const fechaMaxima = new Date();
+  fechaMaxima.setMonth(hoy.getMonth() + 3);
+  const fechaMaximaStr = fechaMaxima.toISOString().split("T")[0];
 
   const getTipoCitaIcon = (tipo: string) => {
     switch (tipo) {
@@ -423,7 +544,7 @@ export function AgendarCitaModal({
                 <Input
                   type="date"
                   min={fechaMinima}
-                  max={fechaMaxima}
+                  max={fechaMaximaStr}
                   value={formData.fecha_cita}
                   onChange={(e) =>
                     setFormData((prev) => ({

@@ -1,3 +1,4 @@
+// componentes/farmacia/seguimiento-recetas.tsx
 "use client";
 
 import { useState, useEffect } from "react";
@@ -23,17 +24,13 @@ import {
 interface DespachoReceta {
   id: string;
   codigo_receta: string;
-  estado: "en_preparacion" | "listo_para_retirar" | "retirado" | "rechazado";
-  farmacia_nombre: string;
-  farmacia_direccion: string;
-  farmacia_telefono: string;
-  fecha_despacho: string;
-  medicamentos: Array<{
-    nombre: string;
-    cantidad: number;
-  }>;
-  costo_total: number;
-  observaciones?: string;
+  estado: string;
+  estado_envio: string;
+  farmacia_nombre?: string;
+  farmacia_direccion?: string;
+  farmacia_horario?: any;
+  fecha_emision: string;
+  fecha_dispensacion?: string;
 }
 
 interface SeguimientoRecetasProps {
@@ -79,33 +76,40 @@ export default function SeguimientoRecetas({
     }
   };
 
-  const getEstadoInfo = (estado: string) => {
-    switch (estado) {
-      case "en_preparacion":
+  const getEstadoInfo = (estado_envio: string) => {
+    switch (estado_envio) {
+      case "no_enviada":
         return {
           icon: Clock,
-          label: "En Preparación",
+          label: "No enviada",
           color: "bg-yellow-100 text-yellow-800",
-          description: "Tu receta se está preparando en la farmacia",
+          description: "Tu receta aún no ha sido enviada a una farmacia",
         };
-      case "listo_para_retirar":
+      case "enviada":
+        return {
+          icon: Clock,
+          label: "Enviada",
+          color: "bg-blue-100 text-blue-800",
+          description: "Tu receta fue enviada a la farmacia",
+        };
+      case "recibida":
         return {
           icon: CheckCircle2,
-          label: "Listo para Retirar",
+          label: "Recibida",
           color: "bg-green-100 text-green-800",
-          description: "Tu receta está lista. Puedes retirarla en la farmacia",
+          description: "La farmacia recibió tu receta",
         };
-      case "retirado":
+      case "dispensada":
         return {
           icon: Package,
-          label: "Retirado",
+          label: "Dispensada",
           color: "bg-blue-100 text-blue-800",
-          description: "Ya has retirado tu receta",
+          description: "Tu receta ha sido dispensada",
         };
-      case "rechazado":
+      case "rechazada":
         return {
           icon: AlertCircle,
-          label: "Rechazado",
+          label: "Rechazada",
           color: "bg-red-100 text-red-800",
           description: "Tu receta fue rechazada por la farmacia",
         };
@@ -150,7 +154,7 @@ export default function SeguimientoRecetas({
         </Card>
       ) : (
         despachos.map((despacho) => {
-          const estadoInfo = getEstadoInfo(despacho.estado);
+          const estadoInfo = getEstadoInfo(despacho.estado_envio);
           const IconComponent = estadoInfo.icon;
 
           return (
@@ -163,7 +167,7 @@ export default function SeguimientoRecetas({
                       Receta {despacho.codigo_receta}
                     </CardTitle>
                     <CardDescription>
-                      {formatearFecha(despacho.fecha_despacho)}
+                      {formatearFecha(despacho.fecha_emision)}
                     </CardDescription>
                   </div>
                   <Badge className={estadoInfo.color}>
@@ -177,57 +181,34 @@ export default function SeguimientoRecetas({
                   {estadoInfo.description}
                 </div>
 
-                {/* Medicamentos */}
-                <div>
-                  <p className="font-semibold text-sm text-gray-900 mb-2">
-                    Medicamentos
-                  </p>
-                  <ul className="space-y-1 text-sm text-gray-600">
-                    {despacho.medicamentos.map((med, idx) => (
-                      <li key={idx} className="flex items-center gap-2">
-                        <span className="w-1.5 h-1.5 bg-blue-600 rounded-full"></span>
-                        {med.nombre} x {med.cantidad}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
                 {/* Información de Farmacia */}
-                <div className="border-t border-gray-200 pt-4">
-                  <p className="font-semibold text-sm text-gray-900 mb-2">
-                    Información de Farmacia
-                  </p>
-                  <div className="space-y-2 text-sm">
-                    <p className="text-gray-600 font-medium">
-                      {despacho.farmacia_nombre}
-                    </p>
-                    <div className="flex items-center gap-2 text-gray-600">
-                      <MapPin className="w-4 h-4" />
-                      {despacho.farmacia_direccion}
-                    </div>
-                    <div className="flex items-center gap-2 text-gray-600">
-                      <PhoneCall className="w-4 h-4" />
-                      {despacho.farmacia_telefono}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Costo */}
-                <div className="border-t border-gray-200 pt-4 flex justify-between items-center">
-                  <span className="font-medium text-gray-900">Costo Total:</span>
-                  <span className="text-lg font-bold text-blue-600">
-                    S/ {despacho.costo_total.toFixed(2)}
-                  </span>
-                </div>
-
-                {/* Observaciones */}
-                {despacho.observaciones && (
+                {despacho.farmacia_nombre && (
                   <div className="border-t border-gray-200 pt-4">
                     <p className="font-semibold text-sm text-gray-900 mb-2">
-                      Notas
+                      Información de Farmacia
+                    </p>
+                    <div className="space-y-2 text-sm">
+                      <p className="text-gray-600 font-medium">
+                        {despacho.farmacia_nombre}
+                      </p>
+                      {despacho.farmacia_direccion && (
+                        <div className="flex items-center gap-2 text-gray-600">
+                          <MapPin className="w-4 h-4" />
+                          {despacho.farmacia_direccion}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Fecha de Dispensación */}
+                {despacho.fecha_dispensacion && (
+                  <div className="border-t border-gray-200 pt-4">
+                    <p className="font-semibold text-sm text-gray-900 mb-2">
+                      Fecha de Dispensación
                     </p>
                     <p className="text-sm text-gray-600">
-                      {despacho.observaciones}
+                      {formatearFecha(despacho.fecha_dispensacion)}
                     </p>
                   </div>
                 )}

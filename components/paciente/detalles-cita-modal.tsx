@@ -110,33 +110,95 @@ export default function DetallesCitaModal({
       const token = obtenerToken();
       if (!token) return;
 
-      const response = await fetch(
-        `/api/telemedicina/sesion?cita_id=${citaData.id}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
+      console.log(
+        "🎥 Paciente intentando unirse a videollamada para cita:",
+        citaData.id
       );
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.sesion) {
-          toast({
-            title: "Conectando a videollamada",
-            description: "Serás redirigido a la sesión...",
-          });
-          window.open(`/telemedicina/sesion/${data.sesion.id}`, "_blank");
-          onClose();
-        } else {
-          throw new Error("No se encontró sesión de videollamada");
-        }
+      const headers = {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      };
+
+      // ===== BUSCAR SESIÓN EXISTENTE (igual que el médico) =====
+      console.log("🔍 Buscando sesión existente para cita:", citaData.id);
+
+      const sesionesResponse = await fetch(
+        `/api/telemedicina/sesiones?cita_id=${citaData.id}`,
+        { headers }
+      );
+
+      if (!sesionesResponse.ok) {
+        throw new Error(`Error al buscar sesiones: ${sesionesResponse.status}`);
+      }
+
+      const sesionesData = await sesionesResponse.json();
+      console.log("📋 Respuesta de sesiones:", sesionesData);
+
+      let sesionId;
+
+      if (
+        sesionesData.success &&
+        sesionesData.sesiones &&
+        sesionesData.sesiones.length > 0
+      ) {
+        // Usar sesión existente
+        sesionId = sesionesData.sesiones[0].id;
+        console.log("✅ Sesión existente encontrada:", sesionId);
       } else {
-        throw new Error("Error al obtener sesión de videollamada");
+        // ===== NO CREAR SESIÓN - Solo el médico puede crear sesiones =====
+        throw new Error(
+          "No hay sesión de videollamada disponible. El médico debe iniciar la sesión primero."
+        );
+      }
+
+      // ===== VALIDAR SESIÓN ID =====
+      if (!sesionId) {
+        throw new Error("No se pudo obtener un ID de sesión válido");
+      }
+
+      // ===== REDIRIGIR A VIDEOLLAMADA =====
+      console.log("🚀 Paciente uniéndose a videollamada con sesión:", sesionId);
+      const urlVideollamada = `/telemedicina/sesion/${sesionId}`;
+      console.log("🔗 URL:", urlVideollamada);
+
+      const nuevaVentana = window.open(urlVideollamada, "_blank");
+
+      if (!nuevaVentana) {
+        alert(
+          "⚠️ No se pudo abrir la ventana de videollamada.\n\nPor favor, desactiva los bloqueadores de ventanas emergentes."
+        );
+      } else {
+        console.log("✅ Ventana de videollamada abierta correctamente");
+        onClose();
       }
     } catch (error: any) {
-      console.error("Error uniéndose a videollamada:", error);
+      console.error("❌ Error crítico al unirse a videollamada:", {
+        mensaje: error.message,
+        stack: error.stack,
+        error: error,
+      });
+
+      // Mostrar mensaje de error amigable al usuario
+      let mensajeError = "No se pudo conectar a la videollamada";
+
+      if (
+        error.message.includes("404") ||
+        error.message.includes("No hay sesión")
+      ) {
+        mensajeError =
+          "El médico aún no ha iniciado la sesión de videollamada. Por favor, espera a que el médico inicie la sesión.";
+      } else if (error.message.includes("401")) {
+        mensajeError = "Tu sesión ha expirado. Por favor recarga la página.";
+      } else if (error.message.includes("500")) {
+        mensajeError = "Error del servidor. Intenta nuevamente más tarde.";
+      } else if (error.message) {
+        mensajeError = error.message;
+      }
+
       toast({
         title: "Error de conexión",
-        description: error.message || "No se pudo conectar a la videollamada",
+        description: mensajeError,
         variant: "destructive",
       });
     } finally {

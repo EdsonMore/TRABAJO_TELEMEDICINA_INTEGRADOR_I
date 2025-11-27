@@ -32,9 +32,17 @@ export function puedeUnirseAVideollamada(cita: Cita): boolean {
   const estadoValido = ["confirmada", "programada", "iniciada"].includes(
     cita.estado
   );
-  const hoy = new Date();
-  const fechaCita = new Date(cita.fecha_cita);
-  const esFechaValida = fechaCita >= new Date(hoy.setHours(0, 0, 0, 0));
+  
+  // Validación correcta de fecha
+  const hoyDate = new Date();
+  hoyDate.setHours(0, 0, 0, 0);
+  
+  // Parsear fecha_cita (formato: "2025-11-15")
+  const [año, mes, día] = cita.fecha_cita.split("-");
+  const fechaCitaDate = new Date(parseInt(año), parseInt(mes) - 1, parseInt(día));
+  fechaCitaDate.setHours(0, 0, 0, 0);
+  
+  const esFechaValida = fechaCitaDate >= hoyDate;
 
   return esVirtual && estadoValido && esFechaValida;
 }

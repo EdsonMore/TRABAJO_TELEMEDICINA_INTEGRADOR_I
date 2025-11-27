@@ -43,7 +43,10 @@ export async function GET(request: NextRequest) {
         c.fecha_cita, c.motivo_consulta, c.diagnostico,
         u.nombre as medico_nombre, u.apellido as medico_apellido,
         e.nombre as especialidad_nombre,
-        f.nombre_comercial as farmacia_nombre
+        f.nombre_comercial as farmacia_nombre,
+        r.tipo_entrega,
+        r.direccion_entrega,
+        r.costo_entrega
       FROM recetas r
       JOIN citas c ON r.id_cita = c.id
       JOIN medicos m ON c.id_medico = m.id
@@ -78,6 +81,10 @@ export async function GET(request: NextRequest) {
             fecha_emision: receta.fecha_emision,
             fecha_vencimiento: receta.fecha_vencimiento,
             estado: receta.estado,
+            estado_envio: receta.estado_envio || "no_enviada",
+            tipo_entrega: receta.tipo_entrega || "recojo",
+            direccion_entrega: receta.direccion_entrega || null,
+            costo_entrega: receta.costo_entrega || 0,
             observaciones_generales: receta.observaciones_generales,
             total_estimado: receta.total_estimado,
             fecha_dispensacion: receta.fecha_dispensacion,

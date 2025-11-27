@@ -48,6 +48,7 @@ export async function GET(request: NextRequest) {
         r.fecha_emision,
         r.fecha_vencimiento,
         r.estado,
+        r.estado_envio,
         r.diagnostico_principal_texto,
         r.observaciones,
         -- Información del paciente
@@ -65,8 +66,7 @@ export async function GET(request: NextRequest) {
         -- Contar medicamentos
         COUNT(rd.id) as total_medicamentos,
         -- Verificar stock disponible
-        COUNT(CASE WHEN inv.stock_actual >= rd.cantidad THEN 1 END) as medicamentos_con_stock,
-        COUNT(*) OVER() as total_count
+        COUNT(CASE WHEN inv.stock_actual >= rd.cantidad THEN 1 END) as medicamentos_con_stock
       FROM recetas r
       JOIN citas c ON r.id_cita = c.id
       JOIN pacientes p ON c.id_paciente = p.id
@@ -80,7 +80,8 @@ export async function GET(request: NextRequest) {
         AND inv.id_farmacia = $1 
         AND inv.disponible = true
       )
-      WHERE r.estado IN ('activa', 'pendiente', 'en_proceso')
+      WHERE r.farmacia_seleccionada_id = $1
+        AND r.estado_envio = 'recibida'
     `;
 
     const params: any[] = [farmaciaId];
@@ -88,17 +89,17 @@ export async function GET(request: NextRequest) {
 
     // Filtrar por estado específico
     if (estado === "pendientes") {
-      paramCount++;
       query += ` AND r.estado = 'activa'`;
     } else if (estado === "en_proceso") {
-      paramCount++;
       query += ` AND r.estado = 'en_proceso'`;
     } else if (estado === "dispensadas") {
-      paramCount++;
       query += ` AND r.estado = 'dispensada'`;
     }
 
-    query += ` GROUP BY r.id, p.id, up.id, m.id, um.id, e.id
+    query += ` GROUP BY r.id, r.codigo_receta, r.fecha_emision, r.fecha_vencimiento, r.estado, r.estado_envio,
+                 r.diagnostico_principal_texto, r.observaciones,
+                 p.id, up.nombre, up.apellido, p.dni, p.fecha_nacimiento, p.sexo,
+                 um.nombre, um.apellido, m.numero_colegiatura, e.nombre
                ORDER BY 
                  CASE 
                    WHEN r.estado = 'activa' THEN 1
@@ -111,25 +112,93 @@ export async function GET(request: NextRequest) {
     params.push(limit, offset);
 
     const result = await client.query(query, params);
-    const totalCount = result.rows[0]?.total_count || 0;
+    
+    // Contar el total de recetas (sin LIMIT/OFFSET)
+    let countQuery = `
+      SELECT COUNT(DISTINCT r.id) as total
+      FROM recetas r
+      WHERE r.farmacia_seleccionada_id = $1
+        AND r.estado_envio = 'recibida'
+    `;
+    
+    const countParams: any[] = [farmaciaId];
+    
+    if (estado === "pendientes") {
+      countQuery += ` AND r.estado = 'activa'`;
+    } else if (estado === "en_proceso") {
+      countQuery += ` AND r.estado = 'en_proceso'`;
+    } else if (estado === "dispensadas") {
+      countQuery += ` AND r.estado = 'dispensada'`;
+    }
+    
+    const countResult = await client.query(countQuery, countParams);
+    const totalCount = parseInt(countResult.rows[0]?.total || 0);
     const totalPages = Math.ceil(totalCount / limit);
 
     const recetas = result.rows.map((row) => {
-      const { total_count, ...receta } = row;
-
       // Determinar estado visual para la farmacia
-      let estadoVisual = receta.estado;
-      if (receta.estado === "activa") {
+      let estadoVisual = row.estado;
+      if (row.estado === "activa") {
         estadoVisual = "pendiente";
       }
 
       return {
-        ...receta,
+        ...row,
         estado: estadoVisual,
         tiene_stock_completo:
-          receta.medicamentos_con_stock === receta.total_medicamentos,
+          row.medicamentos_con_stock === row.total_medicamentos,
+        medicamentos: [], // Inicializar array vacío, será llenado después
       };
     });
+
+    // Obtener medicamentos para cada receta
+    for (const receta of recetas) {
+      const medicamentosResult = await client.query(
+        `SELECT 
+          rd.id,
+          rd.medicamento_id,
+          rd.cantidad as cantidad_requerida,
+          rd.dosis,
+          rd.frecuencia,
+          rd.duracion_dias,
+          rd.via_administracion,
+          m.nombre_comercial,
+          m.nombre_generico,
+          inv.stock_actual as stock_disponible,
+          inv.precio_venta as precio_unitario,
+          inv.fecha_vencimiento,
+          CASE 
+            WHEN inv.id IS NULL THEN false
+            WHEN inv.stock_actual >= rd.cantidad THEN true
+            ELSE false
+          END as disponible
+         FROM receta_detalle rd
+         JOIN medicamentos m ON rd.medicamento_id = m.id
+         LEFT JOIN inventario_farmacia inv ON (
+           rd.medicamento_id = inv.id_medicamento 
+           AND inv.id_farmacia = $1
+         )
+         WHERE rd.id_receta = $2
+         ORDER BY m.nombre_comercial`,
+        [farmaciaId, receta.id]
+      );
+
+      receta.medicamentos = medicamentosResult.rows.map((med: any) => ({
+        id: med.id,
+        medicamento_id: med.medicamento_id,
+        nombre_comercial: med.nombre_comercial,
+        nombre_generico: med.nombre_generico,
+        cantidad_requerida: med.cantidad_requerida,
+        dosis: med.dosis,
+        frecuencia: med.frecuencia,
+        duracion_dias: med.duracion_dias,
+        via_administracion: med.via_administracion,
+        stock_disponible: med.stock_disponible || 0,
+        precio_unitario: med.precio_unitario || 0,
+        fecha_vencimiento: med.fecha_vencimiento,
+        disponible: med.disponible,
+      }));
+    }
 
     return NextResponse.json({
       success: true,

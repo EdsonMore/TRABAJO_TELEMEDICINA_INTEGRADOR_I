@@ -40,6 +40,8 @@ interface DetallesCitaModalProps {
   onCitaActualizada: () => void;
   onVerPerfil?: (pacienteId: string) => void;
   onVerHistorial?: (pacienteId: string) => void;
+  onCrearReceta?: () => void; // ✨ NUEVO: Callback para crear receta
+  onGestionarCita?: () => void; // ✨ NUEVO: Callback para gestionar cita
 }
 
 export function DetallesCitaModalMedico({
@@ -49,44 +51,60 @@ export function DetallesCitaModalMedico({
   onCitaActualizada,
   onVerPerfil,
   onVerHistorial,
+  onCrearReceta, // ✨ NUEVO
+  onGestionarCita, // ✨ NUEVO
 }: DetallesCitaModalProps) {
   const { token } = useAuth();
   const [unirseLoading, setUnirseLoading] = useState(false);
 
   if (!cita) return null;
 
-  const unirseAVideollamada = async () => {
-    if (!cita.id_sesion && !cita.id) {
-      alert("No se encontró la sesión de videollamada.");
+  const unirseAVideollamada = async (cita: any) => {
+    if (cita.tipo_cita !== "virtual") {
+      alert("Esta cita no es de tipo virtual.");
       return;
     }
 
-    setUnirseLoading(true);
     try {
-      const res = await fetch("/api/telemedicina/token", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ sesion_id: cita.id_sesion || cita.id }),
-      });
+      const headers = {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      };
 
-      const data = await res.json();
-      if (!data.success)
-        throw new Error(data.error || "Error al acceder a la videollamada");
-
-      const sesionId = cita.id_sesion || cita.id;
-      const nuevaVentana = window.open(
-        `/telemedicina/sesion/${sesionId}`,
-        "_blank"
+      const sesionesResponse = await fetch(
+        `/api/telemedicina/sesiones?cita_id=${cita.id}`,
+        { headers }
       );
-      if (nuevaVentana) onClose();
-      else alert("Permite ventanas emergentes para la videollamada.");
-    } catch (err: any) {
-      alert(`Error: ${err.message || "No se pudo conectar a la videollamada"}`);
-    } finally {
-      setUnirseLoading(false);
+
+      const sesionesData = await sesionesResponse.json();
+      let sesionId;
+
+      if (sesionesData.success && sesionesData.sesiones.length > 0) {
+        sesionId = sesionesData.sesiones[0].id;
+      } else {
+        const programarResponse = await fetch("/api/telemedicina/programar", {
+          method: "POST",
+          headers: headers,
+          body: JSON.stringify({
+            id_cita: cita.id,
+            titulo: "Consulta Virtual",
+            descripcion: "Sesión de telemedicina",
+            fecha_programada: new Date().toISOString(),
+            duracion_minutos: 30,
+          }),
+        });
+
+        const programarData = await programarResponse.json();
+        if (!programarData.success) {
+          throw new Error(programarData.error || "Error al crear sesión");
+        }
+
+        sesionId = programarData.sesion.id;
+      }
+
+      window.open(`/telemedicina/sesion/${sesionId}`, "_blank");
+    } catch (error: any) {
+      alert(`Error: ${error.message || "No se pudo conectar"}`);
     }
   };
 
@@ -97,9 +115,10 @@ export function DetallesCitaModalMedico({
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl w-full max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col p-0">
+        <DialogTitle className="sr-only">Detalles de la Cita</DialogTitle>
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-5 flex items-center justify-between flex-shrink-0">
-              <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3">
             <div className="p-2 bg-white/20 rounded-lg">
               <User className="w-5 h-5 text-white" />
             </div>
@@ -227,27 +246,26 @@ export function DetallesCitaModalMedico({
                     </Badge>
                   </div>
 
-                  {cita.tipo_cita === "virtual" &&
-                    puedeUnirseLocal() && (
-                      <Button
-                        onClick={unirseAVideollamada}
-                        disabled={unirseLoading}
-                        className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-5 rounded-lg transition-all"
-                      >
-                        {unirseLoading ? (
-                          <span className="flex items-center justify-center gap-2">
-                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                            Conectando...
-                          </span>
-                        ) : (
-                          <span className="flex items-center justify-center gap-2">
-                            <Play className="w-4 h-4" />
-                            Iniciar Videollamada
-                            <ExternalLink className="w-3 h-3" />
-                          </span>
-                        )}
-                      </Button>
-                    )}
+                  {cita.tipo_cita === "virtual" && puedeUnirseLocal() && (
+                    <Button
+                      onClick={unirseAVideollamada}
+                      disabled={unirseLoading}
+                      className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-5 rounded-lg transition-all"
+                    >
+                      {unirseLoading ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          Conectando...
+                        </span>
+                      ) : (
+                        <span className="flex items-center justify-center gap-2">
+                          <Play className="w-4 h-4" />
+                          Iniciar Videollamada
+                          <ExternalLink className="w-3 h-3" />
+                        </span>
+                      )}
+                    </Button>
+                  )}
                 </div>
               </div>
             </div>
@@ -333,8 +351,12 @@ export function DetallesCitaModalMedico({
             <div className="bg-gray-50 border border-gray-200 rounded-xl p-5">
               <h3 className="font-bold text-gray-900 mb-4 text-lg">Acciones</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {puedeCrearReceta(cita) && (
+                {puedeCrearReceta(cita) && onCrearReceta && (
                   <Button
+                    onClick={() => {
+                      onClose();
+                      onCrearReceta();
+                    }}
                     variant="outline"
                     className="border-blue-400 text-blue-700 hover:bg-blue-50 font-semibold py-5 rounded-lg"
                     title="Crear nueva receta para este paciente"
@@ -390,21 +412,60 @@ export function DetallesCitaModalMedico({
         </div>
 
         {/* Footer */}
-        <div className="bg-gray-100 border-t border-gray-300 px-6 py-4 flex gap-3 flex-shrink-0">
+        <div className="bg-gray-100 border-t border-gray-300 px-6 py-4 flex gap-3 flex-wrap flex-shrink-0">
           <Button
             variant="outline"
-            className="flex-1 border-gray-400 text-gray-700 hover:bg-gray-200 font-semibold py-3 rounded-lg"
+            className="flex-1 min-w-[120px] border-gray-400 text-gray-700 hover:bg-gray-200 font-semibold py-3 rounded-lg"
             onClick={onClose}
           >
             Cerrar
           </Button>
+
+          {onCrearReceta && (
+            <Button
+              onClick={() => {
+                onClose();
+                onCrearReceta();
+              }}
+              className="flex-1 min-w-[120px] bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg flex items-center justify-center gap-2"
+              title="Crear receta electrónica para este paciente"
+            >
+              <FileText className="w-4 h-4" />
+              Crear Receta
+            </Button>
+          )}
+
+          {onGestionarCita && (
+            <Button
+              onClick={() => {
+                onClose();
+                onGestionarCita();
+              }}
+              className="flex-1 min-w-[120px] bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 rounded-lg flex items-center justify-center gap-2"
+              title="Gestionar información de la cita"
+            >
+              <AlertCircle className="w-4 h-4" />
+              Gestionar Cita
+            </Button>
+          )}
+
           {puedeUnirseLocal() && (
             <Button
               onClick={unirseAVideollamada}
               disabled={unirseLoading}
-              className="flex-1 bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-lg"
+              className="flex-1 min-w-[120px] bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-lg flex items-center justify-center gap-2"
             >
-              {unirseLoading ? "Conectando..." : "Unirse Ahora"}
+              {unirseLoading ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Conectando...
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4" />
+                  Unirse Ahora
+                </>
+              )}
             </Button>
           )}
         </div>

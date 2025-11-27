@@ -30,6 +30,8 @@ export async function GET(request: NextRequest) {
     const limite = 20;
     const offset = (pagina - 1) * limite;
 
+    console.log("[DEBUG] Parámetros recibidos:", { filtroEstado, busqueda, pagina, farmaciaId: "..." });
+
     client = await pool.connect();
 
     // 1️⃣ Obtener ID de la farmacia
@@ -46,10 +48,11 @@ export async function GET(request: NextRequest) {
     }
 
     const farmaciaId = farmaciaResult.rows[0].id;
+    console.log("[DEBUG] Farmacia ID:", farmaciaId);
 
-    // 2️⃣ Construir query base
+    // 2️⃣ Construir query base - CRÍTICO: DEBE FILTRAR POR estado_envio
     let query = `
-      SELECT 
+      SELECT DISTINCT
         r.id,
         r.codigo_receta,
         r.estado_envio,
@@ -64,9 +67,6 @@ export async function GET(request: NextRequest) {
         c.id_medico,
         u_medico.nombre as medico_nombre,
         u_medico.apellido as medico_apellido,
-        COUNT(rd.id) as total_medicamentos,
-        SUM(inv.precio_venta * rd.cantidad) as precio_estimado,
-        MAX(inv.fecha_vencimiento) as medicamento_vence_mas_proximo,
         r.fecha_emision,
         r.fecha_vencimiento
       FROM recetas r
@@ -75,19 +75,11 @@ export async function GET(request: NextRequest) {
       JOIN usuarios u_paciente ON p.id_usuario = u_paciente.id
       JOIN medicos m ON c.id_medico = m.id
       JOIN usuarios u_medico ON m.id_usuario = u_medico.id
-      LEFT JOIN receta_detalle rd ON r.id = rd.id_receta
-      LEFT JOIN inventario_farmacia inv ON rd.medicamento_id = inv.id_medicamento 
-        AND inv.id_farmacia = $1
       WHERE r.farmacia_seleccionada_id = $1
+        AND (r.estado_envio = $2 OR (r.estado_envio IS NULL AND $2 = 'enviada'))
     `;
 
-    const params: any[] = [farmaciaId];
-
-    // Filtrar por estado
-    if (filtroEstado && filtroEstado !== "todas") {
-      query += ` AND r.estado_envio = $${params.length + 1}`;
-      params.push(filtroEstado);
-    }
+    const params: any[] = [farmaciaId, filtroEstado];
 
     // Búsqueda por código o paciente
     if (busqueda) {
@@ -98,14 +90,18 @@ export async function GET(request: NextRequest) {
       params.push(`%${busqueda}%`);
     }
 
-    query += ` GROUP BY r.id, c.id, p.id, u_paciente.id, u_medico.id
-               ORDER BY r.fecha_envio_farmacia DESC
+    query += ` ORDER BY r.fecha_envio_farmacia DESC NULLS LAST
                LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
     params.push(limite, offset);
 
-    const result = await client.query(query, params);
+    console.log("[DEBUG] Query ejecutada:", query);
+    console.log("[DEBUG] Parámetros de query:", params);
 
-    // 3️⃣ Obtener medicamentos detallados de cada receta
+    const result = await client.query(query, params);
+    
+    console.log("[DEBUG] Recetas encontradas:", result.rows.length);
+    console.log("[DEBUG] Primera receta (debug):", result.rows[0]);
+
     const recetas = [];
     for (const receta of result.rows) {
       const medicamentosResult = await client.query(
@@ -152,7 +148,7 @@ export async function GET(request: NextRequest) {
         fecha_vencimiento: receta.fecha_vencimiento,
         motivo_rechazo: receta.motivo_rechazo,
         paciente: {
-          id: receta.c_id_paciente,
+          id: receta.id_paciente,
           nombre: receta.paciente_nombre,
           apellido: receta.paciente_apellido,
           email: receta.paciente_email,
@@ -180,20 +176,26 @@ export async function GET(request: NextRequest) {
           fecha_vencimiento: med.fecha_vencimiento,
           estado_disponibilidad: med.estado_disponibilidad,
         })),
-        medicamentos_totales: receta.total_medicamentos,
+        medicamentos_totales: medicamentosResult.rows.length,
         medicamentos_disponibles: medicamentosResult.rows.filter(
           (m: any) => m.estado_disponibilidad === "disponible"
         ).length,
         medicamentos_no_disponibles: medicamentosNoDisponibles.length,
-        precio_estimado: receta.precio_estimado,
+        precio_estimado: medicamentosResult.rows.reduce(
+          (total, med: any) => total + (med.precio_venta ? med.precio_venta * med.cantidad : 0),
+          0
+        ),
         disponibilidad_completa: medicamentosNoDisponibles.length === 0,
       });
     }
 
     // 4️⃣ Obtener conteo total sin límite
     let countQuery = `
-      SELECT COUNT(*) as total
+      SELECT COUNT(DISTINCT r.id) as total
       FROM recetas r
+      JOIN citas c ON r.id_cita = c.id
+      JOIN pacientes p ON c.id_paciente = p.id
+      JOIN usuarios u_paciente ON p.id_usuario = u_paciente.id
       WHERE r.farmacia_seleccionada_id = $1
     `;
     const countParams: any[] = [farmaciaId];
@@ -205,47 +207,29 @@ export async function GET(request: NextRequest) {
 
     if (busqueda) {
       countQuery += ` AND (r.codigo_receta ILIKE $${countParams.length + 1} 
-                          OR u_paciente.nombre ILIKE $${countParams.length + 1})`;
+                          OR u_paciente.nombre ILIKE $${countParams.length + 1}
+                          OR u_paciente.apellido ILIKE $${countParams.length + 1}
+                          OR u_paciente.email ILIKE $${countParams.length + 1})`;
       countParams.push(`%${busqueda}%`);
-    }
-
-    // Actualizar query con joins para búsqueda
-    if (busqueda) {
-      countQuery = `
-        SELECT COUNT(*) as total
-        FROM recetas r
-        JOIN citas c ON r.id_cita = c.id
-        JOIN pacientes p ON c.id_paciente = p.id
-        JOIN usuarios u_paciente ON p.id_usuario = u_paciente.id
-        WHERE r.farmacia_seleccionada_id = $1
-      `;
-      countParams[0] = farmaciaId;
-
-      if (filtroEstado && filtroEstado !== "todas") {
-        countQuery += ` AND r.estado_envio = $${countParams.length + 1}`;
-        countParams.push(filtroEstado);
-      }
-
-      if (busqueda) {
-        countQuery += ` AND (r.codigo_receta ILIKE $${countParams.length + 1} 
-                            OR u_paciente.nombre ILIKE $${countParams.length + 1})`;
-        countParams.push(`%${busqueda}%`);
-      }
     }
 
     const countResult = await client.query(countQuery, countParams);
     const totalRecetas = countResult.rows[0].total;
 
+    console.log("[DEBUG] Total recetas encontradas (sin límite):", totalRecetas);
+
     // 5️⃣ Estadísticas por estado
     const estadisticasResult = await client.query(
       `SELECT 
-        r.estado_envio,
+        COALESCE(r.estado_envio, 'no_enviada') as estado_envio,
         COUNT(*) as cantidad
        FROM recetas r
        WHERE r.farmacia_seleccionada_id = $1
        GROUP BY r.estado_envio`,
       [farmaciaId]
     );
+
+    console.log("[DEBUG] Estadísticas crudas de BD:", estadisticasResult.rows);
 
     const estadisticas = estadisticasResult.rows.reduce(
       (acc: any, row: any) => {
@@ -254,8 +238,6 @@ export async function GET(request: NextRequest) {
       },
       {}
     );
-
-    client.release();
 
     return NextResponse.json(
       {
@@ -288,6 +270,12 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   } finally {
-    if (client) client.release();
+    if (client) {
+      try {
+        client.release();
+      } catch (e) {
+        // Ignorar si ya fue liberado
+      }
+    }
   }
 }

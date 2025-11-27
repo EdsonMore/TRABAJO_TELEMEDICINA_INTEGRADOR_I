@@ -1,6 +1,8 @@
+// components/farmacia/despacho-recetas
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import {
   Card,
@@ -42,40 +44,64 @@ import {
   FileText,
   Printer,
   Download,
+  Calendar,
+  Pill,
 } from "lucide-react";
 
 interface Medicamento {
   id: string;
+  medicamento_id?: number;
   nombre_comercial: string;
   nombre_generico: string;
   cantidad_requerida: number;
+  cantidad?: number;
   stock_disponible: number;
+  stock_actual?: number;
   precio_unitario: number;
+  precio_venta?: number;
   lote: string;
   disponible: boolean;
+  dosis: string;
+  frecuencia: string;
+  duracion_dias?: number;
+  via_administracion: string;
+  estado_disponibilidad?: string;
 }
 
 interface Receta {
   id: string;
   codigo_receta: string;
-  estado: "pendiente" | "en_proceso" | "dispensada";
+  estado: "activa" | "en_proceso" | "dispensada" | "pendiente";
   paciente_nombre: string;
   paciente_apellido: string;
   paciente_dni: string;
+  paciente_edad?: number;
+  paciente_sexo?: string;
   medico_nombre: string;
+  medico_apellido: string;
   especialidad: string;
+  numero_colegiatura?: string;
   fecha_emision: string;
+  fecha_vencimiento: string;
+  diagnostico_principal_texto?: string;
+  observaciones?: string;
   total_medicamentos: number;
+  medicamentos_con_stock?: number;
   medicamentos: Medicamento[];
+  tiene_stock_completo?: boolean;
 }
 
 interface DespachoRecetasProps {
   onVolver?: () => void;
+  recetaPreseleccionada?: string | null;
 }
 
 export default function DespachoRecetas({
   onVolver,
+  recetaPreseleccionada,
 }: DespachoRecetasProps) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { token } = useAuth();
   const [recetas, setRecetas] = useState<Receta[]>([]);
   const [recetasFiltradas, setRecetasFiltradas] = useState<Receta[]>([]);
@@ -94,11 +120,18 @@ export default function DespachoRecetas({
     "preparar" | "despachar" | "rechazar" | null
   >(null);
   const [motivoRechazo, setMotivoRechazo] = useState("");
+  const [tipoEntrega, setTipoEntrega] = useState<"farmacia" | "domicilio">(
+    "farmacia"
+  );
+  const [direccionEntrega, setDireccionEntrega] = useState("");
 
   // Medicamentos seleccionados para despacho
   const [medicamentosDespacho, setMedicamentosDespacho] = useState<
     Record<string, number>
   >({});
+
+  // Obtener ID de receta desde parámetro (prioritario) o query params
+  const recetaParamId = recetaPreseleccionada || searchParams?.get("receta");
 
   useEffect(() => {
     if (token) {
@@ -110,23 +143,56 @@ export default function DespachoRecetas({
     filtrarRecetas();
   }, [recetas, busqueda, filtroEstado]);
 
-  const cargarRecetas = async () => {
-    if (!token) return;
+  // Auto-seleccionar receta si viene de query params
+  useEffect(() => {
+    if (recetaParamId && recetas.length > 0) {
+      const receta = recetas.find((r) => r.id === recetaParamId);
+      if (receta) {
+        abrirDetalles(receta);
+      }
+    }
+  }, [recetaParamId, recetas]);
+
+  const cargarRecetas = async (filtroEstadoParam?: string) => {
+    if (!token) return [];
 
     try {
       setCargando(true);
-      const response = await fetch("/api/farmacia/recetas", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
 
-      if (response.ok) {
-        const data = await response.json();
-        setRecetas(data.recetas || []);
+      // Usar el parámetro si se proporciona, si no usar el estado local
+      const estadoFiltro = filtroEstadoParam || filtroEstado;
+
+      // Mapear estado del filtro a lo que espera la API
+      let estadoAPI = "";
+      if (estadoFiltro === "pendiente") {
+        estadoAPI = "pendientes";
+      } else if (estadoFiltro === "en_proceso") {
+        estadoAPI = "en_proceso";
+      } else if (estadoFiltro === "dispensadas") {
+        estadoAPI = "dispensadas";
       }
+
+      const response = await fetch(
+        `/api/farmacia/recetas?estado=${estadoAPI}&page=1&limit=50`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || `Error ${response.status}`);
+      }
+
+      const data = await response.json();
+      const recetasData = data.recetas || [];
+      setRecetas(recetasData);
+      return recetasData;
     } catch (error) {
       console.error("Error cargando recetas:", error);
+      return [];
     } finally {
       setCargando(false);
     }
@@ -147,9 +213,12 @@ export default function DespachoRecetas({
       );
     }
 
-    // Filtro por estado
+    // Filtro por estado - Los estados de la API son: activa, en_proceso, dispensada
+    // Pero los mostramos como: pendiente, en_proceso, dispensadas
     if (filtroEstado === "pendiente") {
-      filtradas = filtradas.filter((r) => r.estado === "pendiente");
+      filtradas = filtradas.filter(
+        (r) => r.estado === "activa" || r.estado === "pendiente"
+      );
     } else if (filtroEstado === "en_proceso") {
       filtradas = filtradas.filter((r) => r.estado === "en_proceso");
     } else if (filtroEstado === "dispensadas") {
@@ -163,16 +232,23 @@ export default function DespachoRecetas({
     setRecetaSeleccionada(receta);
     setMedicamentosDespacho({});
     setMotivoRechazo("");
+    // Cargar datos de entrega de la receta
+    setTipoEntrega(
+      (receta as any).tipo_entrega === "domicilio" ? "domicilio" : "farmacia"
+    );
+    setDireccionEntrega((receta as any).direccion_entrega || "");
     setMostrarDetalles(true);
   };
 
-  const procesarAccion = async (accion: "preparar" | "despachar" | "rechazar") => {
+  const procesarAccion = async (
+    accion: "preparar" | "despachar" | "rechazar"
+  ) => {
     if (!recetaSeleccionada || !token) return;
 
     // Validar medicamentos para despacho
     if (accion === "despachar") {
-      const medicamentosValidos = recetaSeleccionada.medicamentos.filter((m) =>
-        medicamentosDespacho[m.id]
+      const medicamentosValidos = recetaSeleccionada.medicamentos.filter(
+        (m) => medicamentosDespacho[m.id]
       );
 
       if (medicamentosValidos.length === 0) {
@@ -206,14 +282,38 @@ export default function DespachoRecetas({
     try {
       setProcesando(true);
 
-      const medicamentosA = recetaSeleccionada.medicamentos
-        .filter((m) => medicamentosDespacho[m.id])
-        .map((m) => ({
-          medicamento_id: m.id,
-          cantidad_dispensada: medicamentosDespacho[m.id],
-          lote: m.lote,
-          precio_unitario: m.precio_unitario,
-        }));
+      // Preparar medicamentos procesados
+      let medicamentosA: Array<{
+        medicamento_id: number;
+        cantidad_dispensada: number;
+        lote: string;
+        precio_unitario: number;
+      }> = [];
+
+      if (accionConfirmada === "despachar") {
+        medicamentosA = recetaSeleccionada.medicamentos
+          .filter((m) => medicamentosDespacho[m.id])
+          .map((m) => ({
+            medicamento_id: m.medicamento_id || parseInt(m.id),
+            cantidad_dispensada: medicamentosDespacho[m.id],
+            lote: m.lote || "",
+            precio_unitario: m.precio_unitario,
+          }));
+
+        if (medicamentosA.length === 0) {
+          alert("Debe seleccionar medicamentos para despachar");
+          setProcesando(false);
+          return;
+        }
+      }
+
+      // Mapear acción a lo que espera la API
+      const accionAPI =
+        accionConfirmada === "preparar"
+          ? "en_proceso"
+          : accionConfirmada === "despachar"
+          ? "dispensada"
+          : "rechazada";
 
       const response = await fetch(
         `/api/farmacia/recetas/${recetaSeleccionada.id}/procesar`,
@@ -224,27 +324,54 @@ export default function DespachoRecetas({
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
-            accion: accionConfirmada === "preparar" ? "preparar" : accionConfirmada === "despachar" ? "dispensar" : "rechazar",
+            accion: accionAPI,
             medicamentos_procesados: medicamentosA,
             observaciones: motivoRechazo,
           }),
         }
       );
 
-      if (response.ok) {
-        await cargarRecetas();
-        setMostrarDetalles(false);
-        setRecetaSeleccionada(null);
-        alert(
-          `Receta ${accionConfirmada === "despachar" ? "dispensada" : accionConfirmada === "preparar" ? "en preparación" : "rechazada"} correctamente`
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(
+          error.error || error.message || `Error ${response.status}`
         );
-      } else {
-        const error = await response.json();
-        alert(`Error: ${error.error}`);
       }
+
+      const resultado = await response.json();
+
+      // Cerrar modal PRIMERO
+      setMostrarDetalles(false);
+      setRecetaSeleccionada(null);
+      setMedicamentosDespacho({});
+      setMotivoRechazo("");
+
+      // Determinar el nuevo filtro
+      let nuevoFiltro = filtroEstado; // Por defecto mantener el actual
+      if (accionAPI === "en_proceso") {
+        nuevoFiltro = "en_proceso";
+      } else if (accionAPI === "dispensada") {
+        nuevoFiltro = "dispensadas";
+      }
+
+      // Actualizar el filtro en el estado PRIMERO
+      setFiltroEstado(nuevoFiltro);
+
+      // Recargar recetas con el nuevo filtro (también actualiza setRecetas)
+      await cargarRecetas(nuevoFiltro);
+
+      // Mostrar mensaje de éxito
+      const mensajes: Record<string, string> = {
+        en_proceso: "Receta en preparación correctamente",
+        dispensada: "Receta dispensada correctamente",
+        rechazada: "Receta rechazada correctamente",
+      };
+      alert(mensajes[accionAPI] || "Acción completada");
     } catch (error) {
       console.error("Error procesando receta:", error);
-      alert("Error al procesar receta");
+      alert(
+        error instanceof Error ? error.message : "Error al procesar receta"
+      );
     } finally {
       setProcesando(false);
       setMostrarConfirmacion(false);
@@ -258,22 +385,40 @@ export default function DespachoRecetas({
     return recetaSeleccionada.medicamentos
       .filter((m) => medicamentosDespacho[m.id])
       .reduce(
-        (total, m) =>
-          total + medicamentosDespacho[m.id] * m.precio_unitario,
+        (total, m) => total + medicamentosDespacho[m.id] * m.precio_unitario,
         0
       );
   };
 
   const getEstadoColor = (estado: string) => {
     switch (estado) {
+      case "activa":
       case "pendiente":
         return "bg-yellow-100 text-yellow-800";
       case "en_proceso":
         return "bg-blue-100 text-blue-800";
       case "dispensada":
         return "bg-green-100 text-green-800";
+      case "cancelada":
+        return "bg-red-100 text-red-800";
       default:
         return "bg-gray-100 text-gray-800";
+    }
+  };
+
+  const getEstadoLabel = (estado: string) => {
+    switch (estado) {
+      case "activa":
+      case "pendiente":
+        return "Pendiente de Preparación";
+      case "en_proceso":
+        return "En Preparación";
+      case "dispensada":
+        return "Dispensada";
+      case "cancelada":
+        return "Cancelada/Rechazada";
+      default:
+        return estado;
     }
   };
 
@@ -282,7 +427,9 @@ export default function DespachoRecetas({
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Despacho de Recetas</h1>
+          <h1 className="text-2xl font-bold text-gray-900">
+            Despacho de Recetas
+          </h1>
           <p className="text-gray-600 text-sm">
             Procesa y despacha recetas a pacientes
           </p>
@@ -317,18 +464,14 @@ export default function DespachoRecetas({
                 Pendientes
               </Button>
               <Button
-                variant={
-                  filtroEstado === "en_proceso" ? "default" : "outline"
-                }
+                variant={filtroEstado === "en_proceso" ? "default" : "outline"}
                 onClick={() => setFiltroEstado("en_proceso")}
                 size="sm"
               >
                 En Proceso
               </Button>
               <Button
-                variant={
-                  filtroEstado === "dispensadas" ? "default" : "outline"
-                }
+                variant={filtroEstado === "dispensadas" ? "default" : "outline"}
                 onClick={() => setFiltroEstado("dispensadas")}
                 size="sm"
               >
@@ -337,7 +480,7 @@ export default function DespachoRecetas({
             </div>
 
             <Button
-              onClick={cargarRecetas}
+              onClick={() => cargarRecetas()}
               disabled={cargando}
               className="bg-blue-600 hover:bg-blue-700"
             >
@@ -357,7 +500,9 @@ export default function DespachoRecetas({
             <CardContent className="p-8 text-center">
               <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
               <p className="text-gray-500">
-                {cargando ? "Cargando recetas..." : "No hay recetas en este estado"}
+                {cargando
+                  ? "Cargando recetas..."
+                  : "No hay recetas en este estado"}
               </p>
             </CardContent>
           </Card>
@@ -404,11 +549,7 @@ export default function DespachoRecetas({
                   {/* Estado */}
                   <div>
                     <Badge className={getEstadoColor(receta.estado)}>
-                      {receta.estado === "pendiente"
-                        ? "Pendiente"
-                        : receta.estado === "en_proceso"
-                        ? "En Proceso"
-                        : "Dispensada"}
+                      {getEstadoLabel(receta.estado)}
                     </Badge>
                   </div>
 
@@ -448,7 +589,9 @@ export default function DespachoRecetas({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Card>
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-base">Paciente</CardTitle>
+                    <CardTitle className="text-base">
+                      Información del Paciente
+                    </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-2 text-sm">
                     <p>
@@ -459,132 +602,315 @@ export default function DespachoRecetas({
                     <p>
                       <strong>DNI:</strong> {recetaSeleccionada.paciente_dni}
                     </p>
+                    {recetaSeleccionada.paciente_edad && (
+                      <p>
+                        <strong>Edad:</strong>{" "}
+                        {recetaSeleccionada.paciente_edad} años
+                      </p>
+                    )}
+                    {recetaSeleccionada.paciente_sexo && (
+                      <p>
+                        <strong>Sexo:</strong>{" "}
+                        {recetaSeleccionada.paciente_sexo}
+                      </p>
+                    )}
                   </CardContent>
                 </Card>
 
                 <Card>
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-base">Médico</CardTitle>
+                    <CardTitle className="text-base">
+                      Información Médica
+                    </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-2 text-sm">
                     <p>
                       <strong>Médico:</strong> Dr.{" "}
-                      {recetaSeleccionada.medico_nombre}
+                      {recetaSeleccionada.medico_nombre}{" "}
+                      {recetaSeleccionada.medico_apellido}
                     </p>
                     <p>
                       <strong>Especialidad:</strong>{" "}
                       {recetaSeleccionada.especialidad}
                     </p>
+                    {recetaSeleccionada.numero_colegiatura && (
+                      <p>
+                        <strong>Colegiatura:</strong>{" "}
+                        {recetaSeleccionada.numero_colegiatura}
+                      </p>
+                    )}
                   </CardContent>
                 </Card>
               </div>
 
-              {/* Medicamentos */}
+              {/* Información de la Receta */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="text-center">
+                      <Calendar className="w-5 h-5 text-blue-600 mx-auto mb-2" />
+                      <p className="text-xs text-gray-600">Fecha Emisión</p>
+                      <p className="font-semibold text-sm">
+                        {new Date(
+                          recetaSeleccionada.fecha_emision
+                        ).toLocaleDateString("es-PE")}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="text-center">
+                      <Calendar className="w-5 h-5 text-red-600 mx-auto mb-2" />
+                      <p className="text-xs text-gray-600">Fecha Vencimiento</p>
+                      <p className="font-semibold text-sm">
+                        {new Date(
+                          recetaSeleccionada.fecha_vencimiento
+                        ).toLocaleDateString("es-PE")}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="text-center">
+                      <Pill className="w-5 h-5 text-green-600 mx-auto mb-2" />
+                      <p className="text-xs text-gray-600">Medicamentos</p>
+                      <p className="font-semibold text-sm">
+                        {recetaSeleccionada.total_medicamentos}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {recetaSeleccionada.diagnostico_principal_texto && (
+                <Card className="bg-blue-50 border-blue-200">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Diagnóstico</CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-sm">
+                    {recetaSeleccionada.diagnostico_principal_texto}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Medicamentos - Tabla mejorada */}
               <Card>
                 <CardHeader>
-                  <CardTitle>Medicamentos</CardTitle>
+                  <CardTitle className="flex items-center gap-2">
+                    <Pill className="w-5 h-5" />
+                    Medicamentos Prescritos
+                  </CardTitle>
+                  <CardDescription>
+                    Total: {recetaSeleccionada?.medicamentos?.length || 0}{" "}
+                    medicamentos
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-3">
-                    {recetaSeleccionada.medicamentos.map((med) => (
-                      <div
-                        key={med.id}
-                        className="border border-gray-200 rounded-lg p-4"
-                      >
-                        <div className="flex items-start justify-between mb-3">
-                          <div>
-                            <p className="font-semibold text-gray-900">
-                              {med.nombre_comercial}
-                            </p>
-                            <p className="text-sm text-gray-600">
-                              {med.nombre_generico}
-                            </p>
-                          </div>
-                          {med.disponible ? (
-                            <Badge className="bg-green-100 text-green-800">
-                              <CheckCircle2 className="w-3 h-3 mr-1" />
-                              Disponible
-                            </Badge>
-                          ) : (
-                            <Badge className="bg-red-100 text-red-800">
-                              <XCircle className="w-3 h-3 mr-1" />
-                              No disponible
-                            </Badge>
-                          )}
-                        </div>
-
-                        <div className="grid grid-cols-3 gap-4 text-sm mb-3">
-                          <div>
-                            <p className="text-gray-600">Requerido</p>
-                            <p className="font-semibold">
-                              {med.cantidad_requerida} unidades
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-gray-600">Stock Disponible</p>
-                            <p
-                              className={`font-semibold ${
-                                med.stock_disponible >= med.cantidad_requerida
-                                  ? "text-green-600"
-                                  : "text-red-600"
-                              }`}
+                  {recetaSeleccionada?.medicamentos &&
+                  recetaSeleccionada.medicamentos.length > 0 ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b-2 border-gray-300">
+                            <th className="text-left py-3 px-2 font-semibold">
+                              Medicamento
+                            </th>
+                            <th className="text-center py-3 px-2 font-semibold">
+                              Dosis
+                            </th>
+                            <th className="text-center py-3 px-2 font-semibold">
+                              Frecuencia
+                            </th>
+                            <th className="text-center py-3 px-2 font-semibold">
+                              Requerido
+                            </th>
+                            <th className="text-center py-3 px-2 font-semibold">
+                              Stock
+                            </th>
+                            <th className="text-center py-3 px-2 font-semibold">
+                              Precio Unit.
+                            </th>
+                            <th className="text-center py-3 px-2 font-semibold">
+                              Estado
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {recetaSeleccionada.medicamentos.map((med, idx) => (
+                            <tr
+                              key={`${med.id}-${idx}`}
+                              className="border-b border-gray-200 hover:bg-gray-50"
                             >
-                              {med.stock_disponible} unidades
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-gray-600">Precio Unitario</p>
-                            <p className="font-semibold">
-                              S/ {med.precio_unitario.toFixed(2)}
-                            </p>
-                          </div>
-                        </div>
+                              <td className="py-3 px-2">
+                                <div>
+                                  <p className="font-medium text-gray-900">
+                                    {med.nombre_comercial}
+                                  </p>
+                                  <p className="text-xs text-gray-500">
+                                    {med.nombre_generico}
+                                  </p>
+                                </div>
+                              </td>
+                              <td className="text-center py-3 px-2 text-gray-700">
+                                {med.dosis || "-"}
+                              </td>
+                              <td className="text-center py-3 px-2 text-gray-700">
+                                {med.frecuencia || "-"}
+                              </td>
+                              <td className="text-center py-3 px-2 font-semibold text-blue-600">
+                                {med.cantidad_requerida}
+                              </td>
+                              <td
+                                className={`text-center py-3 px-2 font-semibold ${
+                                  med.stock_disponible >= med.cantidad_requerida
+                                    ? "text-green-600"
+                                    : "text-red-600"
+                                }`}
+                              >
+                                {med.stock_disponible}
+                              </td>
+                              <td className="text-center py-3 px-2">
+                                S/ {Number(med.precio_unitario ?? 0).toFixed(2)}
+                              </td>
+                              <td className="text-center py-3 px-2">
+                                {med.disponible ? (
+                                  <Badge className="bg-green-100 text-green-800 mx-auto">
+                                    ✓ OK
+                                  </Badge>
+                                ) : (
+                                  <Badge className="bg-red-100 text-red-800 mx-auto">
+                                    ✗ Sin Stock
+                                  </Badge>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="text-center text-gray-500 py-4">
+                      No hay medicamentos en esta receta
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
 
-                        {med.disponible && (
-                          <div className="flex items-center gap-2">
-                            <Input
-                              type="number"
-                              min="0"
-                              max={med.stock_disponible}
-                              value={medicamentosDespacho[med.id] || ""}
-                              onChange={(e) =>
-                                setMedicamentosDespacho({
-                                  ...medicamentosDespacho,
-                                  [med.id]: parseInt(e.target.value) || 0,
-                                })
-                              }
-                              placeholder="Cantidad a despachar"
-                              className="w-32"
-                              disabled={recetaSeleccionada.estado === "dispensada"}
-                            />
-                            <span className="text-sm text-gray-600">
-                              {medicamentosDespacho[med.id]
-                                ? `S/ ${(medicamentosDespacho[med.id] * med.precio_unitario).toFixed(2)}`
-                                : "S/ 0.00"}
-                            </span>
-                          </div>
-                        )}
+              {/* Información de Entrega (Read-Only) */}
+              <Card className="bg-purple-50 border-purple-200">
+                <CardHeader>
+                  <CardTitle className="text-base">
+                    📦 Información de Entrega
+                  </CardTitle>
+                  <CardDescription>
+                    Opción elegida por el paciente
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div
+                      className={`p-4 rounded-lg border-2 ${
+                        tipoEntrega === "farmacia"
+                          ? "border-green-500 bg-green-50"
+                          : "border-gray-200 bg-white opacity-50"
+                      }`}
+                    >
+                      <div className="font-semibold text-gray-900">
+                        🏪 Recoger en Farmacia
                       </div>
-                    ))}
+                      <p className="text-sm text-gray-600 mt-2">
+                        El paciente retira en nuestras instalaciones
+                      </p>
+                      {tipoEntrega === "farmacia" && (
+                        <div className="mt-3 inline-block bg-green-200 text-green-800 px-3 py-1 rounded text-xs font-semibold">
+                          ✓ Seleccionado
+                        </div>
+                      )}
+                    </div>
+
+                    <div
+                      className={`p-4 rounded-lg border-2 ${
+                        tipoEntrega === "domicilio"
+                          ? "border-orange-500 bg-orange-50"
+                          : "border-gray-200 bg-white opacity-50"
+                      }`}
+                    >
+                      <div className="font-semibold text-gray-900">
+                        🚚 Envío a Domicilio
+                      </div>
+                      <p className="text-sm text-gray-600 mt-2">
+                        Entrega en la dirección del paciente
+                      </p>
+                      {tipoEntrega === "domicilio" && (
+                        <div className="mt-3 inline-block bg-orange-200 text-orange-800 px-3 py-1 rounded text-xs font-semibold">
+                          ✓ Seleccionado
+                        </div>
+                      )}
+                    </div>
                   </div>
+
+                  {tipoEntrega === "domicilio" && direccionEntrega && (
+                    <div className="space-y-2 mt-4 p-3 bg-white rounded border border-orange-300">
+                      <label className="text-sm font-medium text-gray-900">
+                        📍 Dirección de Entrega
+                      </label>
+                      <p className="text-gray-700 font-medium">
+                        {direccionEntrega}
+                      </p>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 
               {/* Resumen de Costo */}
-              {Object.keys(medicamentosDespacho).some((k) => medicamentosDespacho[k] > 0) && (
-                <Card className="bg-blue-50 border-blue-200">
-                  <CardContent className="p-4">
+              <Card className="bg-blue-50 border-blue-200">
+                <CardContent className="p-4">
+                  <div className="space-y-2">
                     <div className="flex justify-between items-center">
-                      <span className="font-semibold text-gray-900">
-                        Costo Total del Despacho:
+                      <span className="text-gray-700">
+                        Subtotal Medicamentos:
                       </span>
-                      <span className="text-2xl font-bold text-blue-600">
-                        S/ {calcularCostoDespacho().toFixed(2)}
+                      <span className="font-semibold">
+                        S/{" "}
+                        {(
+                          recetaSeleccionada.medicamentos?.reduce(
+                            (sum, m) =>
+                              sum +
+                              (m.precio_unitario || 0) * m.cantidad_requerida,
+                            0
+                          ) || 0
+                        ).toFixed(2)}
                       </span>
                     </div>
-                  </CardContent>
-                </Card>
-              )}
+                    {tipoEntrega === "domicilio" && (
+                      <div className="flex justify-between items-center text-orange-700">
+                        <span className="text-gray-700">Costo de Envío:</span>
+                        <span className="font-semibold">S/ 15.00</span>
+                      </div>
+                    )}
+                    <div className="border-t-2 border-blue-300 pt-2 flex justify-between items-center">
+                      <span className="font-bold text-gray-900">
+                        Total a Pagar:
+                      </span>
+                      <span className="text-2xl font-bold text-blue-600">
+                        S/{" "}
+                        {(
+                          (recetaSeleccionada.medicamentos?.reduce(
+                            (sum, m) =>
+                              sum +
+                              (m.precio_unitario || 0) * m.cantidad_requerida,
+                            0
+                          ) || 0) + (tipoEntrega === "domicilio" ? 15 : 0)
+                        ).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
 
               {/* Motivo de Rechazo (si aplica) */}
               {recetaSeleccionada.estado === "pendiente" && (
@@ -609,7 +935,8 @@ export default function DespachoRecetas({
                   Cerrar
                 </Button>
 
-                {recetaSeleccionada.estado === "pendiente" && (
+                {(recetaSeleccionada.estado === "activa" ||
+                  recetaSeleccionada.estado === "pendiente") && (
                   <>
                     <Button
                       onClick={() => procesarAccion("preparar")}
@@ -626,7 +953,10 @@ export default function DespachoRecetas({
 
                     <Button
                       onClick={() => procesarAccion("despachar")}
-                      disabled={procesando || Object.values(medicamentosDespacho).every(v => !v)}
+                      disabled={
+                        procesando ||
+                        Object.values(medicamentosDespacho).every((v) => !v)
+                      }
                       className="bg-green-600 hover:bg-green-700"
                     >
                       {procesando ? (
@@ -651,7 +981,10 @@ export default function DespachoRecetas({
                 {recetaSeleccionada.estado === "en_proceso" && (
                   <Button
                     onClick={() => procesarAccion("despachar")}
-                    disabled={procesando || Object.values(medicamentosDespacho).every(v => !v)}
+                    disabled={
+                      procesando ||
+                      Object.values(medicamentosDespacho).every((v) => !v)
+                    }
                     className="bg-green-600 hover:bg-green-700 md:col-span-2"
                   >
                     {procesando ? (
@@ -659,8 +992,17 @@ export default function DespachoRecetas({
                     ) : (
                       <Send className="w-4 h-4 mr-2" />
                     )}
-                    Despachar
+                    Completar Despacho
                   </Button>
+                )}
+
+                {recetaSeleccionada.estado === "dispensada" && (
+                  <div className="md:col-span-2 flex items-center gap-2 text-green-700 bg-green-50 p-3 rounded">
+                    <CheckCircle2 className="w-5 h-5" />
+                    <span className="font-medium">
+                      Receta ya fue dispensada
+                    </span>
+                  </div>
                 )}
               </div>
             </div>

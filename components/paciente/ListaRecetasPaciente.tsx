@@ -1,11 +1,12 @@
-// components/paciente/ListaRecetasPaciente.tsx
+// components/paciente/ListaRecetasPaciente.tsx - VERSIÓN CON VISTAS SEPARADAS
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
-import ModalSeleccionarFarmacia from "./ModalSeleccionarFarmacia";
+import SeleccionFarmaciasView from "./SeleccionFarmaciasView";
 import ModalDetallesReceta from "./ModalDetallesReceta";
-import { SendHorizontal, CheckCircle } from "lucide-react";
+import { SendHorizontal, CheckCircle, ArrowLeft } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
@@ -24,52 +25,64 @@ interface Receta {
   farmacia_dispensadora?: string;
 }
 
+type VistaActual = "lista" | "seleccion-farmacias";
+
 export default function ListaRecetasPaciente() {
   const [recetas, setRecetas] = useState<Receta[]>([]);
   const [cargando, setCargando] = useState(true);
   const [recetaSeleccionada, setRecetaSeleccionada] = useState<any>(null);
-  const [showSeleccionarFarmacia, setShowSeleccionarFarmacia] = useState(false);
-  const [recetaActualEnvio, setRecetaActualEnvio] = useState<string | null>(null);
+  const [vistaActual, setVistaActual] = useState<VistaActual>("lista"); // ✅ NUEVO ESTADO
+  const [recetaActualEnvio, setRecetaActualEnvio] = useState<string | null>(
+    null
+  );
   const [farmaciaEnvioConfirmada, setFarmaciaEnvioConfirmada] = useState<{
     recetaId: string;
     nombreFarmacia: string;
   } | null>(null);
 
   const { token: authToken } = useAuth();
+  const searchParams = useSearchParams();
 
   useEffect(() => {
     cargarRecetas();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authToken]);
+
+  // ✅ NUEVO EFFECT: Recargar recetas cuando se redirige con mensaje de confirmación
+  useEffect(() => {
+    if (!searchParams) return;
+    
+    const mensaje = searchParams.get("mensaje");
+    if (mensaje === "receta_enviada") {
+      // Pequeña pausa para asegurar que el servidor ya actualizó
+      const timeout = setTimeout(() => {
+        cargarRecetas();
+      }, 500);
+      return () => clearTimeout(timeout);
+    }
+  }, [searchParams]);
 
   const cargarRecetas = async () => {
     try {
-      // Preferir token desde el contexto de autenticación; fallback a key legacy en localStorage
-      const token = authToken || localStorage.getItem("medilink_token") || localStorage.getItem("token");
+      const token =
+        authToken ||
+        localStorage.getItem("medilink_token") ||
+        localStorage.getItem("token");
       const response = await fetch("/api/paciente/recetas", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json();
 
-      // Aceptar varias formas de respuesta para mantener compatibilidad:
-      // 1) { success: true, recetas: [...] }
-      // 2) { recetas: [...] }
-      // 3) directamente un array de recetas
       if (data) {
         let rawRecetas: any[] = [];
-        if (data) {
-          if (data.success && Array.isArray(data.recetas)) rawRecetas = data.recetas;
-          else if (Array.isArray(data.recetas)) rawRecetas = data.recetas;
-          else if (Array.isArray(data)) rawRecetas = data;
-          else {
-            const maybe = (data as any).recetas;
-            if (Array.isArray(maybe)) rawRecetas = maybe;
-          }
+        if (data.success && Array.isArray(data.recetas))
+          rawRecetas = data.recetas;
+        else if (Array.isArray(data.recetas)) rawRecetas = data.recetas;
+        else if (Array.isArray(data)) rawRecetas = data;
+        else {
+          const maybe = (data as any).recetas;
+          if (Array.isArray(maybe)) rawRecetas = maybe;
         }
 
-        // Normalizar forma de las recetas para mantener compatibilidad con el UI
         const normalized = rawRecetas.map((r: any) => ({
           id: r.id,
           codigo_receta: r.codigo_receta,
@@ -77,10 +90,14 @@ export default function ListaRecetasPaciente() {
           fecha_vencimiento: r.fecha_vencimiento,
           estado: r.estado,
           estado_envio: r.estado_envio || r.estadoEnvio || r.estado_envio,
-          total_medicamentos: r.total_medicamentos ?? (Array.isArray(r.medicamentos) ? r.medicamentos.length : 0),
+          total_medicamentos:
+            r.total_medicamentos ??
+            (Array.isArray(r.medicamentos) ? r.medicamentos.length : 0),
           medico_nombre: (r.medico && r.medico.nombre) || r.medico_nombre || "",
-          medico_apellido: (r.medico && r.medico.apellido) || r.medico_apellido || "",
-          especialidad: (r.medico && r.medico.especialidad) || r.especialidad || "",
+          medico_apellido:
+            (r.medico && r.medico.apellido) || r.medico_apellido || "",
+          especialidad:
+            (r.medico && r.medico.especialidad) || r.especialidad || "",
           pdf_path: r.pdf_path || r.pdf || null,
           farmacia_dispensadora: r.farmacia_dispensadora || r.farmacia || null,
           medicamentos: r.medicamentos || [],
@@ -97,29 +114,34 @@ export default function ListaRecetasPaciente() {
 
   const verDetallesReceta = async (recetaId: string) => {
     try {
-      const token = authToken || localStorage.getItem("medilink_token") || localStorage.getItem("token");
+      const token =
+        authToken ||
+        localStorage.getItem("medilink_token") ||
+        localStorage.getItem("token");
       const response = await fetch(`/api/paciente/recetas/${recetaId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json();
 
-      // Soportar formas de respuesta distintas
       if (data) {
         let rec = null as any;
         if (data.success && data.receta) rec = data.receta;
         else if (data.receta) rec = data.receta;
         else rec = data;
 
-        // Normalizar algunos campos para el modal
         if (rec) {
           rec = {
             ...rec,
-            medico_nombre: (rec.medico && rec.medico.nombre) || rec.medico_nombre || "",
-            medico_apellido: (rec.medico && rec.medico.apellido) || rec.medico_apellido || "",
-            especialidad: (rec.medico && rec.medico.especialidad) || rec.especialidad || "",
-            total_medicamentos: rec.total_medicamentos ?? (Array.isArray(rec.medicamentos) ? rec.medicamentos.length : 0),
+            medico_nombre:
+              (rec.medico && rec.medico.nombre) || rec.medico_nombre || "",
+            medico_apellido:
+              (rec.medico && rec.medico.apellido) || rec.medico_apellido || "",
+            especialidad:
+              (rec.medico && rec.medico.especialidad) || rec.especialidad || "",
+            total_medicamentos:
+              rec.total_medicamentos ??
+              (Array.isArray(rec.medicamentos) ? rec.medicamentos.length : 0),
+            estado_envio: rec.estado_envio || "no_enviada",
           };
           setRecetaSeleccionada(rec);
         }
@@ -130,20 +152,28 @@ export default function ListaRecetasPaciente() {
   };
 
   const abrirSeleccionFarmacia = (recetaId: string) => {
-    setRecetaActualEnvio(recetaId);
-    setShowSeleccionarFarmacia(true);
+    // Redirige a la nueva ruta
+    window.location.href = `/dashboard/paciente/farmacias/${recetaId}`;
+  };
+  
+  const volverALista = () => {
+    setVistaActual("lista"); // ✅ VUELVE A LA LISTA
+    setRecetaActualEnvio(null);
   };
 
   const handleFarmaciaSeleccionada = (
     farmaciaId: string,
     nombreFarmacia: string
   ) => {
-    // Actualizar estado de la receta localmente
     if (recetaActualEnvio) {
       setRecetas(
         recetas.map((receta) =>
           receta.id === recetaActualEnvio
-            ? { ...receta, estado_envio: "enviada", farmacia_dispensadora: nombreFarmacia }
+            ? {
+                ...receta,
+                estado_envio: "enviada",
+                farmacia_dispensadora: nombreFarmacia,
+              }
             : receta
         )
       );
@@ -151,23 +181,50 @@ export default function ListaRecetasPaciente() {
         recetaId: recetaActualEnvio,
         nombreFarmacia,
       });
-      setShowSeleccionarFarmacia(false);
+      volverALista(); // ✅ VUELVE AUTOMÁTICAMENTE
 
-      // Resetear mensaje después de 5 segundos
+      setTimeout(() => setFarmaciaEnvioConfirmada(null), 5000);
+    }
+  };
+
+  const handleCarritoConfirmado = (carrito: any[]) => {
+    if (recetaActualEnvio && carrito.length > 0) {
+      setRecetas(
+        recetas.map((receta) =>
+          receta.id === recetaActualEnvio
+            ? {
+                ...receta,
+                estado_envio: "enviada",
+                farmacia_dispensadora: `${carrito.length} farmacia${
+                  carrito.length > 1 ? "s" : ""
+                }`,
+              }
+            : receta
+        )
+      );
+      setFarmaciaEnvioConfirmada({
+        recetaId: recetaActualEnvio,
+        nombreFarmacia: `${carrito.length} farmacia${
+          carrito.length > 1 ? "s" : ""
+        }`,
+      });
+      volverALista(); // ✅ VUELVE AUTOMÁTICAMENTE
+
       setTimeout(() => setFarmaciaEnvioConfirmada(null), 5000);
     }
   };
 
   const puedeEnviarAFarmacia = (receta: Receta): boolean => {
-    return (
-      receta.estado === "activa" &&
-      (!receta.estado_envio || receta.estado_envio === "no_enviada")
-    );
+    // Solo se puede enviar si está activa y NO fue enviada aún
+    const estadoEnvio = receta.estado_envio || "no_enviada";
+    return receta.estado === "activa" && estadoEnvio === "no_enviada";
   };
 
   const obtenerEstadoEnvio = (receta: Receta): string => {
-    if (!receta.estado_envio || receta.estado_envio === "no_enviada") {
-      return "No enviada";
+    const estadoEnvio = receta.estado_envio || "no_enviada";
+    
+    if (estadoEnvio === "no_enviada") {
+      return "Sin enviar";
     }
     const estados: Record<string, string> = {
       enviada: "📤 Enviada a farmacia",
@@ -175,9 +232,22 @@ export default function ListaRecetasPaciente() {
       rechazada: "❌ Rechazada",
       dispensada: "🎉 Dispensada",
     };
-    return estados[receta.estado_envio] || receta.estado_envio;
+    return estados[estadoEnvio] || estadoEnvio;
   };
 
+  // ✅ RENDERIZADO CONDICIONAL POR VISTA
+  if (vistaActual === "seleccion-farmacias" && recetaActualEnvio) {
+    return (
+      <SeleccionFarmaciasView
+        recetaId={recetaActualEnvio}
+        onClose={volverALista} // ✅ USA LA FUNCIÓN DE VOLVER
+        onFarmaciaSeleccionada={handleFarmaciaSeleccionada}
+        onCarritoConfirmado={handleCarritoConfirmado}
+      />
+    );
+  }
+
+  // ✅ VISTA PRINCIPAL - LISTA DE RECETAS
   if (cargando) {
     return (
       <div className="flex justify-center items-center py-12">
@@ -195,8 +265,9 @@ export default function ListaRecetasPaciente() {
           <div>
             <h3 className="font-semibold text-green-800">Receta Enviada</h3>
             <p className="text-sm text-green-700">
-              Tu receta fue enviada a <strong>{farmaciaEnvioConfirmada.nombreFarmacia}</strong>.
-              Te notificaremos cuando esté lista.
+              Tu receta fue enviada a{" "}
+              <strong>{farmaciaEnvioConfirmada.nombreFarmacia}</strong>. Te
+              notificaremos cuando esté lista.
             </p>
           </div>
         </div>
@@ -351,27 +422,15 @@ export default function ListaRecetasPaciente() {
         </div>
       </div>
 
-      {/* Modal de detalles */}
+      {/* Modal de detalles (siempre disponible) */}
       {recetaSeleccionada && (
         <ModalDetallesReceta
           receta={recetaSeleccionada}
           isOpen={!!recetaSeleccionada}
           onClose={() => setRecetaSeleccionada(null)}
           onEnviar={(id: string) => {
-            // Abrir modal de seleccionar farmacia cuando el usuario elija enviar desde la vista de detalles
-            setRecetaActualEnvio(id);
-            setShowSeleccionarFarmacia(true);
+            abrirSeleccionFarmacia(id); // ✅ USA LA MISMA FUNCIÓN
           }}
-        />
-      )}
-
-      {/* Modal para seleccionar farmacia */}
-      {recetaActualEnvio && (
-        <ModalSeleccionarFarmacia
-          isOpen={showSeleccionarFarmacia}
-          recetaId={recetaActualEnvio}
-          onClose={() => setShowSeleccionarFarmacia(false)}
-          onFarmaciaSeleccionada={handleFarmaciaSeleccionada}
         />
       )}
     </div>
