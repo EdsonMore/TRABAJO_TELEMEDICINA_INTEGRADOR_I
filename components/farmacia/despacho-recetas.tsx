@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -68,6 +69,11 @@ interface Medicamento {
   estado_disponibilidad?: string;
 }
 
+interface Notificacion {
+  tipo: "exito" | "error" | "info";
+  mensaje: string;
+}
+
 interface Receta {
   id: string;
   codigo_receta: string;
@@ -109,6 +115,21 @@ export default function DespachoRecetas({
   const [busqueda, setBusqueda] = useState("");
   const [cargando, setCargando] = useState(true);
 
+  // Helper: Deduplicar medicamentos
+  const deduplicarMedicamentos = (meds: Medicamento[]) => {
+    return meds.reduce((unique: Medicamento[], med: Medicamento) => {
+      const existe = unique.some(
+        (u) =>
+          u.medicamento_id === med.medicamento_id ||
+          u.nombre_comercial === med.nombre_comercial
+      );
+      if (!existe) {
+        unique.push(med);
+      }
+      return unique;
+    }, []);
+  };
+
   // Despacho
   const [recetaSeleccionada, setRecetaSeleccionada] = useState<Receta | null>(
     null
@@ -120,6 +141,7 @@ export default function DespachoRecetas({
     "preparar" | "despachar" | "rechazar" | null
   >(null);
   const [motivoRechazo, setMotivoRechazo] = useState("");
+  const [notificacion, setNotificacion] = useState<Notificacion | null>(null);
   const [tipoEntrega, setTipoEntrega] = useState<"farmacia" | "domicilio">(
     "farmacia"
   );
@@ -245,35 +267,55 @@ export default function DespachoRecetas({
   ) => {
     if (!recetaSeleccionada || !token) return;
 
-    // Validar medicamentos para despacho
-    if (accion === "despachar") {
-      const medicamentosValidos = recetaSeleccionada.medicamentos.filter(
-        (m) => medicamentosDespacho[m.id]
-      );
+    // Validaciones previas
+    try {
+      // Validar medicamentos para despacho
+      if (accion === "despachar") {
+        const medicamentosUnicos = deduplicarMedicamentos(
+          recetaSeleccionada.medicamentos
+        );
+        const medicamentosValidos = medicamentosUnicos.filter(
+          (m) => medicamentosDespacho[m.medicamento_id]
+        );
 
-      if (medicamentosValidos.length === 0) {
-        alert("Debe seleccionar al menos un medicamento para despachar");
+        if (medicamentosValidos.length === 0) {
+          setNotificacion({
+            tipo: "error",
+            mensaje: "Debe seleccionar al menos un medicamento para despachar",
+          });
+          return;
+        }
+
+        // Validar stock
+        for (const med of medicamentosValidos) {
+          const cantidad = medicamentosDespacho[med.medicamento_id];
+          if (cantidad > med.stock_disponible) {
+            setNotificacion({
+              tipo: "error",
+              mensaje: `Stock insuficiente para ${med.nombre_comercial}. Disponible: ${med.stock_disponible}, Solicitado: ${cantidad}`,
+            });
+            return;
+          }
+        }
+      }
+
+      if (accion === "rechazar" && !motivoRechazo.trim()) {
+        setNotificacion({
+          tipo: "error",
+          mensaje: "Debe ingresar un motivo para rechazar la receta",
+        });
         return;
       }
 
-      for (const med of medicamentosValidos) {
-        const cantidad = medicamentosDespacho[med.id];
-        if (cantidad > med.stock_disponible) {
-          alert(
-            `Stock insuficiente para ${med.nombre_comercial}. Disponible: ${med.stock_disponible}`
-          );
-          return;
-        }
-      }
+      setAccionConfirmada(accion);
+      setMostrarConfirmacion(true);
+      setNotificacion(null);
+    } catch (error) {
+      setNotificacion({
+        tipo: "error",
+        mensaje: error instanceof Error ? error.message : "Error en validación",
+      });
     }
-
-    if (accion === "rechazar" && !motivoRechazo.trim()) {
-      alert("Debe ingresar un motivo para rechazar");
-      return;
-    }
-
-    setAccionConfirmada(accion);
-    setMostrarConfirmacion(true);
   };
 
   const confirmarAccion = async () => {
@@ -281,6 +323,7 @@ export default function DespachoRecetas({
 
     try {
       setProcesando(true);
+      setMostrarConfirmacion(false);
 
       // Preparar medicamentos procesados
       let medicamentosA: Array<{
@@ -291,17 +334,23 @@ export default function DespachoRecetas({
       }> = [];
 
       if (accionConfirmada === "despachar") {
-        medicamentosA = recetaSeleccionada.medicamentos
-          .filter((m) => medicamentosDespacho[m.id])
+        const medicamentosUnicos = deduplicarMedicamentos(
+          recetaSeleccionada.medicamentos
+        );
+        medicamentosA = medicamentosUnicos
+          .filter((m) => medicamentosDespacho[m.medicamento_id])
           .map((m) => ({
             medicamento_id: m.medicamento_id || parseInt(m.id),
-            cantidad_dispensada: medicamentosDespacho[m.id],
+            cantidad_dispensada: medicamentosDespacho[m.medicamento_id],
             lote: m.lote || "",
             precio_unitario: m.precio_unitario,
           }));
 
         if (medicamentosA.length === 0) {
-          alert("Debe seleccionar medicamentos para despachar");
+          setNotificacion({
+            tipo: "error",
+            mensaje: "Debe seleccionar medicamentos para despachar",
+          });
           setProcesando(false);
           return;
         }
@@ -338,8 +387,6 @@ export default function DespachoRecetas({
         );
       }
 
-      const resultado = await response.json();
-
       // Cerrar modal PRIMERO
       setMostrarDetalles(false);
       setRecetaSeleccionada(null);
@@ -357,24 +404,30 @@ export default function DespachoRecetas({
       // Actualizar el filtro en el estado PRIMERO
       setFiltroEstado(nuevoFiltro);
 
-      // Recargar recetas con el nuevo filtro (también actualiza setRecetas)
-      await cargarRecetas(nuevoFiltro);
-
-      // Mostrar mensaje de éxito
+      // Mostrar notificación de éxito
       const mensajes: Record<string, string> = {
-        en_proceso: "Receta en preparación correctamente",
+        en_proceso: "Receta marcada como en preparación",
         dispensada: "Receta dispensada correctamente",
         rechazada: "Receta rechazada correctamente",
       };
-      alert(mensajes[accionAPI] || "Acción completada");
+
+      setNotificacion({
+        tipo: "exito",
+        mensaje: mensajes[accionAPI] || "Acción completada exitosamente",
+      });
+
+      // Recargar recetas con el nuevo filtro (también actualiza setRecetas)
+      setTimeout(() => {
+        cargarRecetas(nuevoFiltro);
+      }, 800);
     } catch (error) {
       console.error("Error procesando receta:", error);
-      alert(
-        error instanceof Error ? error.message : "Error al procesar receta"
-      );
+      setNotificacion({
+        tipo: "error",
+        mensaje: error instanceof Error ? error.message : "Error al procesar receta",
+      });
     } finally {
       setProcesando(false);
-      setMostrarConfirmacion(false);
       setAccionConfirmada(null);
     }
   };
@@ -382,10 +435,14 @@ export default function DespachoRecetas({
   const calcularCostoDespacho = () => {
     if (!recetaSeleccionada) return 0;
 
-    return recetaSeleccionada.medicamentos
-      .filter((m) => medicamentosDespacho[m.id])
+    const medicamentosUnicos = deduplicarMedicamentos(
+      recetaSeleccionada.medicamentos
+    );
+    return medicamentosUnicos
+      .filter((m) => medicamentosDespacho[m.medicamento_id])
       .reduce(
-        (total, m) => total + medicamentosDespacho[m.id] * m.precio_unitario,
+        (total, m) =>
+          total + medicamentosDespacho[m.medicamento_id] * m.precio_unitario,
         0
       );
   };
@@ -440,6 +497,46 @@ export default function DespachoRecetas({
           </Button>
         )}
       </div>
+
+      {/* Notificaciones */}
+      {notificacion && (
+        <div
+          className={`p-4 rounded-lg flex items-start gap-3 ${
+            notificacion.tipo === "exito"
+              ? "bg-green-50 border border-green-200"
+              : notificacion.tipo === "error"
+              ? "bg-red-50 border border-red-200"
+              : "bg-blue-50 border border-blue-200"
+          }`}
+        >
+          {notificacion.tipo === "exito" ? (
+            <CheckCircle2 className="text-green-600 flex-shrink-0 mt-0.5" size={20} />
+          ) : notificacion.tipo === "error" ? (
+            <AlertCircle className="text-red-600 flex-shrink-0 mt-0.5" size={20} />
+          ) : (
+            <AlertCircle className="text-blue-600 flex-shrink-0 mt-0.5" size={20} />
+          )}
+          <div className="flex-1">
+            <p
+              className={
+                notificacion.tipo === "exito"
+                  ? "text-green-800"
+                  : notificacion.tipo === "error"
+                  ? "text-red-800"
+                  : "text-blue-800"
+              }
+            >
+              {notificacion.mensaje}
+            </p>
+          </div>
+          <button
+            onClick={() => setNotificacion(null)}
+            className="text-gray-400 hover:text-gray-600"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Filtros */}
       <Card>
@@ -541,8 +638,11 @@ export default function DespachoRecetas({
                   {/* Medicamentos */}
                   <div>
                     <Badge variant="outline" className="bg-blue-50">
-                      {receta.total_medicamentos} medicamento
-                      {receta.total_medicamentos !== 1 ? "s" : ""}
+                      {deduplicarMedicamentos(receta.medicamentos).length}{" "}
+                      medicamento
+                      {deduplicarMedicamentos(receta.medicamentos).length !== 1
+                        ? "s"
+                        : ""}
                     </Badge>
                   </div>
 
@@ -581,6 +681,9 @@ export default function DespachoRecetas({
               <FileText className="w-5 h-5" />
               Detalles de Receta - {recetaSeleccionada?.codigo_receta}
             </DialogTitle>
+            <DialogDescription>
+              Información completa de la receta, medicamentos y detalles de dispensación
+            </DialogDescription>
           </DialogHeader>
 
           {recetaSeleccionada && (
@@ -705,7 +808,11 @@ export default function DespachoRecetas({
                     Medicamentos Prescritos
                   </CardTitle>
                   <CardDescription>
-                    Total: {recetaSeleccionada?.medicamentos?.length || 0}{" "}
+                    Total:{" "}
+                    {recetaSeleccionada?.medicamentos
+                      ? deduplicarMedicamentos(recetaSeleccionada.medicamentos)
+                          .length
+                      : 0}{" "}
                     medicamentos
                   </CardDescription>
                 </CardHeader>
@@ -734,15 +841,31 @@ export default function DespachoRecetas({
                             <th className="text-center py-3 px-2 font-semibold">
                               Precio Unit.
                             </th>
+                            {recetaSeleccionada.estado === "en_proceso" && (
+                              <th className="text-center py-3 px-2 font-semibold">
+                                Despachar
+                              </th>
+                            )}
                             <th className="text-center py-3 px-2 font-semibold">
                               Estado
                             </th>
                           </tr>
                         </thead>
                         <tbody>
-                          {recetaSeleccionada.medicamentos.map((med, idx) => (
+                          {(() => {
+                            // Deduplicar medicamentos
+                            const medicamentosUnicos = recetaSeleccionada.medicamentos.reduce((unique: any[], med: any) => {
+                              const existe = unique.some(
+                                (u: any) => u.medicamento_id === med.medicamento_id || u.nombre_comercial === med.nombre_comercial
+                              );
+                              if (!existe) {
+                                unique.push(med);
+                              }
+                              return unique;
+                            }, []);
+                            return medicamentosUnicos.map((med, idx) => (
                             <tr
-                              key={`${med.id}-${idx}`}
+                              key={`med-${med.medicamento_id || med.nombre_comercial}-${idx}`}
                               className="border-b border-gray-200 hover:bg-gray-50"
                             >
                               <td className="py-3 px-2">
@@ -776,6 +899,25 @@ export default function DespachoRecetas({
                               <td className="text-center py-3 px-2">
                                 S/ {Number(med.precio_unitario ?? 0).toFixed(2)}
                               </td>
+                              {recetaSeleccionada.estado === "en_proceso" && (
+                                <td className="text-center py-3 px-2">
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    max={med.stock_disponible}
+                                    value={medicamentosDespacho[med.medicamento_id] || ""}
+                                    onChange={(e) => {
+                                      const cantidad = parseInt(e.target.value) || 0;
+                                      setMedicamentosDespacho({
+                                        ...medicamentosDespacho,
+                                        [med.medicamento_id]: cantidad,
+                                      });
+                                    }}
+                                    placeholder="0"
+                                    className="w-16 text-center"
+                                  />
+                                </td>
+                              )}
                               <td className="text-center py-3 px-2">
                                 {med.disponible ? (
                                   <Badge className="bg-green-100 text-green-800 mx-auto">
@@ -788,7 +930,8 @@ export default function DespachoRecetas({
                                 )}
                               </td>
                             </tr>
-                          ))}
+                            ));
+                          })()}
                         </tbody>
                       </table>
                     </div>
@@ -870,50 +1013,114 @@ export default function DespachoRecetas({
               <Card className="bg-blue-50 border-blue-200">
                 <CardContent className="p-4">
                   <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-700">
-                        Subtotal Medicamentos:
-                      </span>
-                      <span className="font-semibold">
-                        S/{" "}
-                        {(
-                          recetaSeleccionada.medicamentos?.reduce(
-                            (sum, m) =>
-                              sum +
-                              (m.precio_unitario || 0) * m.cantidad_requerida,
-                            0
-                          ) || 0
-                        ).toFixed(2)}
-                      </span>
-                    </div>
-                    {tipoEntrega === "domicilio" && (
-                      <div className="flex justify-between items-center text-orange-700">
-                        <span className="text-gray-700">Costo de Envío:</span>
-                        <span className="font-semibold">S/ 15.00</span>
-                      </div>
+                    {recetaSeleccionada.estado === "en_proceso" ? (
+                      <>
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-700">
+                            Subtotal a Despachar:
+                          </span>
+                          <span className="font-semibold">
+                            S/{" "}
+                            {(() => {
+                              const medicamentosUnicos = deduplicarMedicamentos(
+                                recetaSeleccionada.medicamentos
+                              );
+                              return medicamentosUnicos
+                                .filter((m) => medicamentosDespacho[m.medicamento_id])
+                                .reduce(
+                                  (total, m) =>
+                                    total +
+                                    medicamentosDespacho[m.medicamento_id] *
+                                      m.precio_unitario,
+                                  0
+                                )
+                                .toFixed(2);
+                            })()}
+                          </span>
+                        </div>
+                        {tipoEntrega === "domicilio" && (
+                          <div className="flex justify-between items-center text-orange-700">
+                            <span className="text-gray-700">Costo de Envío:</span>
+                            <span className="font-semibold">S/ 15.00</span>
+                          </div>
+                        )}
+                        <div className="border-t-2 border-blue-300 pt-2 flex justify-between items-center">
+                          <span className="font-bold text-gray-900">
+                            Total a Pagar:
+                          </span>
+                          <span className="text-2xl font-bold text-blue-600">
+                            S/{" "}
+                            {(() => {
+                              const medicamentosUnicos = deduplicarMedicamentos(
+                                recetaSeleccionada.medicamentos
+                              );
+                              const subtotal = medicamentosUnicos
+                                .filter((m) => medicamentosDespacho[m.medicamento_id])
+                                .reduce(
+                                  (total, m) =>
+                                    total +
+                                    medicamentosDespacho[m.medicamento_id] *
+                                      m.precio_unitario,
+                                  0
+                                );
+                              return (subtotal + (tipoEntrega === "domicilio" ? 15 : 0)).toFixed(2);
+                            })()}
+                          </span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-700">
+                            Subtotal Medicamentos:
+                          </span>
+                          <span className="font-semibold">
+                            S/{" "}
+                            {(
+                              deduplicarMedicamentos(
+                                recetaSeleccionada.medicamentos
+                              ).reduce(
+                                (sum, m) =>
+                                  sum +
+                                  (m.precio_unitario || 0) * m.cantidad_requerida,
+                                0
+                              ) || 0
+                            ).toFixed(2)}
+                          </span>
+                        </div>
+                        {tipoEntrega === "domicilio" && (
+                          <div className="flex justify-between items-center text-orange-700">
+                            <span className="text-gray-700">Costo de Envío:</span>
+                            <span className="font-semibold">S/ 15.00</span>
+                          </div>
+                        )}
+                        <div className="border-t-2 border-blue-300 pt-2 flex justify-between items-center">
+                          <span className="font-bold text-gray-900">
+                            Total a Pagar:
+                          </span>
+                          <span className="text-2xl font-bold text-blue-600">
+                            S/{" "}
+                            {(
+                              (deduplicarMedicamentos(
+                                recetaSeleccionada.medicamentos
+                              ).reduce(
+                                (sum, m) =>
+                                  sum +
+                                  (m.precio_unitario || 0) * m.cantidad_requerida,
+                                0
+                              ) || 0) + (tipoEntrega === "domicilio" ? 15 : 0)
+                            ).toFixed(2)}
+                          </span>
+                        </div>
+                      </>
                     )}
-                    <div className="border-t-2 border-blue-300 pt-2 flex justify-between items-center">
-                      <span className="font-bold text-gray-900">
-                        Total a Pagar:
-                      </span>
-                      <span className="text-2xl font-bold text-blue-600">
-                        S/{" "}
-                        {(
-                          (recetaSeleccionada.medicamentos?.reduce(
-                            (sum, m) =>
-                              sum +
-                              (m.precio_unitario || 0) * m.cantidad_requerida,
-                            0
-                          ) || 0) + (tipoEntrega === "domicilio" ? 15 : 0)
-                        ).toFixed(2)}
-                      </span>
-                    </div>
                   </div>
                 </CardContent>
               </Card>
 
               {/* Motivo de Rechazo (si aplica) */}
-              {recetaSeleccionada.estado === "pendiente" && (
+              {(recetaSeleccionada.estado === "pendiente" ||
+                recetaSeleccionada.estado === "en_proceso") && (
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-gray-900">
                     Motivo de Rechazo (opcional)
@@ -979,21 +1186,29 @@ export default function DespachoRecetas({
                 )}
 
                 {recetaSeleccionada.estado === "en_proceso" && (
-                  <Button
-                    onClick={() => procesarAccion("despachar")}
-                    disabled={
-                      procesando ||
-                      Object.values(medicamentosDespacho).every((v) => !v)
-                    }
-                    className="bg-green-600 hover:bg-green-700 md:col-span-2"
-                  >
-                    {procesando ? (
-                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                    ) : (
-                      <Send className="w-4 h-4 mr-2" />
-                    )}
-                    Completar Despacho
-                  </Button>
+                  <>
+                    <Button
+                      onClick={() => procesarAccion("despachar")}
+                      disabled={procesando}
+                      className="bg-green-600 hover:bg-green-700"
+                    >
+                      {procesando ? (
+                        <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                      ) : (
+                        <Send className="w-4 h-4 mr-2" />
+                      )}
+                      Completar Despacho
+                    </Button>
+
+                    <Button
+                      onClick={() => procesarAccion("rechazar")}
+                      disabled={procesando}
+                      variant="destructive"
+                    >
+                      <XCircle className="w-4 h-4 mr-2" />
+                      Rechazar
+                    </Button>
+                  </>
                 )}
 
                 {recetaSeleccionada.estado === "dispensada" && (

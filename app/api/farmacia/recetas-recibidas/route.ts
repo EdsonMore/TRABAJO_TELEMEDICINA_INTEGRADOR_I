@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
 
     // 2️⃣ Construir query base - CRÍTICO: DEBE FILTRAR POR estado_envio
     let query = `
-      SELECT DISTINCT
+      SELECT
         r.id,
         r.codigo_receta,
         r.estado_envio,

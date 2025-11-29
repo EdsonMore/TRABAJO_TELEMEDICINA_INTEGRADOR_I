@@ -164,6 +164,7 @@ export default function SesionTelemedicinaPage() {
       roomId={roomId}
       userData={userData}
       onLeave={handleLeaveCall}
+      citaId={sesionData?.id_cita}
     />
   );
 }
