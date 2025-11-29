@@ -119,9 +119,9 @@ export default function DashboardFarmacia() {
   if (moduloActivo === "despacho") {
     const recetaParam = searchParams?.get("receta");
     return (
-      <DespachoRecetas 
+      <DespachoRecetas
         recetaPreseleccionada={recetaParam}
-        onVolver={() => setModuloActivo("dashboard")} 
+        onVolver={() => setModuloActivo("dashboard")}
       />
     );
   }
@@ -166,8 +166,8 @@ export default function DashboardFarmacia() {
       </header>
 
       {/* Contenido Principal */}
-      <main className="container mx-auto px-4 py-6">
-        <div className="space-y-6">
+      <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="space-y-8">
           {/* Header del Dashboard */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
             <div>
@@ -196,13 +196,13 @@ export default function DashboardFarmacia() {
 
           {loading ? (
             // Skeleton loader
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
               {[...Array(4)].map((_, i) => (
                 <Card key={i} className="animate-pulse">
                   <CardHeader className="pb-3">
                     <div className="h-4 bg-gray-200 rounded w-3/4"></div>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="px-6 pb-6">
                     <div className="h-6 bg-gray-200 rounded w-1/2 mb-2"></div>
                     <div className="h-4 bg-gray-200 rounded w-3/4"></div>
                   </CardContent>
@@ -212,9 +212,9 @@ export default function DashboardFarmacia() {
           ) : (
             <>
               {/* Estadísticas Principales */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <Card className="bg-white border-0 sm:border shadow-sm hover:shadow-md transition-shadow">
-                  <CardHeader className="pb-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                <Card className="bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-shadow">
+                  <CardHeader className="pb-3 p-6">
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-sm font-semibold">
                         Recetas Pendientes
@@ -222,7 +222,7 @@ export default function DashboardFarmacia() {
                       <FileText className="h-4 w-4 text-blue-600" />
                     </div>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="px-6 pb-6">
                     <div className="text-xl font-bold text-blue-600">
                       {stats?.recetas.pendientes || 0}
                     </div>
@@ -241,7 +241,7 @@ export default function DashboardFarmacia() {
                       <Package className="h-4 w-4 text-green-600" />
                     </div>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="px-6 pb-6">
                     <div className="text-xl font-bold text-gray-900">
                       {stats?.inventario.totalItems || 0}
                     </div>
@@ -265,7 +265,7 @@ export default function DashboardFarmacia() {
                       <BarChart3 className="h-4 w-4 text-purple-600" />
                     </div>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="px-6 pb-6">
                     <div className="text-xl font-bold text-purple-600">
                       S/ {(stats?.ventas.totalHoy || 0).toLocaleString()}
                     </div>
@@ -284,7 +284,7 @@ export default function DashboardFarmacia() {
                       <AlertCircle className="h-4 w-4 text-orange-600" />
                     </div>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="px-6 pb-6">
                     <div className="text-xl font-bold text-orange-600">
                       {stats?.alertas.activas || 0}
                     </div>
@@ -299,10 +299,10 @@ export default function DashboardFarmacia() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {/* Recetas Recibidas */}
                 <Card
-                  className="cursor-pointer transition-all hover:shadow-lg border-0 sm:border shadow-sm"
+                  className="cursor-pointer transition-all hover:shadow-lg border border-gray-200 rounded-lg shadow-sm"
                   onClick={() => setModuloActivo("recetas-recibidas")}
                 >
-                  <CardHeader>
+                  <CardHeader className="p-6 pb-4">
                     <CardTitle className="flex items-center gap-2 text-base">
                       <ClipboardList className="w-5 h-5 text-purple-600" />
                       Recetas Recibidas
@@ -311,7 +311,7 @@ export default function DashboardFarmacia() {
                       Gestionar recetas enviadas por pacientes
                     </CardDescription>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="px-6 pb-6">
                     <Button className="w-full bg-purple-600 hover:bg-purple-700 h-10">
                       Ver Recetas Recibidas
                     </Button>
@@ -320,10 +320,10 @@ export default function DashboardFarmacia() {
 
                 {/* Despacho de Recetas */}
                 <Card
-                  className="cursor-pointer transition-all hover:shadow-lg border-0 sm:border shadow-sm"
+                  className="cursor-pointer transition-all hover:shadow-lg border border-gray-200 rounded-lg shadow-sm"
                   onClick={() => setModuloActivo("despacho")}
                 >
-                  <CardHeader>
+                  <CardHeader className="p-6 pb-4">
                     <CardTitle className="flex items-center gap-2 text-base">
                       <Package className="w-5 h-5 text-green-600" />
                       Despacho de Recetas
@@ -332,7 +332,7 @@ export default function DashboardFarmacia() {
                       Procesar y despachar recetas a pacientes
                     </CardDescription>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="px-6 pb-6">
                     <Button className="w-full bg-green-600 hover:bg-green-700 h-10">
                       Ir a Despacho
                     </Button>
@@ -341,10 +341,10 @@ export default function DashboardFarmacia() {
 
                 {/* Gestión de Inventario - NUEVA TARJETA */}
                 <Card
-                  className="cursor-pointer transition-all hover:shadow-lg border-0 sm:border shadow-sm"
+                  className="cursor-pointer transition-all hover:shadow-lg border border-gray-200 rounded-lg shadow-sm"
                   onClick={() => setModuloActivo("inventario")}
                 >
-                  <CardHeader>
+                  <CardHeader className="p-6 pb-4">
                     <CardTitle className="flex items-center gap-2 text-base">
                       <Warehouse className="w-5 h-5 text-blue-600" />
                       Gestión de Inventario
@@ -353,7 +353,7 @@ export default function DashboardFarmacia() {
                       Administrar stock y medicamentos disponibles
                     </CardDescription>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="px-6 pb-6">
                     <div className="space-y-3">
                       <div className="flex justify-between items-center text-sm">
                         <span className="text-gray-600">Total items:</span>
@@ -386,14 +386,14 @@ export default function DashboardFarmacia() {
 
               {/* Módulos Secundarios */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <Card className="border-0 sm:border shadow-sm">
-                  <CardHeader>
+                <Card className="border border-gray-200 rounded-lg shadow-sm">
+                  <CardHeader className="p-6 pb-4">
                     <CardTitle className="flex items-center gap-2 text-base">
                       <BarChart3 className="w-5 h-5 text-purple-600" />
                       Reportes y Análisis
                     </CardTitle>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="px-6 pb-6">
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between">
                         <span>Recetas hoy:</span>
@@ -424,14 +424,14 @@ export default function DashboardFarmacia() {
                   </CardContent>
                 </Card>
 
-                <Card className="border-0 sm:border shadow-sm">
-                  <CardHeader>
+                <Card className="border border-gray-200 rounded-lg shadow-sm">
+                  <CardHeader className="p-6 pb-4">
                     <CardTitle className="flex items-center gap-2 text-base">
                       <AlertCircle className="w-5 h-5 text-orange-600" />
                       Sistema de Alertas
                     </CardTitle>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="px-6 pb-6">
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between">
                         <span>Alertas activas:</span>
@@ -465,13 +465,13 @@ export default function DashboardFarmacia() {
 
               {/* Acciones Rápidas para Móviles */}
               <div className="lg:hidden">
-                <Card className="border-0 sm:border shadow-sm">
-                  <CardHeader>
+                <Card className="border border-gray-200 rounded-lg shadow-sm">
+                  <CardHeader className="p-6 pb-4">
                     <CardTitle className="text-base">
                       Acciones Rápidas
                     </CardTitle>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="px-6 pb-6">
                     <div className="grid grid-cols-2 gap-3">
                       <Button
                         variant="outline"

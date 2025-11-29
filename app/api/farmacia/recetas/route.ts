@@ -81,7 +81,6 @@ export async function GET(request: NextRequest) {
         AND inv.disponible = true
       )
       WHERE r.farmacia_seleccionada_id = $1
-        AND r.estado_envio = 'recibida'
     `;
 
     const params: any[] = [farmaciaId];
@@ -89,11 +88,14 @@ export async function GET(request: NextRequest) {
 
     // Filtrar por estado específico
     if (estado === "pendientes") {
-      query += ` AND r.estado = 'activa'`;
+      query += ` AND r.estado = 'activa' AND r.estado_envio = 'recibida'`;
     } else if (estado === "en_proceso") {
-      query += ` AND r.estado = 'en_proceso'`;
+      query += ` AND r.estado = 'en_proceso' AND r.estado_envio IN ('recibida', 'en_proceso')`;
     } else if (estado === "dispensadas") {
-      query += ` AND r.estado = 'dispensada'`;
+      query += ` AND r.estado = 'dispensada' AND r.estado_envio = 'dispensada'`;
+    } else {
+      // Si no hay filtro específico, solo mostrar las recibidas que no han sido dispensadas
+      query += ` AND r.estado_envio = 'recibida'`;
     }
 
     query += ` GROUP BY r.id, r.codigo_receta, r.fecha_emision, r.fecha_vencimiento, r.estado, r.estado_envio,
@@ -118,17 +120,18 @@ export async function GET(request: NextRequest) {
       SELECT COUNT(DISTINCT r.id) as total
       FROM recetas r
       WHERE r.farmacia_seleccionada_id = $1
-        AND r.estado_envio = 'recibida'
     `;
     
     const countParams: any[] = [farmaciaId];
     
     if (estado === "pendientes") {
-      countQuery += ` AND r.estado = 'activa'`;
+      countQuery += ` AND r.estado = 'activa' AND r.estado_envio = 'recibida'`;
     } else if (estado === "en_proceso") {
-      countQuery += ` AND r.estado = 'en_proceso'`;
+      countQuery += ` AND r.estado = 'en_proceso' AND r.estado_envio IN ('recibida', 'en_proceso')`;
     } else if (estado === "dispensadas") {
-      countQuery += ` AND r.estado = 'dispensada'`;
+      countQuery += ` AND r.estado = 'dispensada' AND r.estado_envio = 'dispensada'`;
+    } else {
+      countQuery += ` AND r.estado_envio = 'recibida'`;
     }
     
     const countResult = await client.query(countQuery, countParams);
