@@ -1,7 +1,4 @@
-// components/paciente/SeguimientoRecetasPaciente.tsx
-"use client";
-
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/contexts/auth-context";
 import {
   Card,
@@ -29,7 +26,28 @@ import {
   DollarSign,
   AlertCircle,
   RefreshCw,
+  Bell,
+  History,
 } from "lucide-react";
+
+interface Medicamento {
+  id: string;
+  medicamento: {
+    nombre_comercial: string;
+    nombre_generico: string;
+  };
+  cantidad: number;
+}
+
+interface HistorialEvento {
+  id: number;
+  fecha: string;
+  estado_anterior: string | null;
+  estado_nuevo: string;
+  descripcion: string;
+  farmacia?: string;
+  notificado: boolean;
+}
 
 interface RecetaTracking {
   id: string;
@@ -44,14 +62,13 @@ interface RecetaTracking {
   total_estimado?: number;
   medico_nombre?: string;
   medico_apellido?: string;
-  medicamentos?: Array<{
-    id: string;
-    medicamento: {
-      nombre_comercial: string;
-      nombre_generico: string;
-    };
-    cantidad: number;
-  }>;
+  ultima_actualizacion?: string;
+  medicamentos?: Medicamento[];
+}
+
+interface Notificacion {
+  tipo: "info" | "exito" | "error";
+  mensaje: string;
 }
 
 export default function SeguimientoRecetasPaciente() {
@@ -61,16 +78,33 @@ export default function SeguimientoRecetasPaciente() {
   const [recetaSeleccionada, setRecetaSeleccionada] =
     useState<RecetaTracking | null>(null);
   const [mostrarDetalles, setMostrarDetalles] = useState(false);
+  const [mostrarHistorial, setMostrarHistorial] = useState(false);
+  const [historialReceta, setHistorialReceta] = useState<HistorialEvento[]>([]);
+  const [cargandoHistorial, setCargandoHistorial] = useState(false);
+  const [notificacion, setNotificacion] = useState<Notificacion | null>(null);
+  const [recetasActualizadas, setRecetasActualizadas] = useState<Set<string>>(
+    new Set()
+  );
+  const recetasAnterioresRef = useRef<RecetaTracking[]>([]);
 
+  // 🔄 Auto-actualización cada 30 segundos
   useEffect(() => {
     if (token) {
       cargarRecetas();
+
+      const interval = setInterval(() => {
+        cargarRecetas(true); // Carga silenciosa
+      }, 30000); // 30 segundos
+
+      return () => clearInterval(interval);
     }
   }, [token]);
 
-  const cargarRecetas = async () => {
+  const cargarRecetas = async (silent = false) => {
     try {
-      setCargando(true);
+      if (!silent) {
+        setCargando(true);
+      }
       const authToken =
         token ||
         localStorage.getItem("medilink_token") ||
@@ -92,12 +126,110 @@ export default function SeguimientoRecetasPaciente() {
         (r: any) => r.estado_envio && r.estado_envio !== "no_enviada"
       );
 
+      // 🔔 Detectar cambios de estado para mostrar notificaciones
+      if (silent && recetasAnterioresRef.current.length > 0) {
+        recetasEnviadas.forEach((receta: RecetaTracking) => {
+          const recetaAnterior = recetasAnterioresRef.current.find(
+            (r) => r.id === receta.id
+          );
+
+          if (
+            recetaAnterior &&
+            recetaAnterior.estado_envio !== receta.estado_envio
+          ) {
+            // Nuevo cambio detectado
+            setRecetasActualizadas((prev) => new Set([...prev, receta.id]));
+
+            // Mostrar notificación
+            setNotificacion({
+              tipo: "info",
+              mensaje: `📬 ${receta.codigo_receta}: ${getEstadoLabel(
+                receta.estado_envio
+              )}`,
+            });
+
+            // Auto-ocultar notificación después de 5 segundos
+            setTimeout(() => setNotificacion(null), 5000);
+          }
+        });
+      }
+
+      // Actualizar referencia de recetas anteriores
+      recetasAnterioresRef.current = recetasEnviadas;
+
       setRecetas(recetasEnviadas);
     } catch (error) {
       console.error("Error:", error);
+      if (!silent) {
+        setNotificacion({
+          tipo: "error",
+          mensaje: "Error al cargar recetas",
+        });
+      }
     } finally {
-      setCargando(false);
+      if (!silent) {
+        setCargando(false);
+      }
     }
+  };
+
+  const cargarHistorial = async (recetaId: string) => {
+    try {
+      setCargandoHistorial(true);
+      const authToken =
+        token ||
+        localStorage.getItem("medilink_token") ||
+        localStorage.getItem("token");
+
+      const response = await fetch(`/api/paciente/recetas/${recetaId}/historial`, {
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+
+      if (!response.ok) throw new Error("Error al cargar historial");
+
+      const data = await response.json();
+      setHistorialReceta(data.historial || []);
+      setMostrarHistorial(true);
+    } catch (error) {
+      console.error("Error:", error);
+      setNotificacion({
+        tipo: "error",
+        mensaje: "Error al cargar el historial",
+      });
+    } finally {
+      setCargandoHistorial(false);
+    }
+  };
+
+  const formatearFecha = (fecha: string) => {
+    const date = new Date(fecha);
+    const ahora = new Date();
+    const diffMs = ahora.getTime() - date.getTime();
+    const diffMinutes = Math.floor(diffMs / 60000);
+
+    if (diffMinutes < 1) return "Hace un momento";
+    if (diffMinutes < 60) return `Hace ${diffMinutes} minuto${diffMinutes !== 1 ? "s" : ""}`;
+
+    const diffHours = Math.floor(diffMinutes / 60);
+    if (diffHours < 24) return `Hace ${diffHours} hora${diffHours !== 1 ? "s" : ""}`;
+
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays < 7) return `Hace ${diffDays} día${diffDays !== 1 ? "s" : ""}`;
+
+    return date.toLocaleDateString("es-PE", {
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  const esActualizacionReciente = (fecha?: string) => {
+    if (!fecha) return false;
+    const fec = new Date(fecha);
+    const ahora = new Date();
+    const diffMinutes = (ahora.getTime() - fec.getTime()) / 60000;
+    return diffMinutes < 5; // Menos de 5 minutos
   };
 
   const getEstadoColor = (estado: string) => {
@@ -166,6 +298,51 @@ export default function SeguimientoRecetasPaciente() {
 
   return (
     <div className="space-y-4">
+      {/* Notificación de actualizaciones */}
+      {notificacion && (
+        <div
+          className={`p-4 rounded-lg flex items-start gap-3 animate-in slide-in-from-top ${notificacion.tipo === "exito"
+            ? "bg-green-50 border border-green-200"
+            : notificacion.tipo === "error"
+              ? "bg-red-50 border border-red-200"
+              : "bg-blue-50 border border-blue-200"
+            }`}
+        >
+          {notificacion.tipo === "exito" ? (
+            <CheckCircle2
+              className="text-green-600 flex-shrink-0 mt-0.5"
+              size={20}
+            />
+          ) : notificacion.tipo === "error" ? (
+            <AlertCircle
+              className="text-red-600 flex-shrink-0 mt-0.5"
+              size={20}
+            />
+          ) : (
+            <Bell className="text-blue-600 flex-shrink-0 mt-0.5" size={20} />
+          )}
+          <div className="flex-1">
+            <p
+              className={
+                notificacion.tipo === "exito"
+                  ? "text-green-800 font-medium"
+                  : notificacion.tipo === "error"
+                    ? "text-red-800 font-medium"
+                    : "text-blue-800 font-medium"
+              }
+            >
+              {notificacion.mensaje}
+            </p>
+          </div>
+          <button
+            onClick={() => setNotificacion(null)}
+            className="text-gray-400 hover:text-gray-600"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       <div className="flex justify-between items-center mb-6">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">
@@ -173,10 +350,11 @@ export default function SeguimientoRecetasPaciente() {
           </h2>
           <p className="text-gray-600 text-sm mt-1">
             {recetas.length} receta{recetas.length !== 1 ? "s" : ""} en proceso
+            • Auto-actualización cada 30s
           </p>
         </div>
         <Button
-          onClick={cargarRecetas}
+          onClick={() => cargarRecetas(false)}
           variant="outline"
           size="sm"
           className="flex items-center space-x-2"
@@ -194,20 +372,36 @@ export default function SeguimientoRecetasPaciente() {
           >
             <CardContent className="p-6">
               <div className="flex justify-between items-start mb-4">
-                <div>
-                  <h3 className="font-bold text-lg text-gray-900">
-                    Receta #{receta.codigo_receta}
-                  </h3>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-lg text-gray-900">
+                      Receta #{receta.codigo_receta}
+                    </h3>
+                    {/* Indicador de actualización reciente */}
+                    {esActualizacionReciente(receta.ultima_actualizacion) && (
+                      <Badge className="bg-blue-500 text-white animate-pulse">
+                        Actualizado
+                      </Badge>
+                    )}
+                    {recetasActualizadas.has(receta.id) && (
+                      <span className="text-blue-600 animate-bounce">🔔</span>
+                    )}
+                  </div>
                   <p className="text-sm text-gray-600 mt-1">
                     {receta.medico_nombre} {receta.medico_apellido}
                   </p>
+                  {receta.farmacia_nombre && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      📍 {receta.farmacia_nombre}
+                    </p>
+                  )}
                 </div>
-                <div className="text-right">
+                <div className="text-right space-y-2">
                   <Badge className={getEstadoColor(receta.estado_envio)}>
                     {getEstadoLabel(receta.estado_envio)}
                   </Badge>
                   {receta.estado_envio === "dispensada" && (
-                    <div className="mt-2">
+                    <div>
                       <Badge className="bg-green-600">✓ Lista</Badge>
                     </div>
                   )}
@@ -285,11 +479,10 @@ export default function SeguimientoRecetasPaciente() {
                 <div className="flex items-center space-x-3 text-sm">
                   <div className="flex items-center space-x-2">
                     <div
-                      className={`w-3 h-3 rounded-full ${
-                        receta.estado_envio !== "no_enviada"
-                          ? "bg-blue-600"
-                          : "bg-gray-300"
-                      }`}
+                      className={`w-3 h-3 rounded-full ${receta.estado_envio !== "no_enviada"
+                        ? "bg-blue-600"
+                        : "bg-gray-300"
+                        }`}
                     ></div>
                     <span className="text-xs">Enviada</span>
                   </div>
@@ -298,13 +491,12 @@ export default function SeguimientoRecetasPaciente() {
 
                   <div className="flex items-center space-x-2">
                     <div
-                      className={`w-3 h-3 rounded-full ${
-                        ["recibida", "en_proceso", "dispensada"].includes(
-                          receta.estado_envio
-                        )
-                          ? "bg-blue-600"
-                          : "bg-gray-300"
-                      }`}
+                      className={`w-3 h-3 rounded-full ${["recibida", "en_proceso", "dispensada"].includes(
+                        receta.estado_envio
+                      )
+                        ? "bg-blue-600"
+                        : "bg-gray-300"
+                        }`}
                     ></div>
                     <span className="text-xs">Recibida</span>
                   </div>
@@ -313,13 +505,12 @@ export default function SeguimientoRecetasPaciente() {
 
                   <div className="flex items-center space-x-2">
                     <div
-                      className={`w-3 h-3 rounded-full ${
-                        ["en_proceso", "dispensada"].includes(
-                          receta.estado_envio
-                        )
-                          ? "bg-blue-600"
-                          : "bg-gray-300"
-                      }`}
+                      className={`w-3 h-3 rounded-full ${["en_proceso", "dispensada"].includes(
+                        receta.estado_envio
+                      )
+                        ? "bg-blue-600"
+                        : "bg-gray-300"
+                        }`}
                     ></div>
                     <span className="text-xs">Preparando</span>
                   </div>
@@ -328,11 +519,10 @@ export default function SeguimientoRecetasPaciente() {
 
                   <div className="flex items-center space-x-2">
                     <div
-                      className={`w-3 h-3 rounded-full ${
-                        receta.estado_envio === "dispensada"
-                          ? "bg-green-600"
-                          : "bg-gray-300"
-                      }`}
+                      className={`w-3 h-3 rounded-full ${receta.estado_envio === "dispensada"
+                        ? "bg-green-600"
+                        : "bg-gray-300"
+                        }`}
                     ></div>
                     <span className="text-xs">
                       {receta.tipo_entrega === "domicilio"
@@ -343,16 +533,30 @@ export default function SeguimientoRecetasPaciente() {
                 </div>
               </div>
 
-              <Button
-                onClick={() => {
-                  setRecetaSeleccionada(receta);
-                  setMostrarDetalles(true);
-                }}
-                variant="outline"
-                className="w-full"
-              >
-                Ver Detalles Completos
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => {
+                    setRecetaSeleccionada(receta);
+                    setMostrarDetalles(true);
+                  }}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  Ver Detalles
+                </Button>
+                <Button
+                  onClick={() => {
+                    setRecetaSeleccionada(receta);
+                    cargarHistorial(receta.id);
+                  }}
+                  variant="outline"
+                  className="flex items-center gap-2"
+                  disabled={cargandoHistorial}
+                >
+                  <History className="w-4 h-4" />
+                  Historial
+                </Button>
+              </div>
             </CardContent>
           </Card>
         ))}
@@ -456,6 +660,196 @@ export default function SeguimientoRecetasPaciente() {
                   )}
                 </div>
               </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de Historial Detallado */}
+      <Dialog open={mostrarHistorial} onOpenChange={setMostrarHistorial}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <History className="w-5 h-5" />
+              Historial de Receta #{recetaSeleccionada?.codigo_receta}
+            </DialogTitle>
+            <DialogDescription>
+              Seguimiento completo de todos los cambios de estado
+            </DialogDescription>
+          </DialogHeader>
+
+          {recetaSeleccionada && (
+            <div className="space-y-6">
+              {/* Estado Actual */}
+              <Card className="bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200">
+                <CardContent className="pt-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-600 mb-1">
+                        Estado Actual
+                      </p>
+                      <p className="text-2xl font-bold text-gray-900">
+                        {getEstadoLabel(recetaSeleccionada.estado_envio)}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-2">
+                        {recetaSeleccionada.farmacia_nombre &&
+                          `📍 ${recetaSeleccionada.farmacia_nombre}`}
+                      </p>
+                    </div>
+                    <Badge
+                      className={`${getEstadoColor(
+                        recetaSeleccionada.estado_envio
+                      )} text-lg px-4 py-2`}
+                    >
+                      {recetaSeleccionada.estado_envio}
+                    </Badge>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Timeline de Historial */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">
+                    Línea de Tiempo ({historialReceta.length} evento
+                    {historialReceta.length !== 1 ? "s" : ""})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {cargandoHistorial ? (
+                    <div className="flex items-center justify-center py-8">
+                      <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
+                      <span className="ml-2 text-gray-600">
+                        Cargando historial...
+                      </span>
+                    </div>
+                  ) : historialReceta.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      No hay historial disponible
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {historialReceta.map((evento, idx) => (
+                        <div
+                          key={evento.id}
+                          className="flex items-start gap-4"
+                        >
+                          {/* Línea vertical y punto */}
+                          <div className="flex flex-col items-center">
+                            <div
+                              className={`w-4 h-4 rounded-full border-2 ${idx === historialReceta.length - 1
+                                ? "bg-blue-600 border-blue-600 ring-4 ring-blue-100"
+                                : "bg-white border-gray-300"
+                                }`}
+                            />
+                            {idx < historialReceta.length - 1 && (
+                              <div className="w-0.5 h-full min-h-[40px] bg-gray-300 mt-1" />
+                            )}
+                          </div>
+
+                          {/* Contenido del evento */}
+                          <div className="flex-1 pb-6">
+                            <div className="flex justify-between items-start mb-2">
+                              <div className="flex-1">
+                                <p className="font-semibold text-gray-900">
+                                  {evento.descripcion}
+                                </p>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <p className="text-xs text-gray-500">
+                                    {formatearFecha(evento.fecha)}
+                                  </p>
+                                  {evento.farmacia && (
+                                    <span className="text-xs text-gray-400">
+                                      • {evento.farmacia}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex flex-col items-end gap-1">
+                                <Badge
+                                  className={getEstadoColor(
+                                    evento.estado_nuevo
+                                  )}
+                                  variant="outline"
+                                >
+                                  {evento.estado_nuevo}
+                                </Badge>
+                                {idx === historialReceta.length - 1 && (
+                                  <span className="text-xs text-blue-600 font-medium">
+                                    Actual
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Transición de estados */}
+                            {evento.estado_anterior && (
+                              <div className="flex items-center gap-2 text-xs text-gray-500 mt-2">
+                                <Badge
+                                  variant="outline"
+                                  className="text-xs px-2 py-0"
+                                >
+                                  {evento.estado_anterior}
+                                </Badge>
+                                <span>→</span>
+                                <Badge
+                                  variant="outline"
+                                  className="text-xs px-2 py-0"
+                                >
+                                  {evento.estado_nuevo}
+                                </Badge>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Información de Entrega */}
+              {recetaSeleccionada.tipo_entrega && (
+                <Card className="bg-gray-50">
+                  <CardContent className="pt-6">
+                    <h4 className="font-semibold text-sm mb-3">
+                      📦 Modalidad de Entrega
+                    </h4>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-600">Tipo:</span>
+                        <Badge variant="outline">
+                          {recetaSeleccionada.tipo_entrega === "domicilio"
+                            ? "🚚 Envío a Domicilio"
+                            : "🏪 Recojo en Farmacia"}
+                        </Badge>
+                      </div>
+                      {recetaSeleccionada.tipo_entrega === "domicilio" &&
+                        recetaSeleccionada.direccion_entrega && (
+                          <div>
+                            <span className="text-gray-600 text-xs">
+                              Dirección:
+                            </span>
+                            <p className="text-gray-800 mt-1">
+                              {recetaSeleccionada.direccion_entrega}
+                            </p>
+                          </div>
+                        )}
+                      {recetaSeleccionada.tipo_entrega === "domicilio" && (
+                        <div className="flex items-center justify-between pt-2 border-t">
+                          <span className="text-gray-600">Costo de envío:</span>
+                          <span className="font-semibold text-orange-700">
+                            S/{" "}
+                            {Number(
+                              recetaSeleccionada.costo_entrega ?? 0
+                            ).toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           )}
         </DialogContent>
