@@ -1,3 +1,4 @@
+// components/paciente/SeguimientoRecetasPaciente.tsx
 "use client";
 
 import { useState, useEffect } from "react";
@@ -258,14 +259,17 @@ export default function SeguimientoRecetasPaciente() {
                     <div className="flex justify-between">
                       <span className="text-gray-600">Medicamentos:</span>
                       <span className="font-medium">
-                        {receta.medicamentos?.length || 0} producto{receta.medicamentos && receta.medicamentos.length !== 1 ? "s" : ""}
+                        {receta.medicamentos?.length || 0} producto
+                        {receta.medicamentos && receta.medicamentos.length !== 1
+                          ? "s"
+                          : ""}
                       </span>
                     </div>
                     {receta.tipo_entrega === "domicilio" && (
                       <div className="flex justify-between text-orange-700">
                         <span className="text-gray-600">Envío:</span>
                         <span className="font-medium">
-                          S/ {receta.costo_entrega.toFixed(2)}
+                          S/ {Number(receta.costo_entrega ?? 0).toFixed(2)}
                         </span>
                       </div>
                     )}
@@ -395,7 +399,8 @@ export default function SeguimientoRecetasPaciente() {
               {/* Medicamentos */}
               <div className="p-4 bg-gray-50 rounded-lg">
                 <h4 className="font-semibold text-gray-900 mb-3">
-                  💊 Medicamentos ({recetaSeleccionada.medicamentos?.length || 0})
+                  💊 Medicamentos (
+                  {recetaSeleccionada.medicamentos?.length || 0})
                 </h4>
                 <div className="space-y-2">
                   {recetaSeleccionada.medicamentos?.map((med, idx) => (
@@ -437,7 +442,10 @@ export default function SeguimientoRecetasPaciente() {
                     <div className="flex justify-between text-orange-700">
                       <span>Costo de Envío:</span>
                       <span className="font-medium">
-                        S/ {recetaSeleccionada.costo_entrega.toFixed(2)}
+                        S/{" "}
+                        {Number(recetaSeleccionada.costo_entrega ?? 0).toFixed(
+                          2
+                        )}
                       </span>
                     </div>
                   )}

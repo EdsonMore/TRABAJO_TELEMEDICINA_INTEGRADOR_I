@@ -7,7 +7,7 @@ import ModalCrearReceta from "./medico/ModalCrearReceta";
 import GestionCitaMedicoModal from "./medico/gestion-cita-medico-modal"; // Importamos el nuevo modal
 import { useAuth } from "@/contexts/auth-context";
 
-export default function VideoCallRoom({ roomId, userData, onLeave, citaData }) {
+export default function VideoCallRoom({ roomId, userData, onLeave, citaData, citaId }) {
   // Agregamos citaData como prop
   const [hasPermission, setHasPermission] = useState(false);
   const [isAudioMuted, setIsAudioMuted] = useState(false);
@@ -177,8 +177,10 @@ export default function VideoCallRoom({ roomId, userData, onLeave, citaData }) {
   // Función para abrir el modal de receta (async)
   const handleAbrirRecetaModal = async () => {
     console.log("📝 Abriendo modal de receta médica");
-    await cargarCitaParaReceta();
-    setShowRecetaModal(true);
+    const cita = await cargarCitaParaReceta();
+    if (cita) {
+      setShowRecetaModal(true);
+    }
   };
 
   // Función para cerrar el modal de receta
@@ -475,16 +477,83 @@ export default function VideoCallRoom({ roomId, userData, onLeave, citaData }) {
 
 
   const cargarCitaParaReceta = async () => {
-    setLoadingCita(true);
+    setLoadingReceta(true);
     try {
-      const cita = await crearCitaParaModal();
-      setCitaParaReceta(cita);
-      return cita;
+      console.log("📝 Cargando cita REAL para receta...");
+      console.log("🔍 citaId disponible:", citaId);
+      
+      // ✅ SI tenemos el citaId directamente, usarlo primero
+      if (citaId) {
+        console.log("✅ Usando citaId directo:", citaId);
+        
+        const response = await fetch(`/api/citas/${citaId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.cita) {
+            console.log("✅ Cita REAL obtenida directamente:", citaId);
+            
+            // ✅ TRANSFORMAR los datos del paciente a formato esperado
+            const citaTransformada = {
+              ...data.cita,
+              paciente: {
+                id: data.cita.id_paciente,
+                nombre: data.cita.nombre_paciente,
+                apellido: data.cita.apellido_paciente,
+                dni: data.cita.dni,
+                telefono: data.cita.telefono_paciente,
+                fecha_nacimiento: data.cita.fecha_nacimiento,
+                tipo_sangre: data.cita.tipo_sangre,
+                alergias: data.cita.alergias,
+                peso: data.cita.peso,
+                altura: data.cita.altura,
+              },
+            };
+            
+            setCitaParaReceta(citaTransformada);
+            return citaTransformada;
+          }
+        }
+      }
+      
+      // ✅ FALLBACK: OBTENER SOLO LA CITA REAL - ABSOLUTAMENTE NECESARIA PARA RECETA
+      const response = await fetch(`/api/citas/medico/buscar-cita-actual`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          roomId: roomId,
+          medicoId: userData?.id || null,
+        }),
+      });
+
+      if (!response.ok) {
+        console.error("❌ Error en respuesta del servidor:", response.status);
+        alert("Error al obtener la cita. Intenta de nuevo.");
+        return null;
+      }
+
+      const data = await response.json();
+      
+      if (data.success && data.cita) {
+        console.log("✅ Cita REAL obtenida para receta:", data.cita.id);
+        setCitaParaReceta(data.cita);
+        return data.cita;
+      } else {
+        console.error("❌ No se encontró cita real para crear receta");
+        alert("No se pudo obtener la información de la cita. Asegúrate de que la cita está registrada en el sistema.");
+        return null;
+      }
     } catch (error) {
       console.error("❌ Error cargando cita para receta:", error);
+      alert("Error al cargar la información de la cita: " + error.message);
       return null;
     } finally {
-      setLoadingCita(false);
+      setLoadingReceta(false);
     }
   };
 

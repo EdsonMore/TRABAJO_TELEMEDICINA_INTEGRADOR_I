@@ -108,6 +108,12 @@ export default function SeleccionFarmaciasPage() {
   });
   const [mostrarFiltros, setMostrarFiltros] = useState(false);
   const [mostrarModalPago, setMostrarModalPago] = useState(false);
+  const [mostrarModalEntrega, setMostrarModalEntrega] = useState(false);
+  const [tipoEntregaSeleccionado, setTipoEntregaSeleccionado] = useState<
+    "recojo" | "domicilio"
+  >("recojo");
+  const [direccionEntrega, setDireccionEntrega] = useState("");
+  const [costoEntrega, setCostoEntrega] = useState(0);
   const [farmaciaSeleccionadaPago, setFarmaciaSeleccionadaPago] = useState<{
     farmacia_id: string;
     nombre: string;
@@ -344,6 +350,7 @@ export default function SeleccionFarmaciasPage() {
         localStorage.getItem("token");
 
       // POST a /api/recetas/pagar para registrar el pago y enviar la receta
+      // AHORA INCLUYE: tipo_entrega, direccion_entrega, costo_entrega
       const response = await fetch("/api/recetas/pagar", {
         method: "POST",
         headers: {
@@ -356,6 +363,9 @@ export default function SeleccionFarmaciasPage() {
           metodo_pago: metodo,
           monto: farmaciaSeleccionadaPago.monto,
           referencia_pago: numeroReferencia,
+          tipo_entrega: tipoEntregaSeleccionado,
+          direccion_entrega: tipoEntregaSeleccionado === "domicilio" ? direccionEntrega : null,
+          costo_entrega: costoEntrega,
         }),
       });
 
@@ -388,7 +398,25 @@ export default function SeleccionFarmaciasPage() {
       return;
     }
 
-    // Si hay un solo item en el carrito, mostrar modal de pago
+    // SIEMPRE mostrar modal de entrega PRIMERO
+    // Es común para 1 farmacia (con pago) o múltiples (sin pago)
+    setMostrarModalEntrega(true);
+  };
+
+  const confirmarEntregaYProceder = async () => {
+    if (!recetaId || carrito.length === 0) {
+      setError("Información incompleta");
+      return;
+    }
+
+    if (tipoEntregaSeleccionado === "domicilio" && !direccionEntrega.trim()) {
+      setError("Ingresa una dirección para envío a domicilio");
+      return;
+    }
+
+    setMostrarModalEntrega(false);
+
+    // Si hay un solo item en el carrito, mostrar modal de PAGO
     if (carrito.length === 1) {
       const item = carrito[0];
       setFarmaciaSeleccionadaPago({
@@ -398,7 +426,7 @@ export default function SeleccionFarmaciasPage() {
       });
       setMostrarModalPago(true);
     } else {
-      // Si hay múltiples items, enviar a todas las farmacias
+      // Si hay múltiples items, enviar a todas las farmacias SIN pago
       setEnviando(true);
       try {
         const token =
@@ -418,6 +446,9 @@ export default function SeleccionFarmaciasPage() {
               body: JSON.stringify({
                 farmacia_id: item.farmacia_id,
                 medicamentos: item.medicamentos,
+                tipo_entrega: tipoEntregaSeleccionado,
+                direccion_entrega: tipoEntregaSeleccionado === "domicilio" ? direccionEntrega : null,
+                costo_entrega: costoEntrega,
               }),
             }
           );
@@ -1176,6 +1207,141 @@ export default function SeleccionFarmaciasPage() {
 
       {/* Espacio para el carrito móvil */}
       {carrito.length > 0 && <div className="lg:hidden h-20" />}
+
+      {/* Modal de Selección de Tipo de Entrega */}
+      {mostrarModalEntrega && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-md">
+            <CardHeader>
+              <CardTitle className="flex items-center space-x-2">
+                <Truck className="w-5 h-5" />
+                <span>Seleccionar Tipo de Entrega</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Opción Recojo */}
+              <div
+                onClick={() => {
+                  setTipoEntregaSeleccionado("recojo");
+                  setDireccionEntrega("");
+                  setCostoEntrega(0);
+                }}
+                className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                  tipoEntregaSeleccionado === "recojo"
+                    ? "border-blue-500 bg-blue-50"
+                    : "border-gray-200 hover:border-gray-300"
+                }`}
+              >
+                <div className="flex items-start space-x-3">
+                  <div
+                    className={`w-5 h-5 rounded-full border-2 mt-1 flex items-center justify-center ${
+                      tipoEntregaSeleccionado === "recojo"
+                        ? "border-blue-500 bg-blue-500"
+                        : "border-gray-300"
+                    }`}
+                  >
+                    {tipoEntregaSeleccionado === "recojo" && (
+                      <div className="w-2 h-2 bg-white rounded-full" />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-gray-900">
+                      🏪 Recoger en Farmacia
+                    </h4>
+                    <p className="text-sm text-gray-600 mt-1">
+                      Recibe tu medicamento en la farmacia
+                    </p>
+                    <div className="mt-2 text-lg font-bold text-green-600">
+                      Gratis
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Opción Domicilio */}
+              <div
+                onClick={() => {
+                  setTipoEntregaSeleccionado("domicilio");
+                  setCostoEntrega(15);
+                }}
+                className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                  tipoEntregaSeleccionado === "domicilio"
+                    ? "border-blue-500 bg-blue-50"
+                    : "border-gray-200 hover:border-gray-300"
+                }`}
+              >
+                <div className="flex items-start space-x-3">
+                  <div
+                    className={`w-5 h-5 rounded-full border-2 mt-1 flex items-center justify-center ${
+                      tipoEntregaSeleccionado === "domicilio"
+                        ? "border-blue-500 bg-blue-500"
+                        : "border-gray-300"
+                    }`}
+                  >
+                    {tipoEntregaSeleccionado === "domicilio" && (
+                      <div className="w-2 h-2 bg-white rounded-full" />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-gray-900">
+                      🚚 Envío a Domicilio
+                    </h4>
+                    <p className="text-sm text-gray-600 mt-1">
+                      Recibe tu medicamento en casa
+                    </p>
+                    <div className="mt-2 text-lg font-bold text-orange-600">
+                      S/ 15.00
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Input de dirección (solo si selecciona domicilio) */}
+              {tipoEntregaSeleccionado === "domicilio" && (
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Dirección de Entrega
+                  </label>
+                  <Input
+                    placeholder="Ej: Calle Principal 123, Apto 4B"
+                    value={direccionEntrega}
+                    onChange={(e) => setDireccionEntrega(e.target.value)}
+                    className="w-full"
+                  />
+                </div>
+              )}
+
+              {/* Botones */}
+              <div className="flex gap-3 pt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setMostrarModalEntrega(false);
+                    setFarmaciaSeleccionadaPago(null);
+                  }}
+                  className="flex-1"
+                  disabled={enviando}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={() => {
+                    if (tipoEntregaSeleccionado === "domicilio" && !direccionEntrega.trim()) {
+                      setError("Ingresa una dirección para envío a domicilio");
+                      return;
+                    }
+                    confirmarEntregaYProceder();
+                  }}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700"
+                  disabled={enviando}
+                >
+                  Confirmar Entrega
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Modal de Pago */}
       {farmaciaSeleccionadaPago && (

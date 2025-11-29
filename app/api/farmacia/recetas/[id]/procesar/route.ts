@@ -77,7 +77,7 @@ export async function PATCH(
           for (const med of medicamentos_procesados) {
             // Verificar stock
             const stockResult = await client.query(
-              `SELECT stock_actual FROM inventario_farmacia 
+              `SELECT COALESCE(stock_actual, 0) as stock_actual FROM inventario_farmacia 
                WHERE id_farmacia = $1 AND id_medicamento = $2 AND disponible = true`,
               [farmaciaId, med.medicamento_id]
             );
@@ -91,7 +91,7 @@ export async function PATCH(
             // Descontar stock
             await client.query(
               `UPDATE inventario_farmacia 
-               SET stock_actual = stock_actual - $1,
+               SET stock_actual = GREATEST(0, COALESCE(stock_actual, 0) - $1),
                    fecha_actualizacion = CURRENT_TIMESTAMP
                WHERE id_farmacia = $2 AND id_medicamento = $3`,
               [med.cantidad, farmaciaId, med.medicamento_id]
@@ -158,6 +158,19 @@ export async function PATCH(
            WHERE id = $1`,
           [recetaId]
         );
+
+        // Si se rechaza en en_proceso, devolver los medicamentos que se despacharon
+        if (receta.estado === "en_proceso" && medicamentos_procesados && medicamentos_procesados.length > 0) {
+          for (const med of medicamentos_procesados) {
+            await client.query(
+              `UPDATE inventario_farmacia 
+               SET stock_actual = GREATEST(0, COALESCE(stock_actual, 0) + $1),
+                   fecha_actualizacion = CURRENT_TIMESTAMP
+               WHERE id_farmacia = $2 AND id_medicamento = $3`,
+              [med.cantidad_dispensada, farmaciaId, med.medicamento_id]
+            );
+          }
+        }
 
         await client.query(
           `INSERT INTO auditoria (usuario_id, accion, tabla_afectada, id_registro, datos_nuevos)

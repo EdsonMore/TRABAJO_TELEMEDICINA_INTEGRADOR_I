@@ -1,6 +1,6 @@
 -- =====================================================
--- SCRIPT COMPLETO UNIFICADO - SISTEMA DE SALUD
--- ORDEN CORRECTO DE EJECUCIÓN PARA POSTGRESQL
+-- SCRIPT COMPLETO DE BASE DE DATOS
+-- Sistema de Gestión Médica
 -- =====================================================
 
 -- =====================================================
@@ -288,7 +288,7 @@ CREATE TABLE sesiones_telemedicina (
 -- PASO 5: TABLAS DE NIVEL 3 (Dependen de nivel 2)
 -- =====================================================
 
--- 5.1 TABLA DE RECETAS MÉDICAS
+-- 5.1 TABLA DE RECETAS MÉDICAS (CON TODAS LAS ACTUALIZACIONES)
 CREATE TABLE recetas (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     id_cita UUID NOT NULL REFERENCES citas(id),
@@ -299,11 +299,14 @@ CREATE TABLE recetas (
     fecha_emision DATE NOT NULL DEFAULT CURRENT_DATE,
     fecha_vencimiento DATE NOT NULL,
     observaciones TEXT,
-    estado VARCHAR(20) DEFAULT 'activa' CHECK (estado IN ('activa', 'dispensada', 'vencida', 'cancelada')),
+    estado VARCHAR(20) DEFAULT 'activa' CHECK (estado IN ('activa', 'en_proceso', 'dispensada', 'vencida', 'cancelada')),
     id_farmacia_dispensadora UUID REFERENCES farmacias(id),
     fecha_dispensacion TIMESTAMP,
     firma_medico TEXT,
-    sello_temporal TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    sello_temporal TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    tipo_entrega VARCHAR(50) DEFAULT 'recojo' CHECK (tipo_entrega IN ('recojo', 'domicilio')),
+    direccion_entrega TEXT,
+    costo_entrega DECIMAL(10, 2) DEFAULT 0
 );
 
 -- 5.2 TABLA DE SOLICITUDES DE EXÁMENES
@@ -447,6 +450,7 @@ CREATE INDEX idx_tratamientos_medicamento ON tratamientos_recomendados(medicamen
 CREATE INDEX idx_recetas_cita ON recetas(id_cita);
 CREATE INDEX idx_recetas_diagnostico ON recetas(diagnostico_principal_id);
 CREATE INDEX idx_recetas_fecha ON recetas(fecha_emision);
+CREATE INDEX idx_recetas_tipo_entrega ON recetas(tipo_entrega);
 CREATE INDEX idx_receta_detalle_receta ON receta_detalle(id_receta);
 CREATE INDEX idx_receta_detalle_medicamento ON receta_detalle(medicamento_id);
 
@@ -469,6 +473,10 @@ CREATE INDEX idx_diagnosticos_cie10 ON diagnosticos_paciente(codigo_cie10_id);
 CREATE INDEX idx_notificaciones_usuario ON notificaciones(usuario_id, leida);
 CREATE INDEX idx_pagos_usuario ON pagos(usuario_id, estado);
 CREATE INDEX idx_auditoria_usuario ON auditoria(usuario_id, fecha_accion);
+
+-- =====================================================
+-- FIN DEL SCRIPT
+-- =====================================================
 
 -- =====================================================
 -- PASO 10: INSERCIÓN DE DATOS BÁSICOS

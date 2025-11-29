@@ -118,18 +118,6 @@ export async function PATCH(
         ]
       );
 
-      // Si se aceptó y hay stock, liberar reservas (ya no necesarias porque se va a dispensar)
-      if (accion === "aceptar") {
-        // Obtener medicamentos
-        const medicamentosResult = await client.query(
-          `SELECT medicamento_id, cantidad FROM receta_detalle WHERE id_receta = $1`,
-          [id]
-        );
-
-        // No liberamos reservas porque se mantienen hasta dispensación
-        // Las reservas se usan para que otros pacientes no puedan reservar el mismo stock
-      }
-
       // Si se rechazó, liberar reservas
       if (accion === "rechazar") {
         const medicamentosResult = await client.query(
@@ -183,8 +171,6 @@ export async function PATCH(
       // Commit
       await client.query("COMMIT");
 
-      client.release();
-
       return NextResponse.json(
         {
           success: true,
@@ -211,7 +197,7 @@ export async function PATCH(
       try {
         await client.query("ROLLBACK");
       } catch (e) {
-        // Ignorar
+        // Ignorar error en ROLLBACK
       }
     }
     return NextResponse.json(
@@ -219,6 +205,12 @@ export async function PATCH(
       { status: 500 }
     );
   } finally {
-    if (client) client.release();
+    if (client) {
+      try {
+        client.release();
+      } catch (e) {
+        // Ignorar error si ya fue liberado
+      }
+    }
   }
 }

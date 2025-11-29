@@ -22,11 +22,36 @@ export async function POST(request: NextRequest) {
       farmacia_id,
       metodo_pago,
       monto,
+      tipo_entrega,
+      direccion_entrega,
+      costo_entrega,
     } = await request.json();
 
     if (!receta_id || !farmacia_id || !metodo_pago || !monto) {
       return NextResponse.json(
         { error: "Parámetros requeridos faltantes" },
+        { status: 400 }
+      );
+    }
+
+    // Validar tipo de entrega si se proporciona
+    if (
+      tipo_entrega &&
+      !["recojo", "domicilio"].includes(tipo_entrega)
+    ) {
+      return NextResponse.json(
+        { error: "Tipo de entrega inválido" },
+        { status: 400 }
+      );
+    }
+
+    // Si es domicilio, requiere dirección
+    if (
+      tipo_entrega === "domicilio" &&
+      (!direccion_entrega || !direccion_entrega.trim())
+    ) {
+      return NextResponse.json(
+        { error: "Dirección requerida para envío a domicilio" },
         { status: 400 }
       );
     }
@@ -91,9 +116,18 @@ export async function POST(request: NextRequest) {
       `UPDATE recetas 
        SET farmacia_seleccionada_id = $1,
            fecha_envio_farmacia = NOW(),
-           estado_envio = 'enviada'
+           estado_envio = 'enviada',
+           tipo_entrega = $3,
+           direccion_entrega = $4,
+           costo_entrega = $5
        WHERE id = $2`,
-      [farmacia_id, receta_id]
+      [
+        farmacia_id,
+        receta_id,
+        tipo_entrega || "recojo",
+        direccion_entrega || null,
+        costo_entrega || 0,
+      ]
     );
 
     return NextResponse.json({
