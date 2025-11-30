@@ -1,6 +1,7 @@
 -- =====================================================
--- SCRIPT COMPLETO DE BASE DE DATOS
--- Sistema de Gestión Médica
+-- SCRIPT COMPLETO DE BASE DE DATOS UNIFICADO
+-- Sistema de Gestión Médica - MediLink+
+-- Incluye migración de sistema de seguimiento de recetas
 -- =====================================================
 
 -- =====================================================
@@ -306,7 +307,17 @@ CREATE TABLE recetas (
     sello_temporal TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     tipo_entrega VARCHAR(50) DEFAULT 'recojo' CHECK (tipo_entrega IN ('recojo', 'domicilio')),
     direccion_entrega TEXT,
-    costo_entrega DECIMAL(10, 2) DEFAULT 0
+    costo_entrega DECIMAL(10, 2) DEFAULT 0,
+    -- CAMPOS AGREGADOS EN LA MIGRACIÓN
+    farmacia_seleccionada_id UUID REFERENCES farmacias(id) ON DELETE SET NULL,
+    estado_envio VARCHAR(20) DEFAULT 'no_enviada' CHECK (estado_envio IN ('no_enviada', 'enviada', 'recibida', 'rechazada', 'dispensada')),
+    fecha_envio_farmacia TIMESTAMP,
+    motivo_rechazo TEXT,
+    -- CAMPOS AGREGADOS EN LA SEGUNDA MIGRACIÓN
+    fecha_aceptacion_farmacia TIMESTAMP,
+    fecha_inicio_preparacion TIMESTAMP,
+    fecha_finalizacion_preparacion TIMESTAMP,
+    ultima_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 5.2 TABLA DE SOLICITUDES DE EXÁMENES
@@ -378,16 +389,14 @@ CREATE TABLE resultados_laboratorio (
 
 -- 8.1 TABLA DE NOTIFICACIONES
 CREATE TABLE notificaciones (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    usuario_id UUID NOT NULL REFERENCES usuarios(id),
-    titulo VARCHAR(200) NOT NULL,
-    mensaje TEXT NOT NULL,
-    tipo VARCHAR(50) NOT NULL,
-    entidad_relacionada VARCHAR(50),
-    id_entidad UUID,
-    leida BOOLEAN DEFAULT false,
-    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    fecha_lectura TIMESTAMP
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id_usuario UUID NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE, -- CAMBIADO A UUID
+  titulo VARCHAR(255) NOT NULL,
+  mensaje TEXT,
+  tipo VARCHAR(50) NOT NULL DEFAULT 'sistema' CHECK (tipo IN ('cita', 'receta', 'resultado', 'sistema', 'farmacia', 'laboratorio', 'despacho')),
+  leida BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  id_relacionado UUID -- ID de la cita o receta relacionada
 );
 
 -- 8.2 TABLA DE PAGOS
@@ -415,6 +424,69 @@ CREATE TABLE auditoria (
     datos_nuevos JSONB,
     ip_address INET,
     fecha_accion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =====================================================
+-- TABLAS DE MIGRACIÓN: Sistema de distribución de recetas a farmacias
+-- =====================================================
+
+-- 8.4 TABLA DE HISTORIAL DE ENVÍOS DE RECETAS
+CREATE TABLE historial_envio_recetas (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    receta_id UUID NOT NULL REFERENCES recetas(id) ON DELETE CASCADE,
+    farmacia_id UUID REFERENCES farmacias(id) ON DELETE SET NULL,
+    estado_anterior VARCHAR(20),
+    estado_nuevo VARCHAR(20) NOT NULL,
+    motivo TEXT,
+    usuario_id UUID REFERENCES usuarios(id),
+    fecha_cambio TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 8.5 TABLA DE BÚSQUEDAS DE FARMACIAS
+CREATE TABLE busquedas_farmacias_recetas (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    receta_id UUID NOT NULL REFERENCES recetas(id) ON DELETE CASCADE,
+    paciente_id UUID NOT NULL REFERENCES pacientes(id) ON DELETE CASCADE,
+    fecha_busqueda TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    farmacias_consultadas JSONB NOT NULL,
+    farmacia_seleccionada_id UUID REFERENCES farmacias(id)
+);
+
+-- 8.6 TABLA DE HISTORIAL DE CAMBIOS DE ESTADO (SEGUNDA MIGRACIÓN)
+CREATE TABLE historial_cambios_estado_receta (
+    id SERIAL PRIMARY KEY,
+    receta_id UUID NOT NULL REFERENCES recetas(id) ON DELETE CASCADE,
+    estado_anterior VARCHAR(50),
+    estado_nuevo VARCHAR(50) NOT NULL,
+    usuario_id UUID REFERENCES usuarios(id),
+    farmacia_id UUID REFERENCES farmacias(id),
+    fecha_cambio TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    detalles JSONB DEFAULT '{}'::jsonb,
+    notificado BOOLEAN DEFAULT FALSE,
+    descripcion TEXT,
+    CONSTRAINT fk_receta_historial FOREIGN KEY (receta_id) REFERENCES recetas(id) ON DELETE CASCADE
+);
+
+-- 8.7 TABLA DE PROTECCIÓN DE HISTORIAL
+CREATE TABLE historial_protecciones (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id_paciente UUID NOT NULL REFERENCES pacientes(id) ON DELETE CASCADE, -- CAMBIADO A UUID
+  id_medico UUID REFERENCES medicos(id), -- CAMBIADO A UUID
+  password_hash VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(id_paciente)
+);
+
+-- 8.8 TABLA DE LOG DE ACCESO AL HISTORIAL
+CREATE TABLE acceso_historial_logs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id_medico UUID NOT NULL REFERENCES medicos(id) ON DELETE CASCADE, -- CAMBIADO A UUID
+  id_paciente UUID NOT NULL REFERENCES pacientes(id) ON DELETE CASCADE, -- CAMBIADO A UUID
+  fecha_acceso TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  tipo_acceso VARCHAR(50) DEFAULT 'visualizar' CHECK (tipo_acceso IN ('visualizar', 'descargar', 'imprimir')),
+  ip_address VARCHAR(45),
+  descripcion TEXT
 );
 
 -- =====================================================
@@ -470,19 +542,281 @@ CREATE INDEX idx_diagnosticos_paciente ON diagnosticos_paciente(paciente_id, fec
 CREATE INDEX idx_diagnosticos_cie10 ON diagnosticos_paciente(codigo_cie10_id);
 
 -- Índices para notificaciones y pagos
-CREATE INDEX idx_notificaciones_usuario ON notificaciones(usuario_id, leida);
+CREATE INDEX idx_notificaciones_usuario ON notificaciones(id_usuario, leida); -- MODIFICADO
 CREATE INDEX idx_pagos_usuario ON pagos(usuario_id, estado);
 CREATE INDEX idx_auditoria_usuario ON auditoria(usuario_id, fecha_accion);
 
--- =====================================================
--- FIN DEL SCRIPT
--- =====================================================
+-- Índices para migración de recetas
+CREATE INDEX idx_recetas_farmacia_seleccionada ON recetas(farmacia_seleccionada_id, estado_envio);
+CREATE INDEX idx_recetas_estado_envio ON recetas(estado_envio, fecha_emision);
+CREATE INDEX idx_historial_envio_receta ON historial_envio_recetas(receta_id, fecha_cambio);
+CREATE INDEX idx_historial_envio_farmacia ON historial_envio_recetas(farmacia_id, fecha_cambio);
+CREATE INDEX idx_busquedas_receta ON busquedas_farmacias_recetas(receta_id);
+CREATE INDEX idx_busquedas_paciente ON busquedas_farmacias_recetas(paciente_id, fecha_busqueda);
+
+-- Índices para segunda migración (seguimiento de recetas)
+CREATE INDEX idx_historial_receta ON historial_cambios_estado_receta(receta_id);
+CREATE INDEX idx_historial_fecha ON historial_cambios_estado_receta(fecha_cambio DESC);
+CREATE INDEX idx_historial_estado_nuevo ON historial_cambios_estado_receta(estado_nuevo);
+CREATE INDEX idx_historial_notificado ON historial_cambios_estado_receta(notificado) WHERE notificado = FALSE;
+
+
+-- Índices para notificaciones (NUEVOS)
+CREATE INDEX idx_notificaciones_id_usuario ON notificaciones(id_usuario);
+CREATE INDEX idx_notificaciones_leida ON notificaciones(leida);
+CREATE INDEX idx_notificaciones_created_at ON notificaciones(created_at DESC);
+CREATE INDEX idx_notificaciones_tipo ON notificaciones(tipo);
+
+-- Índices para protección de historial (NUEVOS)
+CREATE INDEX idx_historial_protecciones_id_paciente ON historial_protecciones(id_paciente);
+CREATE INDEX idx_historial_protecciones_id_medico ON historial_protecciones(id_medico);
+CREATE INDEX idx_acceso_historial_logs_medico ON acceso_historial_logs(id_medico);
+CREATE INDEX idx_acceso_historial_logs_paciente ON acceso_historial_logs(id_paciente);
+CREATE INDEX idx_acceso_historial_logs_fecha ON acceso_historial_logs(fecha_acceso DESC);
 
 -- =====================================================
--- PASO 10: INSERCIÓN DE DATOS BÁSICOS
+-- PASO 10: FUNCIONES Y TRIGGERS
 -- =====================================================
 
--- 10.1 Insertar ubicaciones principales del Perú
+-- 10.1 Función para calcular precio total de una receta en una farmacia
+CREATE OR REPLACE FUNCTION calcular_precio_receta_farmacia(
+    p_receta_id UUID,
+    p_farmacia_id UUID
+) RETURNS TABLE (
+    total_precio DECIMAL(10,2),
+    medicamentos_disponibles INT,
+    medicamentos_faltantes INT
+) AS $$
+DECLARE
+    v_total DECIMAL(10,2) := 0;
+    v_disponibles INT := 0;
+    v_faltantes INT := 0;
+    v_medicamento RECORD;
+BEGIN
+    FOR v_medicamento IN
+        SELECT rd.medicamento_id, rd.cantidad
+        FROM receta_detalle rd
+        WHERE rd.id_receta = p_receta_id
+    LOOP
+        SELECT inv.stock_actual, inv.precio_venta INTO v_medicamento
+        FROM inventario_farmacia inv
+        WHERE inv.id_farmacia = p_farmacia_id 
+        AND inv.id_medicamento = v_medicamento.medicamento_id
+        AND inv.disponible = true;
+        
+        IF FOUND THEN
+            IF v_medicamento.stock_actual >= v_medicamento.cantidad THEN
+                v_total := v_total + (v_medicamento.precio_venta * v_medicamento.cantidad);
+                v_disponibles := v_disponibles + 1;
+            ELSE
+                v_faltantes := v_faltantes + 1;
+            END IF;
+        ELSE
+            v_faltantes := v_faltantes + 1;
+        END IF;
+    END LOOP;
+
+    RETURN QUERY SELECT v_total, v_disponibles, v_faltantes;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 10.2 Función para registrar cambio de estado de envío
+CREATE OR REPLACE FUNCTION registrar_cambio_envio_receta(
+    p_receta_id UUID,
+    p_estado_nuevo VARCHAR,
+    p_farmacia_id UUID,
+    p_usuario_id UUID,
+    p_motivo TEXT DEFAULT NULL
+) RETURNS TABLE (
+    exito BOOLEAN,
+    mensaje TEXT
+) AS $$
+DECLARE
+    v_estado_anterior VARCHAR;
+BEGIN
+    -- Obtener estado anterior
+    SELECT estado_envio INTO v_estado_anterior FROM recetas WHERE id = p_receta_id;
+    
+    -- Registrar en historial
+    INSERT INTO historial_envio_recetas 
+    (receta_id, farmacia_id, estado_anterior, estado_nuevo, usuario_id, motivo)
+    VALUES (p_receta_id, p_farmacia_id, v_estado_anterior, p_estado_nuevo, p_usuario_id, p_motivo);
+    
+    -- Retornar éxito
+    RETURN QUERY SELECT true, 'Cambio registrado exitosamente';
+EXCEPTION WHEN OTHERS THEN
+    RETURN QUERY SELECT false, 'Error al registrar cambio: ' || SQLERRM;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 10.3 Función para actualizar timestamp automáticamente
+CREATE OR REPLACE FUNCTION actualizar_timestamp_receta()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.ultima_actualizacion = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 10.4 Función para registrar cambios de estado automáticamente
+CREATE OR REPLACE FUNCTION registrar_cambio_estado_receta()
+RETURNS TRIGGER AS $$
+DECLARE
+    descripcion_cambio TEXT;
+    farmacia_id_val UUID;
+BEGIN
+    -- Solo registrar si cambió el estado_envio
+    IF OLD.estado_envio IS DISTINCT FROM NEW.estado_envio THEN
+        -- Obtener farmacia_id
+        farmacia_id_val := COALESCE(NEW.farmacia_seleccionada_id, NEW.id_farmacia_dispensadora);
+        
+        -- Generar descripción del cambio
+        descripcion_cambio := CASE 
+            WHEN NEW.estado_envio = 'enviada' THEN 'Receta enviada a farmacia'
+            WHEN NEW.estado_envio = 'recibida' THEN 'Farmacia aceptó la receta'
+            WHEN NEW.estado_envio = 'en_proceso' THEN 'Farmacia está preparando los medicamentos'
+            WHEN NEW.estado_envio = 'dispensada' THEN 
+                CASE 
+                    WHEN NEW.tipo_entrega = 'domicilio' THEN 'Medicamentos en camino a domicilio'
+                    ELSE 'Medicamentos listos para retiro en farmacia'
+                END
+            WHEN NEW.estado_envio = 'rechazada' THEN 'Farmacia rechazó la receta'
+            ELSE 'Estado actualizado'
+        END;
+        
+        -- Insertar en historial
+        INSERT INTO historial_cambios_estado_receta (
+            receta_id,
+            estado_anterior,
+            estado_nuevo,
+            farmacia_id,
+            descripcion,
+            detalles
+        ) VALUES (
+            NEW.id,
+            OLD.estado_envio,
+            NEW.estado_envio,
+            farmacia_id_val,
+            descripcion_cambio,
+            jsonb_build_object(
+                'codigo_receta', NEW.codigo_receta,
+                'tipo_entrega', NEW.tipo_entrega,
+                'direccion_entrega', NEW.direccion_entrega,
+                'motivo_rechazo', NEW.motivo_rechazo
+            )
+        );
+    END IF;
+    
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 10.5 Función para actualizar fechas específicas según estado
+CREATE OR REPLACE FUNCTION actualizar_fechas_especificas_receta()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Cuando se acepta (pasa a recibida)
+    IF OLD.estado_envio IS DISTINCT FROM NEW.estado_envio AND NEW.estado_envio = 'recibida' THEN
+        NEW.fecha_aceptacion_farmacia = CURRENT_TIMESTAMP;
+    END IF;
+    
+    -- Cuando pasa a en_proceso
+    IF OLD.estado_envio IS DISTINCT FROM NEW.estado_envio AND NEW.estado_envio = 'en_proceso' THEN
+        NEW.fecha_inicio_preparacion = CURRENT_TIMESTAMP;
+    END IF;
+    
+    -- Cuando se despacha (pasa a dispensada)
+    IF OLD.estado_envio IS DISTINCT FROM NEW.estado_envio AND NEW.estado_envio = 'dispensada' THEN
+        NEW.fecha_finalizacion_preparacion = CURRENT_TIMESTAMP;
+        NEW.fecha_dispensacion = CURRENT_TIMESTAMP;
+    END IF;
+    
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 10.6 Triggers
+-- Trigger para actualizar timestamp
+DROP TRIGGER IF EXISTS trigger_actualizar_timestamp_receta ON recetas;
+CREATE TRIGGER trigger_actualizar_timestamp_receta
+BEFORE UPDATE ON recetas
+FOR EACH ROW
+EXECUTE FUNCTION actualizar_timestamp_receta();
+
+-- Trigger para registrar cambios automáticamente
+DROP TRIGGER IF EXISTS trigger_registrar_cambio_estado ON recetas;
+CREATE TRIGGER trigger_registrar_cambio_estado
+AFTER UPDATE ON recetas
+FOR EACH ROW
+EXECUTE FUNCTION registrar_cambio_estado_receta();
+
+-- Trigger para fechas específicas (debe ejecutarse ANTES del trigger de timestamp)
+DROP TRIGGER IF EXISTS trigger_actualizar_fechas_especificas ON recetas;
+CREATE TRIGGER trigger_actualizar_fechas_especificas
+BEFORE UPDATE ON recetas
+FOR EACH ROW
+EXECUTE FUNCTION actualizar_fechas_especificas_receta();
+
+-- =====================================================
+-- PASO 11: VISTAS
+-- =====================================================
+
+-- 11.1 Vista para mostrar disponibilidad resumida por medicamento
+CREATE OR REPLACE VIEW vista_disponibilidad_medicamentos AS
+SELECT 
+    med.id,
+    med.nombre_comercial,
+    med.nombre_generico,
+    farm.id as farmacia_id,
+    farm.nombre_comercial as farmacia_nombre,
+    ub.departamento,
+    ub.provincia,
+    ub.distrito,
+    inv.stock_actual,
+    0 as reservas_activas,  -- ← VALOR TEMPORAL (0)
+    inv.stock_actual as stock_disponible,  -- ← USAR SOLO stock_actual
+    inv.precio_venta,
+    inv.fecha_vencimiento,
+    inv.lote,
+    CASE 
+        WHEN inv.stock_actual <= 0 THEN 'Sin Stock'  -- ← SOLO VERIFICAR stock_actual
+        WHEN inv.fecha_vencimiento <= CURRENT_DATE THEN 'Vencido'
+        WHEN inv.fecha_vencimiento <= CURRENT_DATE + INTERVAL '30 days' THEN 'Por Vencer'
+        ELSE 'Disponible'
+    END as estado_disponibilidad
+FROM medicamentos med
+JOIN inventario_farmacia inv ON med.id = inv.id_medicamento
+JOIN farmacias farm ON inv.id_farmacia = farm.id
+LEFT JOIN ubicaciones ub ON farm.id_ubicacion = ub.id
+WHERE inv.disponible = true
+ORDER BY farm.nombre_comercial, med.nombre_comercial;
+
+-- 11.2 Vista para consulta rápida de historial
+CREATE OR REPLACE VIEW vista_historial_recetas AS
+SELECT 
+    h.id,
+    h.receta_id,
+    r.codigo_receta,
+    h.estado_anterior,
+    h.estado_nuevo,
+    h.fecha_cambio,
+    h.descripcion,
+    h.detalles,
+    h.notificado,
+    f.nombre_comercial as farmacia_nombre,
+    u.nombre as usuario_nombre,
+    u.apellido as usuario_apellido
+FROM historial_cambios_estado_receta h
+JOIN recetas r ON h.receta_id = r.id
+LEFT JOIN farmacias f ON h.farmacia_id = f.id
+LEFT JOIN usuarios u ON h.usuario_id = u.id
+ORDER BY h.fecha_cambio DESC;
+
+-- =====================================================
+-- PASO 12: INSERCIÓN DE DATOS BÁSICOS
+-- =====================================================
+
+-- 12.1 Insertar ubicaciones principales del Perú
 INSERT INTO ubicaciones (departamento, provincia, distrito, codigo_postal) VALUES
 ('Lima', 'Lima', 'Miraflores', '15074'),
 ('Lima', 'Lima', 'San Isidro', '15076'),
@@ -493,7 +827,7 @@ INSERT INTO ubicaciones (departamento, provincia, distrito, codigo_postal) VALUE
 ('La Libertad', 'Trujillo', 'Trujillo', '13001'),
 ('Lambayeque', 'Chiclayo', 'Chiclayo', '14001');
 
--- 10.2 Insertar especialidades médicas
+-- 12.2 Insertar especialidades médicas
 INSERT INTO especialidades (nombre, descripcion) VALUES
 ('Medicina General', 'Atención primaria y diagnóstico general'),
 ('Cardiología', 'Especialidad en enfermedades del corazón'),
@@ -504,7 +838,7 @@ INSERT INTO especialidades (nombre, descripcion) VALUES
 ('Ortopedia', 'Enfermedades del sistema musculoesquelético'),
 ('Oftalmología', 'Enfermedades de los ojos');
 
--- 10.3 Insertar códigos CIE-10 de ejemplo
+-- 12.3 Insertar códigos CIE-10 de ejemplo
 INSERT INTO codigos_cie10 (codigo, nombre, descripcion, categoria, capitulo) VALUES
 ('I10', 'Hipertensión esencial (primaria)', 'Presión arterial elevada sin causa identificable', 'Enfermedades cardiovasculares', 'IX'),
 ('E11.9', 'Diabetes mellitus tipo 2, sin complicaciones', 'Trastorno metabólico de glucosa', 'Enfermedades endocrinas', 'IV'),
@@ -514,7 +848,7 @@ INSERT INTO codigos_cie10 (codigo, nombre, descripcion, categoria, capitulo) VAL
 ('F41.1', 'Trastorno de ansiedad generalizada', 'Ansiedad persistente y excesiva', 'Trastornos mentales', 'V'),
 ('N39.0', 'Infección de vías urinarias', 'Infección en tracto urinario', 'Enfermedades genitourinarias', 'XIV'),
 ('I25.1', 'Enfermedad ateroesclerótica del corazón', 'Enfermedad coronaria arteriosclerótica', 'Enfermedades cardiovasculares', 'IX'),
-('E04.9', 'Bocio no tóxico, no especificado', 'Agrandamiento de la glándula tiroides', 'Enfermedades endocrinas', 'IV'),
+('E04.9', 'Bocio no tóxico, no especificada', 'Agrandamiento de la glándula tiroides', 'Enfermedades endocrinas', 'IV'),
 ('J45.9', 'Asma, no especificada', 'Enfermedad crónica de las vías respiratorias', 'Enfermedades respiratorias', 'X'),
 ('K29.7', 'Gastritis, no especificada', 'Inflamación del revestimiento del estómago', 'Enfermedades digestivas', 'XI'),
 ('M17.9', 'Gonartrosis [artrosis de rodilla]', 'Artrosis de rodilla no especificada', 'Enfermedades musculoesqueléticas', 'XIII'),
@@ -527,7 +861,7 @@ INSERT INTO codigos_cie10 (codigo, nombre, descripcion, categoria, capitulo) VAL
 ('M79.1', 'Mialgia', 'Dolor muscular no especificado', 'Enfermedades musculoesqueléticas', 'XIII'),
 ('G43.9', 'Migraña, no especificada', 'Dolor de cabeza intenso', 'Enfermedades del sistema nervioso', 'VI');
 
--- 10.4 Insertar medicamentos de ejemplo (CON CÓDIGOS ÚNICOS)
+-- 12.4 Insertar medicamentos de ejemplo (CON CÓDIGOS ÚNICOS)
 INSERT INTO medicamentos (codigo_digemid, nombre_comercial, nombre_generico, forma_farmaceutica, concentracion, laboratorio, principio_activo, categoria_terapeutica) VALUES
 -- Medicamentos originales (1-7)
 ('DIG-123456', 'Losartán Potásico', 'Losartán', 'Tabletas', '50 mg', 'Genfar', 'Losartán', 'Antihipertensivo'),
@@ -560,7 +894,7 @@ INSERT INTO medicamentos (codigo_digemid, nombre_comercial, nombre_generico, for
 ('DIG-991199', 'Metformina XR', 'Metformina', 'Tabletas', '1000 mg', 'Merck', 'Metformina clorhidrato', 'Antidiabético'),
 ('DIG-100088', 'Losartán Plus', 'Losartán', 'Tabletas', '100 mg', 'Merck', 'Losartán potásico', 'Antihipertensivo');
 
--- 10.5 Insertar tratamientos recomendados (CORREGIDO con IDs correctos)
+-- 12.5 Insertar tratamientos recomendados (CORREGIDO con IDs correctos)
 INSERT INTO tratamientos_recomendados (codigo_cie10_id, medicamento_id, dosis_recomendada, duracion_tratamiento, linea_tratamiento, evidencia_nivel) VALUES
 -- Tratamientos para códigos CIE-10 1-7
 (1, 1, '1 tableta cada 24 horas', 'Tratamiento crónico', 1, 'A'),  -- Hipertensión -> Losartán
@@ -588,21 +922,20 @@ INSERT INTO tratamientos_recomendados (codigo_cie10_id, medicamento_id, dosis_re
 (19, 24, '1 tableta cada 8-12 horas', '3-7 días', 1, 'A'),  -- Mialgia -> Naproxeno
 (20, 25, '1 tableta al inicio del dolor', 'Según necesidad', 1, 'A');  -- Migraña -> Sumatriptán
 
-
--- 10.6 Insertar tipos de exámenes comunes
+-- 12.6 Insertar tipos de exámenes comunes
 INSERT INTO tipos_examenes (nombre, categoria, descripcion, preparacion_requerida, tiempo_resultado_horas, precio_referencial) VALUES
 ('Hemograma completo', 'Hematología', 'Análisis completo de células sanguíneas', 'Ayuno de 8 horas', 2, 25.00),
 ('Perfil lipídico', 'Bioquímica', 'Colesterol total, HDL, LDL y triglicéridos', 'Ayuno de 12 horas', 4, 35.00),
 ('Glucosa en ayunas', 'Bioquímica', 'Niveles de glucosa en sangre', 'Ayuno de 8 horas', 2, 15.00),
-('Urocultivo', 'Microbiología', 'Cultivo de orina para detectar bacterias', 'Primera orina de la mañana', 48, 40.00),
+('Urocultivo', 'Microbiología', 'Culturo de orina para detectar bacterias', 'Primera orina de la mañana', 48, 40.00),
 ('Radiografía de tórax', 'Imagenología', 'Estudio radiológico del tórax', 'Ninguna', 24, 80.00),
 ('Electrocardiograma', 'Cardiología', 'Registro de actividad eléctrica del corazón', 'Ninguna', 1, 50.00);
 
 -- =====================================================
--- PASO 11: INSERCIÓN DE DATOS DE EJEMPLO (USUARIOS Y PERFILES)
+-- PASO 13: INSERCIÓN DE DATOS DE EJEMPLO (USUARIOS Y PERFILES)
 -- =====================================================
 
--- 11.1 INSERTAR USUARIOS
+-- 13.1 INSERTAR USUARIOS
 -- Nota: Las contraseñas están hasheadas con crypt (password123)
 
 -- Usuario Paciente 1
@@ -635,7 +968,7 @@ INSERT INTO usuarios (nombre, apellido, email, password_hash, telefono, rol, act
 VALUES 
 ('Laboratorio', 'Clinilabs', 'admin@clinilabs.com', crypt('password123', gen_salt('bf')), '014567891', 'laboratorio', true, true);
 
--- 11.2 INSERTAR PACIENTES
+-- 13.2 INSERTAR PACIENTES
 -- Nota: Usamos los IDs de usuarios recién creados
 
 INSERT INTO pacientes (id_usuario, fecha_nacimiento, sexo, direccion, id_ubicacion, dni, tipo_sangre, alergias, seguro_medico, peso_kg, altura_cm)
@@ -667,7 +1000,7 @@ VALUES
     175
 );
 
--- 11.3 INSERTAR MÉDICOS
+-- 13.3 INSERTAR MÉDICOS
 
 INSERT INTO medicos (id_usuario, id_especialidad, numero_colegiatura, anos_experiencia, direccion_consultorio, id_ubicacion, horario_atencion, tarifa_consulta, acepta_seguro, biografia, certificaciones)
 VALUES 
@@ -698,7 +1031,7 @@ VALUES
     'Especialidad en Pediatría - Hospital del Niño, Certificación en Lactancia Materna - OMS'
 );
 
--- 11.4 INSERTAR FARMACIAS
+-- 13.4 INSERTAR FARMACIAS
 
 INSERT INTO farmacias (id_usuario, nombre_comercial, ruc, direccion, id_ubicacion, horario_atencion, delivery_disponible, radio_delivery_km, licencia_funcionamiento)
 VALUES 
@@ -714,7 +1047,7 @@ VALUES
     'LF-2023-001234'
 );
 
--- 11.5 INSERTAR LABORATORIOS
+-- 13.5 INSERTAR LABORATORIOS
 
 INSERT INTO laboratorios (id_usuario, nombre_comercial, ruc, direccion, id_ubicacion, horario_atencion, tipos_examenes, certificaciones, tiempo_promedio_resultados)
 VALUES 
@@ -730,7 +1063,7 @@ VALUES
     24
 );
 
--- 11.6 INSERTAR INVENTARIO DE FARMACIA (Ejemplos de stock)
+-- 13.6 INSERTAR INVENTARIO DE FARMACIA (Ejemplos de stock)
 INSERT INTO inventario_farmacia (id_farmacia, id_medicamento, stock_actual, stock_minimo, precio_venta, fecha_vencimiento, lote, disponible) VALUES
 -- Medicamentos 1-10 (Originales + Nuevos)
 (
@@ -977,8 +1310,7 @@ INSERT INTO inventario_farmacia (id_farmacia, id_medicamento, stock_actual, stoc
     30, 25, 15.00, '2024-10-31', 'LOT-2023-047', true
 );
 
-
--- 11.7 INSERTAR EXPEDIENTES MÉDICOS PARA LOS PACIENTES
+-- 13.7 INSERTAR EXPEDIENTES MÉDICOS PARA LOS PACIENTES
 
 INSERT INTO expedientes_medicos (paciente_id, numero_expediente, alergias, enfermedades_cronicas, medicamentos_actuales, cirugias_previas, antecedentes_familiares)
 VALUES 
@@ -1002,169 +1334,116 @@ VALUES
 );
 
 -- =====================================================
--- MIGRACIÓN: Sistema de distribución de recetas a farmacias
--- Fecha: 2025-11-12
--- Descripción: Agrega campos para que pacientes seleccionen farmacia
+-- PASO 14: MIGRACIÓN COMPLETA - CAMPOS ADICIONALES
 -- =====================================================
 
--- 1. Agregar columnas a tabla recetas
-ALTER TABLE recetas
-ADD COLUMN IF NOT EXISTS farmacia_seleccionada_id UUID REFERENCES farmacias(id) ON DELETE SET NULL,
-ADD COLUMN IF NOT EXISTS estado_envio VARCHAR(20) DEFAULT 'no_enviada' CHECK (estado_envio IN ('no_enviada', 'enviada', 'recibida', 'rechazada', 'dispensada')),
-ADD COLUMN IF NOT EXISTS fecha_envio_farmacia TIMESTAMP,
-ADD COLUMN IF NOT EXISTS motivo_rechazo TEXT;
-
--- 2. Crear índices para búsquedas rápidas
-CREATE INDEX IF NOT EXISTS idx_recetas_farmacia_seleccionada ON recetas(farmacia_seleccionada_id, estado_envio);
-CREATE INDEX IF NOT EXISTS idx_recetas_estado_envio ON recetas(estado_envio, fecha_emision);
-
--- 3. Crear tabla de historial de envíos de recetas (auditoría)
-CREATE TABLE IF NOT EXISTS historial_envio_recetas (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    receta_id UUID NOT NULL REFERENCES recetas(id) ON DELETE CASCADE,
-    farmacia_id UUID REFERENCES farmacias(id) ON DELETE SET NULL,
-    estado_anterior VARCHAR(20),
-    estado_nuevo VARCHAR(20) NOT NULL,
-    motivo TEXT,
-    usuario_id UUID REFERENCES usuarios(id),
-    fecha_cambio TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_historial_envio_receta ON historial_envio_recetas(receta_id, fecha_cambio);
-CREATE INDEX IF NOT EXISTS idx_historial_envio_farmacia ON historial_envio_recetas(farmacia_id, fecha_cambio);
-
--- 4. Crear tabla de comparación de opciones farmacia (para registro de búsquedas)
-CREATE TABLE IF NOT EXISTS busquedas_farmacias_recetas (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    receta_id UUID NOT NULL REFERENCES recetas(id) ON DELETE CASCADE,
-    paciente_id UUID NOT NULL REFERENCES pacientes(id) ON DELETE CASCADE,
-    fecha_busqueda TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    farmacias_consultadas JSONB NOT NULL, -- Array con {id, nombre, precio_total, disponibilidad, distancia}
-    farmacia_seleccionada_id UUID REFERENCES farmacias(id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_busquedas_receta ON busquedas_farmacias_recetas(receta_id);
-CREATE INDEX IF NOT EXISTS idx_busquedas_paciente ON busquedas_farmacias_recetas(paciente_id, fecha_busqueda);
-
--- 5. Agregar columnas a inventario_farmacia para mejor gestión
+-- 14.1 Agregar columnas a inventario_farmacia para mejor gestión
 ALTER TABLE inventario_farmacia
 ADD COLUMN IF NOT EXISTS reservas_activas INTEGER DEFAULT 0,
 ADD COLUMN IF NOT EXISTS ultima_actualizacion_stock TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
 
--- 6. Crear vista para mostrar disponibilidad resumida por medicamento
-CREATE OR REPLACE VIEW vista_disponibilidad_medicamentos AS
+-- 14.2 Insertar registros históricos para recetas existentes con estado_envio
+INSERT INTO historial_cambios_estado_receta (
+    receta_id,
+    estado_anterior,
+    estado_nuevo,
+    farmacia_id,
+    fecha_cambio,
+    descripcion,
+    detalles,
+    notificado
+)
 SELECT 
-    med.id,
-    med.nombre_comercial,
-    med.nombre_generico,
-    farm.id as farmacia_id,
-    farm.nombre_comercial as farmacia_nombre,
-    ub.departamento,
-    ub.provincia,
-    ub.distrito,
-    inv.stock_actual,
-    inv.reservas_activas,
-    (inv.stock_actual - inv.reservas_activas) as stock_disponible,
-    inv.precio_venta,
-    inv.fecha_vencimiento,
-    inv.lote,
+    r.id,
+    NULL,
+    r.estado_envio,
+    r.farmacia_seleccionada_id,
+    COALESCE(r.fecha_envio_farmacia, r.fecha_emision),
     CASE 
-        WHEN (inv.stock_actual - inv.reservas_activas) <= 0 THEN 'Sin Stock'
-        WHEN inv.fecha_vencimiento <= CURRENT_DATE THEN 'Vencido'
-        WHEN inv.fecha_vencimiento <= CURRENT_DATE + INTERVAL '30 days' THEN 'Por Vencer'
-        ELSE 'Disponible'
-    END as estado_disponibilidad
-FROM medicamentos med
-JOIN inventario_farmacia inv ON med.id = inv.id_medicamento
-JOIN farmacias farm ON inv.id_farmacia = farm.id
-LEFT JOIN ubicaciones ub ON farm.id_ubicacion = ub.id
-WHERE inv.disponible = true
-ORDER BY farm.nombre_comercial, med.nombre_comercial;
+        WHEN r.estado_envio = 'enviada' THEN 'Receta enviada a farmacia'
+        WHEN r.estado_envio = 'recibida' THEN 'Farmacia aceptó la receta'
+        WHEN r.estado_envio = 'en_proceso' THEN 'Farmacia está preparando los medicamentos'
+        WHEN r.estado_envio = 'dispensada' THEN 'Medicamentos listos'
+        WHEN r.estado_envio = 'rechazada' THEN 'Farmacia rechazó la receta'
+        ELSE 'Estado inicial'
+    END,
+    jsonb_build_object(
+        'codigo_receta', r.codigo_receta,
+        'tipo_entrega', r.tipo_entrega,
+        'es_registro_inicial', true
+    ),
+    true
+FROM recetas r
+WHERE r.estado_envio IS NOT NULL 
+  AND r.estado_envio != 'no_enviada'
+  AND NOT EXISTS (
+    SELECT 1 FROM historial_cambios_estado_receta h 
+    WHERE h.receta_id = r.id
+  );
 
--- 7. Crear función para calcular precio total de una receta en una farmacia
-CREATE OR REPLACE FUNCTION calcular_precio_receta_farmacia(
-    p_receta_id UUID,
-    p_farmacia_id UUID
-) RETURNS TABLE (
-    total_precio DECIMAL(10,2),
-    medicamentos_disponibles INT,
-    medicamentos_faltantes INT
-) AS $$
-DECLARE
-    v_total DECIMAL(10,2) := 0;
-    v_disponibles INT := 0;
-    v_faltantes INT := 0;
-    v_medicamento RECORD;
-BEGIN
-    FOR v_medicamento IN
-        SELECT rd.medicamento_id, rd.cantidad
-        FROM receta_detalle rd
-        WHERE rd.id_receta = p_receta_id
-    LOOP
-        SELECT inv.stock_actual, inv.precio_venta INTO v_medicamento
-        FROM inventario_farmacia inv
-        WHERE inv.id_farmacia = p_farmacia_id 
-        AND inv.id_medicamento = v_medicamento.medicamento_id
-        AND inv.disponible = true;
-        
-        IF FOUND THEN
-            IF v_medicamento.stock_actual >= v_medicamento.cantidad THEN
-                v_total := v_total + (v_medicamento.precio_venta * v_medicamento.cantidad);
-                v_disponibles := v_disponibles + 1;
-            ELSE
-                v_faltantes := v_faltantes + 1;
-            END IF;
-        ELSE
-            v_faltantes := v_faltantes + 1;
-        END IF;
-    END LOOP;
+-- =====================================================
+-- PASO 15: COMENTARIOS PARA DOCUMENTACIÓN
+-- =====================================================
 
-    RETURN QUERY SELECT v_total, v_disponibles, v_faltantes;
-END;
-$$ LANGUAGE plpgsql;
-
--- 8. Crear función para registrar cambio de estado de envío
-CREATE OR REPLACE FUNCTION registrar_cambio_envio_receta(
-    p_receta_id UUID,
-    p_estado_nuevo VARCHAR,
-    p_farmacia_id UUID,
-    p_usuario_id UUID,
-    p_motivo TEXT DEFAULT NULL
-) RETURNS TABLE (
-    exito BOOLEAN,
-    mensaje TEXT
-) AS $$
-DECLARE
-    v_estado_anterior VARCHAR;
-BEGIN
-    -- Obtener estado anterior
-    SELECT estado_envio INTO v_estado_anterior FROM recetas WHERE id = p_receta_id;
-    
-    -- Registrar en historial
-    INSERT INTO historial_envio_recetas 
-    (receta_id, farmacia_id, estado_anterior, estado_nuevo, usuario_id, motivo)
-    VALUES (p_receta_id, p_farmacia_id, v_estado_anterior, p_estado_nuevo, p_usuario_id, p_motivo);
-    
-    -- Retornar éxito
-    RETURN QUERY SELECT true, 'Cambio registrado exitosamente';
-EXCEPTION WHEN OTHERS THEN
-    RETURN QUERY SELECT false, 'Error al registrar cambio: ' || SQLERRM;
-END;
-$$ LANGUAGE plpgsql;
-
--- 9. Agregar comentarios a las nuevas columnas
+-- Comentarios para las nuevas columnas de recetas
 COMMENT ON COLUMN recetas.farmacia_seleccionada_id IS 'Referencia a la farmacia elegida por el paciente para dispensar la receta';
 COMMENT ON COLUMN recetas.estado_envio IS 'Estado del envío: no_enviada, enviada, recibida, rechazada, dispensada';
 COMMENT ON COLUMN recetas.fecha_envio_farmacia IS 'Fecha y hora cuando el paciente envió la receta a la farmacia';
 COMMENT ON COLUMN recetas.motivo_rechazo IS 'Razón por la que la farmacia rechazó la receta (si aplica)';
+COMMENT ON COLUMN recetas.fecha_aceptacion_farmacia IS 'Fecha y hora en que la farmacia aceptó la receta';
+COMMENT ON COLUMN recetas.fecha_inicio_preparacion IS 'Fecha y hora en que la farmacia comenzó a preparar los medicamentos';
+COMMENT ON COLUMN recetas.fecha_finalizacion_preparacion IS 'Fecha y hora en que la farmacia finalizó la preparación';
+COMMENT ON COLUMN recetas.ultima_actualizacion IS 'Timestamp de la última modificación de la receta';
+
+-- Comentarios para inventario
 COMMENT ON COLUMN inventario_farmacia.reservas_activas IS 'Cantidad de medicamentos reservados en recetas no dispensadas aún';
 
--- 10. Verificar integridad
+-- Comentarios para tablas de migración
+COMMENT ON TABLE historial_cambios_estado_receta IS 'Registro histórico de todos los cambios de estado de recetas para tracking en tiempo real';
+COMMENT ON COLUMN historial_cambios_estado_receta.receta_id IS 'ID de la receta a la que pertenece este cambio';
+COMMENT ON COLUMN historial_cambios_estado_receta.estado_anterior IS 'Estado previo antes del cambio';
+COMMENT ON COLUMN historial_cambios_estado_receta.estado_nuevo IS 'Nuevo estado después del cambio';
+COMMENT ON COLUMN historial_cambios_estado_receta.notificado IS 'Indica si el paciente fue notificado de este cambio';
+COMMENT ON COLUMN historial_cambios_estado_receta.detalles IS 'Información adicional del cambio en formato JSON';
+
+-- =====================================================
+-- PASO 16: SINCRONIZACIÓN DE ESTADOS EXISTENTES
+-- =====================================================
+
+-- Este script sincroniza los estados de recetas que fueron procesadas
+-- ANTES de implementar la sincronización automática de estado_envio
+
+-- 16.1 Sincronizar recetas en estado 'en_proceso'
+UPDATE recetas
+SET estado_envio = 'en_proceso'
+WHERE estado = 'en_proceso' 
+  AND (estado_envio IS NULL OR estado_envio != 'en_proceso')
+  AND farmacia_seleccionada_id IS NOT NULL;
+
+-- 16.2 Sincronizar recetas dispensadas
+UPDATE recetas
+SET estado_envio = 'dispensada'
+WHERE estado = 'dispensada' 
+  AND (estado_envio IS NULL OR estado_envio != 'dispensada')
+  AND farmacia_seleccionada_id IS NOT NULL;
+
+-- 16.3 Sincronizar recetas canceladas/rechazadas
+UPDATE recetas
+SET estado_envio = 'rechazada'
+WHERE estado = 'cancelada' 
+  AND (estado_envio IS NULL OR estado_envio != 'rechazada')
+  AND farmacia_seleccionada_id IS NOT NULL;
+
+-- 16.4 Verificar resultados
 SELECT 
-    'Migración completada exitosamente' as estado,
-    (SELECT COUNT(*) FROM recetas) as total_recetas,
-    (SELECT COUNT(*) FROM farmacias) as total_farmacias,
-    (SELECT COUNT(*) FROM inventario_farmacia) as total_items_inventario;
+    estado,
+    estado_envio,
+    COUNT(*) as cantidad
+FROM recetas
+WHERE farmacia_seleccionada_id IS NOT NULL
+GROUP BY estado, estado_envio
+ORDER BY estado, estado_envio;
+
 
 -- =====================================================
 -- FIN DEL SCRIPT COMPLETO UNIFICADO

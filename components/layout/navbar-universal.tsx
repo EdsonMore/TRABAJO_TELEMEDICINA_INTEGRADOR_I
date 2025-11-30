@@ -1,7 +1,7 @@
 // components/layout/navbar-universal.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/auth-context";
 import { useRouter, usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -25,7 +25,6 @@ import {
   LogOut,
   Menu,
   X,
-  Bell,
   Home,
   Calendar,
   FileText,
@@ -36,15 +35,18 @@ import {
   Package,
   Activity,
   Database,
+  ChevronDown,
 } from "lucide-react";
+import { BotonNotificaciones } from "@/components/notificaciones/boton-notificaciones";
 
 interface NavItem {
   label: string;
   icon: React.ElementType;
   href?: string;
   action?: () => void;
-  variant?: "default" | "primary" | "success";
+  variant?: "default" | "primary" | "success" | "danger";
   showOnMobile?: boolean;
+  badge?: string | number;
 }
 
 interface NavbarConfig {
@@ -55,6 +57,8 @@ interface NavbarConfig {
   title: string;
   subtitle: string;
   actions: NavItem[];
+  quickLinks?: NavItem[];
+  contextMenu?: NavItem[];
 }
 
 const getNavbarConfig = (
@@ -66,8 +70,8 @@ const getNavbarConfig = (
   const configs: Record<string, NavbarConfig> = {
     paciente: {
       logo: { icon: Heart, color: "bg-blue-600" },
-      title: `Hola, ${usuario?.nombre} ${usuario?.apellido}`,
-      subtitle: "Panel de salud personal",
+      title: `${usuario?.nombre} ${usuario?.apellido}`,
+      subtitle: "Tu salud es nuestra prioridad",
       actions: [
         {
           label: "Nueva Cita",
@@ -77,19 +81,36 @@ const getNavbarConfig = (
           showOnMobile: true,
         },
         {
-          label: "Perfil",
-          icon: User,
+          label: "Recetas",
+          icon: Pill,
           action: () => {
-            // Disparar evento para abrir modal de perfil
-            window.dispatchEvent(new CustomEvent("openProfileModal"));
+            window.dispatchEvent(new CustomEvent("openRecetasTab"));
           },
+          variant: "default",
           showOnMobile: false,
+        },
+      ],
+      quickLinks: [
+        {
+          label: "Mis Citas",
+          icon: Calendar,
+          action: () => router.push("/dashboard/paciente?tab=citas"),
+        },
+        {
+          label: "Mis Recetas",
+          icon: Pill,
+          action: () => router.push("/dashboard/paciente?tab=recetas"),
+        },
+        {
+          label: "Resultados",
+          icon: TestTube,
+          action: () => router.push("/dashboard/paciente?tab=resultados"),
         },
       ],
     },
 
     medico: {
-      logo: { icon: Stethoscope, color: "bg-blue-600" },
+      logo: { icon: Stethoscope, color: "bg-emerald-600" },
       title: `Dr. ${usuario?.nombre} ${usuario?.apellido}`,
       subtitle: usuario?.especialidad || "Medicina General",
       actions: [
@@ -103,24 +124,41 @@ const getNavbarConfig = (
           showOnMobile: true,
         },
         {
-          label: "Buscar Paciente",
-          icon: Search,
+          label: "Nueva Receta",
+          icon: FileText,
           action: () => {
-            window.dispatchEvent(new CustomEvent("buscarPacientes"));
+            window.dispatchEvent(new CustomEvent("crearReceta"));
           },
           variant: "primary",
           showOnMobile: true,
         },
       ],
+      quickLinks: [
+        {
+          label: "Mi Agenda",
+          icon: Calendar,
+          action: () => router.push("/dashboard/medico?tab=agenda"),
+        },
+        {
+          label: "Mis Pacientes",
+          icon: Users,
+          action: () => router.push("/dashboard/medico?tab=pacientes"),
+        },
+        {
+          label: "Mis Recetas",
+          icon: FileText,
+          action: () => router.push("/dashboard/medico?tab=recetas"),
+        },
+      ],
     },
 
     farmacia: {
-      logo: { icon: Pill, color: "bg-blue-600" },
-      title: `Hola, ${usuario?.nombre} ${usuario?.apellido}`,
-      subtitle: "Panel de gestión farmacéutica",
+      logo: { icon: Pill, color: "bg-purple-600" },
+      title: `${usuario?.nombre} ${usuario?.apellido}`,
+      subtitle: "Gestión Farmacéutica",
       actions: [
         {
-          label: "Nueva Receta",
+          label: "Recetas",
           icon: Plus,
           action: () => {
             window.dispatchEvent(new CustomEvent("gestionarRecetas"));
@@ -129,40 +167,98 @@ const getNavbarConfig = (
           showOnMobile: true,
         },
         {
-          label: "Buscar",
+          label: "Búsqueda",
           icon: Search,
+          action: () => {
+            window.dispatchEvent(new CustomEvent("buscarRecetas"));
+          },
           showOnMobile: false,
+        },
+      ],
+      quickLinks: [
+        {
+          label: "Recetas Pendientes",
+          icon: FileText,
+          action: () => router.push("/dashboard/farmacia?tab=recetas"),
+        },
+        {
+          label: "Inventario",
+          icon: Package,
+          action: () => router.push("/dashboard/farmacia?tab=inventario"),
+        },
+        {
+          label: "Despachos",
+          icon: Activity,
+          action: () => router.push("/dashboard/farmacia?tab=despachos"),
         },
       ],
     },
 
     laboratorio: {
-      logo: { icon: TestTube, color: "bg-blue-600" },
-      title: `Hola, ${usuario?.nombre} ${usuario?.apellido}`,
-      subtitle: "Panel de gestión de laboratorio",
+      logo: { icon: TestTube, color: "bg-orange-600" },
+      title: `${usuario?.nombre} ${usuario?.apellido}`,
+      subtitle: "Gestión de Laboratorio",
       actions: [
         {
           label: "Nuevo Resultado",
           icon: FileText,
+          action: () => {
+            window.dispatchEvent(new CustomEvent("subirResultado"));
+          },
           variant: "primary",
           showOnMobile: true,
+        },
+      ],
+      quickLinks: [
+        {
+          label: "Resultados",
+          icon: FileText,
+          action: () => router.push("/dashboard/laboratorio?tab=resultados"),
+        },
+        {
+          label: "Solicitudes",
+          icon: Calendar,
+          action: () => router.push("/dashboard/laboratorio?tab=solicitudes"),
         },
       ],
     },
 
     administrador: {
-      logo: { icon: Settings, color: "bg-blue-600" },
+      logo: { icon: Database, color: "bg-red-600" },
       title: "Panel de Administración",
-      subtitle: "Control total del sistema MediLink+",
+      subtitle: "Control del Sistema MediLink+",
       actions: [
         {
-          label: "Registrar Usuario",
+          label: "Nuevo Usuario",
           icon: Plus,
           action: () => {
             window.dispatchEvent(new CustomEvent("registrarUsuario"));
           },
           variant: "primary",
           showOnMobile: true,
+        },
+        {
+          label: "Configuración",
+          icon: Settings,
+          action: () => router.push("/dashboard/admin?tab=configuracion"),
+          showOnMobile: false,
+        },
+      ],
+      quickLinks: [
+        {
+          label: "Usuarios",
+          icon: Users,
+          action: () => router.push("/dashboard/admin?tab=usuarios"),
+        },
+        {
+          label: "Sistema",
+          icon: Settings,
+          action: () => router.push("/dashboard/admin?tab=sistema"),
+        },
+        {
+          label: "Reportes",
+          icon: FileText,
+          action: () => router.push("/dashboard/admin?tab=reportes"),
         },
       ],
     },
@@ -184,6 +280,7 @@ export function NavbarUniversal({
   const router = useRouter();
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showQuickLinks, setShowQuickLinks] = useState(false);
 
   if (!usuario) return null;
 
@@ -216,41 +313,61 @@ export function NavbarUniversal({
         return "bg-blue-600 hover:bg-blue-700 text-white";
       case "success":
         return "bg-green-600 hover:bg-green-700 text-white";
+      case "danger":
+        return "bg-red-600 hover:bg-red-700 text-white";
       default:
         return "outline";
     }
   };
 
+  // Determinar el color dinámicamente según el rol
+  const getRoleColor = () => {
+    switch (usuario?.rol) {
+      case "medico":
+        return "emerald";
+      case "farmacia":
+        return "purple";
+      case "laboratorio":
+        return "orange";
+      case "administrador":
+        return "red";
+      default:
+        return "blue";
+    }
+  };
+
+  const roleColor = getRoleColor();
+
   return (
-    <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
-      <div className="px-4 sm:px-6 lg:px-8">
+    <header className={`bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm`}>
+      <div className="px-3 sm:px-4 lg:px-6">
         <div className="flex items-center justify-between h-16">
-          {/* Logo y Nombre */}
-          <div className="flex items-center space-x-3 flex-1 min-w-0">
-            {usuario.rol === "medico" ? (
-              <Avatar className="w-10 h-10 border-2 border-blue-200 flex-shrink-0">
+          {/* Logo y Nombre - Mejorado */}
+          <div className="flex items-center space-x-2 sm:space-x-3 flex-1 min-w-0">
+            {usuario.rol === "medico" && usuario?.avatar_url ? (
+              <Avatar className={`w-10 h-10 border-2 border-${roleColor}-200 flex-shrink-0`}>
                 <AvatarImage
-                  src={usuario?.avatar_url ?? ""}
+                  src={usuario?.avatar_url}
                   alt={config.title}
                   className="object-cover"
                 />
-                <AvatarFallback className="bg-blue-600 text-white font-semibold text-sm">
+                <AvatarFallback className={`bg-${roleColor}-600 text-white font-semibold text-sm`}>
                   {getInitials()}
                 </AvatarFallback>
               </Avatar>
             ) : (
               <div
-                className={`w-10 h-10 ${config.logo.color} rounded-full flex items-center justify-center flex-shrink-0`}
+                className={`w-10 h-10 ${config.logo.color} rounded-full flex items-center justify-center flex-shrink-0 shadow-sm`}
               >
                 <LogoIcon className="w-5 h-5 text-white" />
               </div>
             )}
 
             <div className="min-w-0 flex-1">
-              <h1 className="text-lg font-bold text-gray-900 truncate">
+              <h1 className="text-sm sm:text-lg font-bold text-gray-900 truncate">
                 {config.title}
               </h1>
-              <p className="text-sm text-gray-600 hidden xs:block truncate">
+              <p className="text-xs sm:text-sm text-gray-500 hidden xs:block truncate">
                 {config.subtitle}
               </p>
             </div>
@@ -258,20 +375,40 @@ export function NavbarUniversal({
 
           {/* Acciones Desktop */}
           <div className="hidden sm:flex items-center space-x-2 ml-4">
-            {/* Notificaciones */}
-            {showNotifications && (
-              <Button variant="ghost" size="sm" className="relative">
-                <Bell className="w-4 h-4" />
-                {notificationCount > 0 && (
-                  <Badge
-                    variant="destructive"
-                    className="absolute -top-1 -right-1 h-5 w-5 p-0 flex items-center justify-center text-xs"
+            {/* Quick Links Dropdown */}
+            {config.quickLinks && config.quickLinks.length > 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs sm:text-sm"
                   >
-                    {notificationCount}
-                  </Badge>
-                )}
-              </Button>
+                    <ChevronDown className="w-4 h-4 mr-1" />
+                    <span className="hidden md:inline">Accesos Rápidos</span>
+                    <span className="md:hidden">+</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-56">
+                  {config.quickLinks.map((link, index) => {
+                    const Icon = link.icon;
+                    return (
+                      <DropdownMenuItem
+                        key={index}
+                        onClick={link.action}
+                        className="cursor-pointer"
+                      >
+                        <Icon className="w-4 h-4 mr-2" />
+                        {link.label}
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
+
+            {/* Notificaciones */}
+            {showNotifications && <BotonNotificaciones />}
 
             {/* Botones de Acción Principales */}
             {config.actions.map((action, index) => {
@@ -282,13 +419,16 @@ export function NavbarUniversal({
                   onClick={action.action}
                   size="sm"
                   className={getButtonVariant(action.variant)}
-                  variant={action.variant ? undefined : "outline"}
+                  variant={action.variant && action.variant !== "default" ? undefined : "outline"}
+                  title={action.label}
                 >
-                  <Icon className="w-4 h-4 mr-1" />
-                  <span className="hidden md:inline">{action.label}</span>
-                  <span className="md:hidden">
-                    {action.label.split(" ")[0]}
-                  </span>
+                  <Icon className="w-4 h-4" />
+                  <span className="hidden md:inline ml-1">{action.label}</span>
+                  {action.badge && (
+                    <Badge variant="secondary" className="ml-1 text-xs">
+                      {action.badge}
+                    </Badge>
+                  )}
                 </Button>
               );
             })}
@@ -296,9 +436,11 @@ export function NavbarUniversal({
             {/* Menú de Usuario */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="ml-2">
+                <Button variant="ghost" size="sm" className="ml-1">
                   <User className="w-4 h-4 mr-1" />
-                  <span className="hidden lg:inline">Mi Cuenta</span>
+                  <span className="hidden lg:inline text-xs sm:text-sm">
+                    Cuenta
+                  </span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
@@ -308,6 +450,10 @@ export function NavbarUniversal({
                       {usuario?.nombre} {usuario?.apellido}
                     </p>
                     <p className="text-xs leading-none text-muted-foreground">
+                      {usuario?.rol.charAt(0).toUpperCase() +
+                        usuario?.rol.slice(1)}
+                    </p>
+                    <p className="text-xs leading-none text-muted-foreground truncate">
                       {usuario?.email}
                     </p>
                   </div>
@@ -327,14 +473,18 @@ export function NavbarUniversal({
                   <User className="w-4 h-4 mr-2" />
                   Mi Perfil
                 </DropdownMenuItem>
-                <DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() =>
+                    router.push(`/dashboard/${usuario.rol}?tab=perfil`)
+                  }
+                >
                   <Settings className="w-4 h-4 mr-2" />
                   Configuración
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={handleLogout}
-                  className="text-red-600 focus:text-red-600"
+                  className="text-red-600 focus:text-red-600 focus:bg-red-50 cursor-pointer"
                 >
                   <LogOut className="w-4 h-4 mr-2" />
                   Cerrar Sesión
@@ -360,58 +510,100 @@ export function NavbarUniversal({
 
         {/* Menú Móvil */}
         {mobileMenuOpen && (
-          <div className="sm:hidden border-t border-gray-200 pt-4 pb-4 space-y-2 bg-white">
+          <div className="sm:hidden border-t border-gray-200 pt-3 pb-3 space-y-2 bg-white">
             {/* Acciones Principales */}
-            {config.actions
-              .filter((action) => action.showOnMobile !== false)
-              .map((action, index) => {
-                const Icon = action.icon;
-                return (
-                  <Button
-                    key={index}
-                    variant="outline"
-                    className="w-full justify-start text-base h-12"
-                    onClick={() => {
-                      action.action?.();
-                      setMobileMenuOpen(false);
-                    }}
-                  >
-                    <Icon className="w-5 h-5 mr-3" />
-                    {action.label}
-                  </Button>
-                );
-              })}
+            {config.actions.map((action, index) => {
+              const Icon = action.icon;
+              if (action.showOnMobile === false) return null;
+              return (
+                <Button
+                  key={index}
+                  variant="outline"
+                  className="w-full justify-start text-sm h-10"
+                  onClick={() => {
+                    action.action?.();
+                    setMobileMenuOpen(false);
+                  }}
+                >
+                  <Icon className="w-4 h-4 mr-2" />
+                  {action.label}
+                  {action.badge && (
+                    <Badge variant="secondary" className="ml-auto text-xs">
+                      {action.badge}
+                    </Badge>
+                  )}
+                </Button>
+              );
+            })}
+
+            {/* Quick Links para Móvil */}
+            {config.quickLinks && config.quickLinks.length > 0 && (
+              <>
+                <div className="my-2 px-3 py-1">
+                  <p className="text-xs font-semibold text-gray-600">
+                    Accesos Rápidos
+                  </p>
+                </div>
+                {config.quickLinks.map((link, index) => {
+                  const Icon = link.icon;
+                  return (
+                    <Button
+                      key={index}
+                      variant="ghost"
+                      className="w-full justify-start text-sm h-10"
+                      onClick={() => {
+                        link.action?.();
+                        setMobileMenuOpen(false);
+                      }}
+                    >
+                      <Icon className="w-4 h-4 mr-2" />
+                      {link.label}
+                    </Button>
+                  );
+                })}
+              </>
+            )}
+
+            {/* Notificaciones en Móvil */}
+            {showNotifications && (
+              <div className="w-full">
+                <BotonNotificaciones />
+              </div>
+            )}
 
             {/* Perfil */}
             <Button
               variant="outline"
-              className="w-full justify-start text-base h-12"
+              className="w-full justify-start text-sm h-10"
               onClick={() => {
                 window.dispatchEvent(new CustomEvent("openProfileModal"));
                 setMobileMenuOpen(false);
               }}
             >
-              <User className="w-5 h-5 mr-3" />
+              <User className="w-4 h-4 mr-2" />
               Mi Perfil
             </Button>
 
             {/* Configuración */}
             <Button
               variant="outline"
-              className="w-full justify-start text-base h-12"
-              onClick={() => setMobileMenuOpen(false)}
+              className="w-full justify-start text-sm h-10"
+              onClick={() => {
+                router.push(`/dashboard/${usuario.rol}?tab=perfil`);
+                setMobileMenuOpen(false);
+              }}
             >
-              <Settings className="w-5 h-5 mr-3" />
+              <Settings className="w-4 h-4 mr-2" />
               Configuración
             </Button>
 
             {/* Cerrar Sesión */}
             <Button
               variant="outline"
-              className="w-full justify-start text-base h-12 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+              className="w-full justify-start text-sm h-10 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
               onClick={handleLogout}
             >
-              <LogOut className="w-5 h-5 mr-3" />
+              <LogOut className="w-4 h-4 mr-2" />
               Cerrar Sesión
             </Button>
           </div>
@@ -420,96 +612,3 @@ export function NavbarUniversal({
     </header>
   );
 }
-
-// ============================================
-// EJEMPLO DE USO EN LOS DASHBOARDS
-// ============================================
-
-/*
-// app/dashboard/paciente/page.tsx
-import { NavbarUniversal } from "@/components/layout/navbar-universal";
-
-export default function DashboardPacientePage() {
-  const [editarPerfilOpen, setEditarPerfilOpen] = useState(false);
-
-  useEffect(() => {
-    // Escuchar evento de apertura de modal
-    const handleOpenProfile = () => setEditarPerfilOpen(true);
-    window.addEventListener("openProfileModal", handleOpenProfile);
-    
-    return () => window.removeEventListener("openProfileModal", handleOpenProfile);
-  }, []);
-
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <NavbarUniversal showNotifications notificationCount={3} />
-      
-      <main className="container mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8">
-        {/* Contenido del dashboard *\/}
-      </main>
-
-      {/* Modales *\/}
-      <EditarPerfilModal
-        isOpen={editarPerfilOpen}
-        onClose={() => setEditarPerfilOpen(false)}
-        perfil={perfil}
-        onPerfilActualizado={recargarDatos}
-      />
-    </div>
-  );
-}
-
-// ============================================
-// app/dashboard/medico/page.tsx
-import { NavbarUniversal } from "@/components/layout/navbar-universal";
-
-export default function DashboardMedicoPage() {
-  const [buscarPacientesOpen, setBuscarPacientesOpen] = useState(false);
-
-  useEffect(() => {
-    const handleBuscarPacientes = () => setBuscarPacientesOpen(true);
-    const handleTelemedicina = () => iniciarTelemedicina();
-    
-    window.addEventListener("buscarPacientes", handleBuscarPacientes);
-    window.addEventListener("iniciarTelemedicina", handleTelemedicina);
-    
-    return () => {
-      window.removeEventListener("buscarPacientes", handleBuscarPacientes);
-      window.removeEventListener("iniciarTelemedicina", handleTelemedicina);
-    };
-  }, []);
-
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <NavbarUniversal showNotifications notificationCount={5} />
-      
-      <main className="container mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8">
-        {/* Contenido del dashboard *\/}
-      </main>
-    </div>
-  );
-}
-
-// ============================================
-// app/dashboard/farmacia/page.tsx
-import { NavbarUniversal } from "@/components/layout/navbar-universal";
-
-export default function DashboardFarmacia() {
-  useEffect(() => {
-    const handleGestionRecetas = () => setModuloActivo("recetas");
-    window.addEventListener("gestionarRecetas", handleGestionRecetas);
-    
-    return () => window.removeEventListener("gestionarRecetas", handleGestionRecetas);
-  }, []);
-
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <NavbarUniversal />
-      
-      <main className="container mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8">
-        {/* Contenido del dashboard *\/}
-      </main>
-    </div>
-  );
-}
-*/

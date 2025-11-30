@@ -108,8 +108,39 @@ export async function POST(
       ]
     );
 
-    // NOTA: Sin tabla de notificaciones, la farmacia verá la receta en su lista normal
-    // cuando consulte las recetas pendientes
+    // Crear notificación para el paciente directamente en BD
+    try {
+      const recetaData = recetaResult.rows[0];
+      const codigoReceta = recetaData.codigo_receta;
+      const pacienteId = recetaData.paciente_id;
+
+      // Obtener usuario_id del paciente
+      const usuarioIdResult = await pool.query(
+        "SELECT id_usuario FROM pacientes WHERE id = $1",
+        [pacienteId]
+      );
+
+      if (usuarioIdResult.rows.length > 0) {
+        const usuarioId = usuarioIdResult.rows[0].id_usuario;
+        const titulo = "🏥 Receta Lista en Farmacia";
+        const mensaje = `Tu receta (${codigoReceta}) está lista para retirar en la farmacia`;
+
+        const notifResult = await pool.query(
+          `INSERT INTO notificaciones (id_usuario, titulo, mensaje, tipo, id_relacionado, leida, created_at)
+           VALUES ($1, $2, $3, 'farmacia', $4, false, NOW())
+           RETURNING id`,
+          [usuarioId, titulo, mensaje, recetaId]
+        );
+
+        console.log("✅ Notificación de receta en farmacia creada:", {
+          id: notifResult.rows[0].id,
+          titulo,
+        });
+      }
+    } catch (notifError) {
+      console.error("❌ Error al crear notificación:", notifError);
+      // No fallar la operación si la notificación falla
+    }
 
     return NextResponse.json({
       success: true,

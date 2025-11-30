@@ -99,18 +99,51 @@ export async function POST(request: NextRequest) {
         motivo_consulta,
       ])
 
-      // Crear notificación para el paciente
-      await client.query(
-        `
-        INSERT INTO notificaciones (id_usuario, titulo, mensaje, tipo)
-        VALUES ($1, $2, $3, 'cita')
-      `,
-        [
-          usuario.id,
-          "Cita Médica Agendada",
-          `Su cita médica ha sido agendada para el ${fecha_cita} a las ${hora_cita}. Motivo: ${motivo_consulta}`,
-        ],
-      )
+      const citaCreada = result.rows[0];
+      const nombreMedico = `${medicoResult.rows[0].nombre} ${medicoResult.rows[0].apellido}`;
+
+      console.log("✅ Cita creada:", { citaId: citaCreada.id, nombreMedico });
+
+      // ===== CREAR NOTIFICACIÓN DIRECTAMENTE EN LA BD =====
+      try {
+        const titulo = "📅 Nueva Cita Programada";
+        const fechaObj = new Date(fecha_cita + "T00:00:00");
+        const fechaFormato = isNaN(fechaObj.getTime()) 
+          ? fecha_cita 
+          : fechaObj.toLocaleDateString("es-PE");
+        
+        const mensaje = `Tu cita con ${nombreMedico} está programada para ${fechaFormato} a las ${hora_cita}`;
+
+        // Obtener usuario_id del paciente
+        const usuarioIdResult = await client.query(
+          `SELECT id_usuario FROM pacientes WHERE id = $1`,
+          [paciente_id]
+        );
+
+        if (usuarioIdResult.rows.length > 0) {
+          const usuarioId = usuarioIdResult.rows[0].id_usuario;
+
+          // Insertar notificación en la BD
+          const notifResult = await client.query(
+            `INSERT INTO notificaciones (id_usuario, titulo, mensaje, tipo, id_relacionado, leida, created_at)
+             VALUES ($1, $2, $3, 'cita', $4, false, NOW())
+             RETURNING id`,
+            [usuarioId, titulo, mensaje, citaCreada.id]
+          );
+
+          console.log("✅ Notificación creada en BD:", {
+            id: notifResult.rows[0].id,
+            titulo,
+            usuarioId,
+            citaId: citaCreada.id,
+          });
+        } else {
+          console.warn("⚠️ No se encontró usuario_id para el paciente");
+        }
+      } catch (notifError) {
+        console.error("❌ Error al crear notificación:", notifError);
+        // No fallar la creación de cita si la notificación falla
+      }
 
       await client.query("COMMIT")
 

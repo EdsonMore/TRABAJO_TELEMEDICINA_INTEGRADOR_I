@@ -18,6 +18,8 @@ import {
   LoaderCircle,
   Eye,
   AlertCircle,
+  Search,
+  FileText,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -38,6 +40,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Card } from "@/components/ui/card";
+import { CardContent } from "@/components/ui/card";
+import { CardHeader } from "@/components/ui/card";
+import { CardTitle } from "@/components/ui/card";
+import { CardDescription } from "@/components/ui/card";
 
 interface Medicamento {
   nombre_comercial: string;
@@ -46,6 +52,9 @@ interface Medicamento {
   stock_disponible: number;
   estado_disponibilidad: string;
   precio_unitario: number;
+  dosis?: string;
+  frecuencia?: string;
+  medicamento_id?: string;
 }
 
 interface Receta {
@@ -87,13 +96,17 @@ export default function RecetasRecibidas() {
   const [filtroEstado, setFiltroEstado] = useState("enviada");
   const [busqueda, setBusqueda] = useState("");
   const [pagina, setPagina] = useState(1);
-  const [recetaSeleccionada, setRecetaSeleccionada] = useState<Receta | null>(null);
+  const [recetaSeleccionada, setRecetaSeleccionada] = useState<Receta | null>(
+    null
+  );
   const [mostrarDetalles, setMostrarDetalles] = useState(false);
   const [procesando, setProcesando] = useState(false);
   const [motivoRechazo, setMotivoRechazo] = useState("");
   const [notificacion, setNotificacion] = useState<Notificacion | null>(null);
   const [mostrarConfirmacion, setMostrarConfirmacion] = useState(false);
-  const [accionConfirmada, setAccionConfirmada] = useState<"aceptar" | "rechazar" | null>(null);
+  const [accionConfirmada, setAccionConfirmada] = useState<
+    "aceptar" | "rechazar" | null
+  >(null);
   const [estadisticas, setEstadisticas] = useState({
     enviadas: 0,
     recibidas: 0,
@@ -133,17 +146,23 @@ export default function RecetasRecibidas() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || errorData.detalle || `Error ${response.status} al cargar recetas`);
+        throw new Error(
+          errorData.error ||
+            errorData.detalle ||
+            `Error ${response.status} al cargar recetas`
+        );
       }
 
       const data = await response.json();
       setRecetas(data.recetas || []);
-      setEstadisticas(data.estadisticas || {
-        enviadas: 0,
-        recibidas: 0,
-        rechazadas: 0,
-        dispensadas: 0,
-      });
+      setEstadisticas(
+        data.estadisticas || {
+          enviadas: 0,
+          recibidas: 0,
+          rechazadas: 0,
+          dispensadas: 0,
+        }
+      );
     } catch (error) {
       console.error("Error cargando recetas:", error);
       // No lancar alerta, solo registrar el error
@@ -199,10 +218,13 @@ export default function RecetasRecibidas() {
       }
 
       // Actualizar lista local inmediatamente
-      setRecetas(prevRecetas =>
-        prevRecetas.map(r =>
+      setRecetas((prevRecetas) =>
+        prevRecetas.map((r) =>
           r.id === recetaId
-            ? { ...r, estado_envio: accion === "aceptar" ? "recibida" : "rechazada" }
+            ? {
+                ...r,
+                estado_envio: accion === "aceptar" ? "recibida" : "rechazada",
+              }
             : r
         )
       );
@@ -237,7 +259,8 @@ export default function RecetasRecibidas() {
     } catch (error) {
       setNotificacion({
         tipo: "error",
-        mensaje: error instanceof Error ? error.message : "Error al procesar receta",
+        mensaje:
+          error instanceof Error ? error.message : "Error al procesar receta",
       });
     } finally {
       setProcesando(false);
@@ -275,517 +298,737 @@ export default function RecetasRecibidas() {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Notificaciones */}
-      {notificacion && (
-        <div
-          className={`p-4 rounded-lg flex items-start gap-3 ${
-            notificacion.tipo === "exito"
-              ? "bg-green-50 border border-green-200"
-              : notificacion.tipo === "error"
-              ? "bg-red-50 border border-red-200"
-              : "bg-blue-50 border border-blue-200"
-          }`}
-        >
-          {notificacion.tipo === "exito" ? (
-            <CheckCircle className="text-green-600 flex-shrink-0 mt-0.5" size={20} />
-          ) : notificacion.tipo === "error" ? (
-            <AlertCircle className="text-red-600 flex-shrink-0 mt-0.5" size={20} />
-          ) : (
-            <AlertCircle className="text-blue-600 flex-shrink-0 mt-0.5" size={20} />
-          )}
-          <div className="flex-1">
-            <p
-              className={
-                notificacion.tipo === "exito"
-                  ? "text-green-800"
-                  : notificacion.tipo === "error"
-                  ? "text-red-800"
-                  : "text-blue-800"
-              }
-            >
-              {notificacion.mensaje}
-            </p>
-          </div>
-          <button
-            onClick={() => setNotificacion(null)}
-            className="text-gray-400 hover:text-gray-600"
+    <div className="w-full min-h-screen bg-gray-50 py-6 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto space-y-6">
+        {/* Header */}
+        <div className="space-y-2 mb-8">
+          <h1 className="text-3xl font-bold text-gray-900">
+            Recetas Recibidas
+          </h1>
+          <p className="text-gray-600 text-base">
+            Gestiona las recetas enviadas por pacientes, acepta o rechaza según
+            disponibilidad
+          </p>
+        </div>
+
+        {/* Notificaciones */}
+        {notificacion && (
+          <div
+            className={`p-4 rounded-lg flex items-start gap-3 animate-in fade-in slide-in-from-top-2 ${
+              notificacion.tipo === "exito"
+                ? "bg-green-50 border border-green-200"
+                : notificacion.tipo === "error"
+                ? "bg-red-50 border border-red-200"
+                : "bg-blue-50 border border-blue-200"
+            }`}
           >
-            ✕
-          </button>
-        </div>
-      )}
-      {/* Tarjetas de Estadísticas */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Enviadas</p>
-              <p className="text-3xl font-bold text-yellow-600">
-                {estadisticas.enviadas}
+            {notificacion.tipo === "exito" ? (
+              <CheckCircle
+                className="text-green-600 flex-shrink-0 mt-0.5"
+                size={20}
+              />
+            ) : notificacion.tipo === "error" ? (
+              <AlertCircle
+                className="text-red-600 flex-shrink-0 mt-0.5"
+                size={20}
+              />
+            ) : (
+              <AlertCircle
+                className="text-blue-600 flex-shrink-0 mt-0.5"
+                size={20}
+              />
+            )}
+            <div className="flex-1 min-w-0">
+              <p
+                className={
+                  notificacion.tipo === "exito"
+                    ? "text-green-800"
+                    : notificacion.tipo === "error"
+                    ? "text-red-800"
+                    : "text-blue-800"
+                }
+              >
+                {notificacion.mensaje}
               </p>
             </div>
-            <Package className="text-yellow-400" size={32} />
-          </div>
-        </Card>
-
-        <Card className="p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Recibidas</p>
-              <p className="text-3xl font-bold text-green-600">
-                {estadisticas.recibidas}
-              </p>
-            </div>
-            <CheckCircle className="text-green-400" size={32} />
-          </div>
-        </Card>
-
-        <Card className="p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Rechazadas</p>
-              <p className="text-3xl font-bold text-red-600">
-                {estadisticas.rechazadas}
-              </p>
-            </div>
-            <XCircle className="text-red-400" size={32} />
-          </div>
-        </Card>
-
-        <Card className="p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Dispensadas</p>
-              <p className="text-3xl font-bold text-blue-600">
-                {estadisticas.dispensadas}
-              </p>
-            </div>
-            <Pill className="text-blue-400" size={32} />
-          </div>
-        </Card>
-      </div>
-
-      {/* Controles de Filtro y Búsqueda */}
-      <Card className="p-4 space-y-4">
-        <div className="flex gap-3 flex-wrap">
-          {["enviada", "recibida", "rechazada", "dispensada"].map((estado) => (
-            <Button
-              key={estado}
-              variant={filtroEstado === estado ? "default" : "outline"}
-              onClick={() => {
-                setFiltroEstado(estado);
-                setPagina(1);
-              }}
-              size="sm"
+            <button
+              onClick={() => setNotificacion(null)}
+              className="text-gray-400 hover:text-gray-600 flex-shrink-0"
             >
-              {obtenerIconoEstado(estado)} {estado.charAt(0).toUpperCase() + estado.slice(1)}
-            </Button>
-          ))}
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* Tarjetas de Estadísticas */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card className="border-0 shadow-sm hover:shadow-md transition-shadow">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between space-y-3">
+                <div>
+                  <p className="text-gray-600 text-sm font-medium">Enviadas</p>
+                  <p className="text-3xl font-bold text-yellow-600">
+                    {estadisticas.enviadas}
+                  </p>
+                </div>
+                <Package className="text-yellow-400" size={40} />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-0 shadow-sm hover:shadow-md transition-shadow">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between space-y-3">
+                <div>
+                  <p className="text-gray-600 text-sm font-medium">Recibidas</p>
+                  <p className="text-3xl font-bold text-green-600">
+                    {estadisticas.recibidas}
+                  </p>
+                </div>
+                <CheckCircle className="text-green-400" size={40} />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-0 shadow-sm hover:shadow-md transition-shadow">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between space-y-3">
+                <div>
+                  <p className="text-gray-600 text-sm font-medium">
+                    Rechazadas
+                  </p>
+                  <p className="text-3xl font-bold text-red-600">
+                    {estadisticas.rechazadas}
+                  </p>
+                </div>
+                <XCircle className="text-red-400" size={40} />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-0 shadow-sm hover:shadow-md transition-shadow">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between space-y-3">
+                <div>
+                  <p className="text-gray-600 text-sm font-medium">
+                    Dispensadas
+                  </p>
+                  <p className="text-3xl font-bold text-blue-600">
+                    {estadisticas.dispensadas}
+                  </p>
+                </div>
+                <Pill className="text-blue-400" size={40} />
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
-        {/* Input de búsqueda */}
-        <div className="relative">
-          <input
-            type="text"
-            placeholder="Buscar por código de receta o nombre de paciente..."
-            value={busqueda}
-            onChange={handleBusqueda}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-        </div>
-      </Card>
+        {/* Controles de Filtro y Búsqueda */}
+        <Card className="border-0 shadow-sm">
+          <CardContent className="p-6 space-y-4">
+            {/* Filtros por estado */}
+            <div className="flex flex-wrap gap-2">
+              {["enviada", "recibida", "rechazada", "dispensada"].map(
+                (estado) => (
+                  <Button
+                    key={estado}
+                    variant={filtroEstado === estado ? "default" : "outline"}
+                    onClick={() => {
+                      setFiltroEstado(estado);
+                      setPagina(1);
+                    }}
+                    className="font-medium"
+                  >
+                    {obtenerIconoEstado(estado)}{" "}
+                    {estado.charAt(0).toUpperCase() + estado.slice(1)}
+                  </Button>
+                )
+              )}
+            </div>
 
-      {/* Tabla de Recetas */}
-      <Card className="p-4">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">
-                  Código
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">
-                  Paciente
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">
-                  Medicamentos
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">
-                  Disponibilidad
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">
-                  Enviada
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">
-                  Vence
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">
-                  Estado
-                </th>
-                <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600">
-                  Acciones
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {cargando ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center">
-                    <LoaderCircle className="inline-block animate-spin" />
-                  </td>
-                </tr>
-              ) : recetas.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
-                    No hay recetas en este estado
-                  </td>
-                </tr>
-              ) : (
-                recetas.map((receta) => (
-                  <tr key={receta.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 whitespace-nowrap font-semibold text-gray-900">
-                      {receta.codigo_receta}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <User size={16} className="text-gray-400" />
-                        <div>
-                          <p className="font-medium text-gray-900">
-                            {receta.paciente.nombre} {receta.paciente.apellido}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {receta.paciente.email}
-                          </p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <div className="text-sm">
-                        <p className="font-semibold text-gray-900">
-                          {receta.medicamentos.length}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          {receta.medicamentos_disponibles} disponibles
-                        </p>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      {receta.disponibilidad_completa ? (
-                        <Badge className="bg-green-100 text-green-800">
-                          ✓ Completa
-                        </Badge>
-                      ) : (
-                        <Badge className="bg-orange-100 text-orange-800">
-                          ⚠️ {receta.medicamentos_disponibles}/{receta.medicamentos_totales}
-                        </Badge>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
-                      {new Date(receta.fecha_envio).toLocaleDateString("es-PE")}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
-                      <span className={new Date(receta.fecha_vencimiento) < new Date() ? "text-red-600 font-semibold" : ""}>
-                        {new Date(receta.fecha_vencimiento).toLocaleDateString("es-PE")}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <Badge className={obtenerColorEstado(receta.estado_envio)}>
-                        {obtenerIconoEstado(receta.estado_envio)}{" "}
-                        {receta.estado_envio}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <div className="flex gap-2 justify-center">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setRecetaSeleccionada(receta);
-                            setMostrarDetalles(true);
-                          }}
-                        >
-                          <Eye size={14} />
-                        </Button>
+            {/* Input de búsqueda */}
+            <div className="relative">
+              <Search className="absolute left-4 top-3.5 w-5 h-5 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Buscar por código de receta, nombre de paciente o DNI..."
+                value={busqueda}
+                onChange={handleBusqueda}
+                className="w-full pl-12 pr-4 py-3 text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+              />
+            </div>
+          </CardContent>
+        </Card>
 
-                        {receta.estado_envio === "enviada" && (
-                          <>
-                            <Button
-                              size="sm"
-                              className="bg-green-600 hover:bg-green-700"
-                              onClick={() => {
-                                setRecetaSeleccionada(receta);
-                                setAccionConfirmada("aceptar");
-                                setMostrarConfirmacion(true);
-                              }}
-                              disabled={procesando}
-                            >
-                              {procesando ? (
-                                <>
-                                  <LoaderCircle className="animate-spin mr-1" size={14} />
-                                </>
-                              ) : (
-                                <>Aceptar</>
-                              )}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={() => {
-                                setRecetaSeleccionada(receta);
-                                setMostrarDetalles(true);
-                              }}
-                              disabled={procesando}
-                            >
-                              Rechazar
-                            </Button>
-                          </>
-                        )}
-                      </div>
+        {/* Tabla de Recetas */}
+        <Card className="border-0 shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-100 border-b-2 border-gray-300">
+                <tr>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                    Código
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                    Paciente
+                  </th>
+                  <th className="px-6 py-4 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">
+                    Medicamentos
+                  </th>
+                  <th className="px-6 py-4 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">
+                    Disponibilidad
+                  </th>
+                  <th className="px-6 py-4 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">
+                    Enviada
+                  </th>
+                  <th className="px-6 py-4 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">
+                    Vence
+                  </th>
+                  <th className="px-6 py-4 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">
+                    Estado
+                  </th>
+                  <th className="px-6 py-4 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">
+                    Acciones
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {cargando ? (
+                  <tr>
+                    <td colSpan={8} className="px-6 py-12 text-center">
+                      <LoaderCircle
+                        className="inline-block animate-spin text-blue-600 mr-3"
+                        size={24}
+                      />
+                      <span className="text-gray-600">Cargando recetas...</span>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
-      {/* Modal de Detalles */}
-      <Dialog open={mostrarDetalles} onOpenChange={setMostrarDetalles}>
-        <DialogContent className="w-full max-w-sm sm:max-w-md lg:max-w-lg max-h-[90vh] overflow-y-auto">
-          {recetaSeleccionada && (
-            <>
-              <DialogHeader className="sticky top-0 bg-white z-10 pb-2">
-                <DialogTitle className="text-lg">Receta {recetaSeleccionada.codigo_receta}</DialogTitle>
-                <DialogDescription className="text-xs">
-                  Detalles de la receta y medicamentos
-                </DialogDescription>
-              </DialogHeader>
-
-              <div className="space-y-3 px-1">
-                {/* Información del Paciente */}
-                <div className="bg-blue-50 p-3 rounded-lg">
-                  <h3 className="font-semibold text-sm mb-2">Paciente</h3>
-                  <p className="text-sm">
-                    <strong>{recetaSeleccionada.paciente.nombre}{" "}
-                      {recetaSeleccionada.paciente.apellido}</strong>
-                  </p>
-                  <p className="text-xs text-gray-600">
-                    {recetaSeleccionada.paciente.email}
-                  </p>
-                  <p className="text-xs text-gray-600">
-                    {recetaSeleccionada.paciente.telefono}
-                  </p>
-                </div>
-
-                {/* Información de Fechas */}
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="bg-purple-50 p-3 rounded-lg">
-                    <h3 className="font-semibold text-xs mb-1 text-purple-900">Emitida</h3>
-                    <p className="text-xs text-purple-700">
-                      {new Date(recetaSeleccionada.fecha_emision).toLocaleDateString("es-PE")}
-                    </p>
-                  </div>
-                  <div className="bg-orange-50 p-3 rounded-lg">
-                    <h3 className="font-semibold text-xs mb-1 text-orange-900">Vence</h3>
-                    <p className="text-xs text-orange-700">
-                      {new Date(recetaSeleccionada.fecha_vencimiento).toLocaleDateString("es-PE")}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Medicamentos */}
-                <div>
-                  <h3 className="font-semibold text-sm mb-2">Medicamentos ({recetaSeleccionada.medicamentos?.length || 0})</h3>
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {recetaSeleccionada.medicamentos && recetaSeleccionada.medicamentos.length > 0 ? (
-                      (() => {
-                        // Deduplicar medicamentos por medicamento_id o nombre_comercial
-                        const medicamentosUnicos = recetaSeleccionada.medicamentos.reduce((unique: any[], med: any) => {
-                          const existe = unique.some(
-                            (u: any) => u.medicamento_id === med.medicamento_id || u.nombre_comercial === med.nombre_comercial
-                          );
-                          if (!existe) {
-                            unique.push(med);
-                          }
-                          return unique;
-                        }, []);
-
-                        return medicamentosUnicos.map((med, idx) => (
-                          <div key={`med-${med.medicamento_id || med.nombre_comercial}-${idx}`} className="border p-2 rounded text-xs bg-white hover:bg-gray-50 transition">
-                            <div className="flex justify-between items-start gap-2">
-                              <div className="flex-1 min-w-0">
-                                <p className="font-medium text-sm truncate text-gray-900">{med.nombre_comercial}</p>
-                                <p className="text-gray-600 truncate text-xs">
-                                  {med.nombre_generico}
-                                </p>
-                                <p className="text-gray-500 text-xs mt-0.5">
-                                  <span className="font-medium">Cantidad:</span> {med.cantidad_requerida}
-                                </p>
-                              </div>
-                              <Badge
-                                className={`flex-shrink-0 text-xs whitespace-nowrap ${
-                                  med.estado_disponibilidad === "disponible"
-                                    ? "bg-green-100 text-green-800"
-                                    : med.estado_disponibilidad === "sin-stock"
-                                    ? "bg-red-100 text-red-800"
-                                    : med.estado_disponibilidad === "stock-insuficiente"
-                                    ? "bg-orange-100 text-orange-800"
-                                    : "bg-yellow-100 text-yellow-800"
-                                }`}
-                              >
-                                {med.estado_disponibilidad === "disponible"
-                                  ? "✓ OK"
-                                  : med.estado_disponibilidad === "sin-stock"
-                                  ? "Sin stock"
-                                  : med.estado_disponibilidad === "stock-insuficiente"
-                                  ? "Insuficiente"
-                                  : "Por vencer"}
-                              </Badge>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2 mt-1 text-xs">
-                              <p className="text-gray-600">
-                                <span className="font-medium">Stock:</span> {med.stock_disponible}
-                              </p>
-                              {med.dosis && (
-                                <p className="text-gray-600">
-                                  <span className="font-medium">Dosis:</span> {med.dosis}
-                                </p>
-                              )}
-                              {med.frecuencia && (
-                                <p className="text-gray-600 col-span-2">
-                                  <span className="font-medium">Frecuencia:</span> {med.frecuencia}
-                                </p>
-                              )}
-                            </div>
+                ) : recetas.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="px-6 py-12 text-center">
+                      <Package
+                        className="inline-block text-gray-300 mb-3"
+                        size={40}
+                      />
+                      <p className="text-gray-500 text-base">
+                        No hay recetas en este estado
+                      </p>
+                    </td>
+                  </tr>
+                ) : (
+                  recetas.map((receta) => (
+                    <tr
+                      key={receta.id}
+                      className="hover:bg-blue-50 transition-colors"
+                    >
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className="font-bold text-gray-900 text-base">
+                          {receta.codigo_receta}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <User
+                            size={18}
+                            className="text-gray-400 flex-shrink-0"
+                          />
+                          <div className="min-w-0">
+                            <p className="font-semibold text-gray-900 text-sm">
+                              {receta.paciente.nombre}{" "}
+                              {receta.paciente.apellido}
+                            </p>
+                            <p className="text-xs text-gray-500 truncate">
+                              {receta.paciente.email}
+                            </p>
                           </div>
-                        ));
-                      })()
-                    ) : (
-                      <p className="text-gray-500 text-xs">No hay medicamentos</p>
-                    )}
-                  </div>
-                </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="flex flex-col items-center">
+                          <p className="font-bold text-gray-900 text-lg">
+                            {receta.medicamentos.length}
+                          </p>
+                          <p className="text-xs text-gray-600">
+                            {receta.medicamentos_disponibles} ✓
+                          </p>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        {receta.disponibilidad_completa ? (
+                          <Badge className="bg-green-100 text-green-800 font-semibold text-xs px-3 py-1">
+                            ✓ Completa
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-orange-100 text-orange-800 font-semibold text-xs px-3 py-1">
+                            ⚠️ {receta.medicamentos_disponibles}/
+                            {receta.medicamentos.length}
+                          </Badge>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-600">
+                        <span className="font-medium">
+                          {new Date(receta.fecha_envio).toLocaleDateString(
+                            "es-PE",
+                            {
+                              month: "short",
+                              day: "numeric",
+                            }
+                          )}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <span
+                          className={`font-semibold text-sm ${
+                            new Date(receta.fecha_vencimiento) < new Date()
+                              ? "text-red-600"
+                              : "text-gray-600"
+                          }`}
+                        >
+                          {new Date(
+                            receta.fecha_vencimiento
+                          ).toLocaleDateString("es-PE", {
+                            month: "short",
+                            day: "numeric",
+                          })}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <Badge
+                          className={`${obtenerColorEstado(
+                            receta.estado_envio
+                          )} font-semibold text-xs px-3 py-1`}
+                        >
+                          {obtenerIconoEstado(receta.estado_envio)}{" "}
+                          {receta.estado_envio}
+                        </Badge>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="flex gap-2 justify-center flex-wrap">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setRecetaSeleccionada(receta);
+                              setMostrarDetalles(true);
+                            }}
+                            className="text-xs h-8 px-2"
+                          >
+                            <Eye size={14} />
+                          </Button>
 
-                {/* Formulario de Rechazo */}
-                {recetaSeleccionada.estado_envio === "enviada" && (
-                  <div className="space-y-2 bg-red-50 p-3 rounded-lg border border-red-200">
-                    <div className="flex items-start gap-2">
-                      <AlertTriangle className="text-red-600 flex-shrink-0 mt-0.5" size={16} />
-                      <div>
-                        <h3 className="font-semibold text-red-900 text-sm">Rechazar</h3>
-                        <p className="text-xs text-red-700">
-                          Motivo para rechazo
-                        </p>
-                      </div>
-                    </div>
-                    <textarea
-                      placeholder="Ej: Sin stock, Documentación incompleta..."
-                      value={motivoRechazo}
-                      onChange={(e) => setMotivoRechazo(e.target.value)}
-                      className="w-full border border-red-300 rounded p-2 text-xs focus:ring-2 focus:ring-red-500"
-                      rows={2}
-                    />
-                    <Button
-                      className="w-full bg-red-600 hover:bg-red-700 text-white text-xs h-8"
-                      onClick={() => {
-                        setAccionConfirmada("rechazar");
-                        setMostrarConfirmacion(true);
-                      }}
-                      disabled={procesando || !motivoRechazo.trim()}
-                    >
-                      {procesando ? (
-                        <>
-                          <LoaderCircle className="animate-spin mr-1" size={14} />
-                          Procesando...
-                        </>
-                      ) : (
-                        "Confirmar Rechazo"
-                      )}
-                    </Button>
-                  </div>
+                          {receta.estado_envio === "enviada" && (
+                            <>
+                              <Button
+                                size="sm"
+                                className="bg-green-600 hover:bg-green-700 text-white font-semibold text-xs h-8 px-2"
+                                onClick={() => {
+                                  setRecetaSeleccionada(receta);
+                                  setAccionConfirmada("aceptar");
+                                  setMostrarConfirmacion(true);
+                                }}
+                                disabled={procesando}
+                              >
+                                {procesando ? (
+                                  <LoaderCircle
+                                    className="animate-spin mr-1"
+                                    size={14}
+                                  />
+                                ) : (
+                                  <>✓ Aceptar</>
+                                )}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => {
+                                  setRecetaSeleccionada(receta);
+                                  setMostrarDetalles(true);
+                                }}
+                                disabled={procesando}
+                                className="text-xs h-8 px-2 font-semibold"
+                              >
+                                ✕ Rechazar
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
                 )}
-
-                {/* Botones de Acción */}
-                <div className="flex gap-2 pt-2 border-t">
-                  {recetaSeleccionada.estado_envio === "enviada" && (
-                    <Button
-                      className="flex-1 bg-green-600 hover:bg-green-700 text-white text-xs h-8"
-                      onClick={() => {
-                        setAccionConfirmada("aceptar");
-                        setMostrarConfirmacion(true);
-                      }}
-                      disabled={procesando}
-                    >
-                      {procesando ? (
-                        <>
-                          <LoaderCircle className="animate-spin mr-1" size={14} />
-                          Aceptando...
-                        </>
-                      ) : (
-                        "✓ Aceptar"
-                      )}
-                    </Button>
-                  )}
-                  <Button
-                    variant="outline"
-                    className="flex-1 text-xs h-8"
-                    onClick={() => {
-                      setMostrarDetalles(false);
-                      setMotivoRechazo("");
-                    }}
-                  >
-                    Cancelar
-                  </Button>
-                </div>
-              </div>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog de Confirmación */}
-      <AlertDialog open={mostrarConfirmacion} onOpenChange={setMostrarConfirmacion}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {accionConfirmada === "aceptar" ? "Aceptar Receta" : "Rechazar Receta"}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {accionConfirmada === "aceptar"
-                ? `¿Está seguro de que desea aceptar la receta ${recetaSeleccionada?.codigo_receta}? Se moverá a despacho inmediatamente.`
-                : `¿Está seguro de que desea rechazar la receta ${recetaSeleccionada?.codigo_receta}?`}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="flex gap-2">
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (recetaSeleccionada && accionConfirmada) {
-                  responderReceta(recetaSeleccionada.id, accionConfirmada);
-                }
-              }}
-              className={
-                accionConfirmada === "aceptar"
-                  ? "bg-green-600 hover:bg-green-700"
-                  : "bg-red-600 hover:bg-red-700"
-              }
-            >
-              {procesando ? (
-                <>
-                  <LoaderCircle className="animate-spin mr-2" size={16} />
-                  Procesando...
-                </>
-              ) : accionConfirmada === "aceptar" ? (
-                "Aceptar"
-              ) : (
-                "Rechazar"
-              )}
-            </AlertDialogAction>
+              </tbody>
+            </table>
           </div>
-        </AlertDialogContent>
-      </AlertDialog>
+        </Card>
+
+        {/* Modal de Detalles */}
+        <Dialog open={mostrarDetalles} onOpenChange={setMostrarDetalles}>
+          <DialogContent className="w-full max-w-3xl max-h-[95vh] overflow-y-auto p-0">
+            {recetaSeleccionada && (
+              <>
+                <DialogHeader className="sticky top-0 bg-white z-10 px-8 py-6 border-b border-gray-200">
+                  <DialogTitle className="flex items-center gap-2 text-2xl">
+                    <FileText className="w-6 h-6 text-blue-600" />
+                    Receta {recetaSeleccionada.codigo_receta}
+                  </DialogTitle>
+                  <DialogDescription className="text-base">
+                    Detalles completos de la receta y medicamentos prescritos
+                  </DialogDescription>
+                </DialogHeader>
+
+                <div className="px-8 py-6 space-y-6">
+                  {/* Información del Paciente y Médico */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <Card className="border-0 bg-gradient-to-br from-blue-50 to-blue-100">
+                      <CardContent className="p-6">
+                        <div className="flex items-center gap-2 mb-4">
+                          <User className="w-5 h-5 text-blue-600" />
+                          <h3 className="font-bold text-gray-900">Paciente</h3>
+                        </div>
+                        <div className="space-y-3">
+                          <div>
+                            <p className="text-gray-600 text-xs uppercase tracking-wider">
+                              Nombre
+                            </p>
+                            <p className="font-bold text-lg text-gray-900">
+                              {recetaSeleccionada.paciente.nombre}{" "}
+                              {recetaSeleccionada.paciente.apellido}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-gray-600 text-xs uppercase tracking-wider">
+                              Email
+                            </p>
+                            <p className="text-gray-900 font-medium break-all">
+                              {recetaSeleccionada.paciente.email}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-gray-600 text-xs uppercase tracking-wider">
+                              Teléfono
+                            </p>
+                            <p className="text-gray-900 font-medium">
+                              {recetaSeleccionada.paciente.telefono}
+                            </p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="border-0 bg-gradient-to-br from-purple-50 to-purple-100">
+                      <CardContent className="p-6">
+                        <div className="flex items-center gap-2 mb-4">
+                          <FileText className="w-5 h-5 text-purple-600" />
+                          <h3 className="font-bold text-gray-900">
+                            Médico Prescriptor
+                          </h3>
+                        </div>
+                        <div className="space-y-3">
+                          <div>
+                            <p className="text-gray-600 text-xs uppercase tracking-wider">
+                              Nombre
+                            </p>
+                            <p className="font-bold text-lg text-gray-900">
+                              Dr. {recetaSeleccionada.medico.nombre}{" "}
+                              {recetaSeleccionada.medico.apellido}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-gray-600 text-xs uppercase tracking-wider">
+                              Fechas
+                            </p>
+                            <p className="text-gray-900 text-sm">
+                              Emitida:{" "}
+                              <span className="font-semibold">
+                                {new Date(
+                                  recetaSeleccionada.fecha_emision
+                                ).toLocaleDateString("es-PE")}
+                              </span>
+                            </p>
+                            <p className="text-gray-900 text-sm">
+                              Vence:{" "}
+                              <span className="font-semibold">
+                                {new Date(
+                                  recetaSeleccionada.fecha_vencimiento
+                                ).toLocaleDateString("es-PE")}
+                              </span>
+                            </p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  {/* Medicamentos */}
+                  <Card className="border-0">
+                    <CardHeader className="border-b bg-gray-50">
+                      <CardTitle className="flex items-center gap-2">
+                        <Pill className="w-5 h-5 text-blue-600" />
+                        Medicamentos (
+                        {recetaSeleccionada.medicamentos?.length || 0})
+                      </CardTitle>
+                      <CardDescription className="text-base">
+                        {recetaSeleccionada.medicamentos_disponibles}{" "}
+                        disponibles / {recetaSeleccionada.medicamentos.length}{" "}
+                        totales
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="pt-6">
+                      <div className="space-y-3 max-h-96 overflow-y-auto">
+                        {recetaSeleccionada.medicamentos &&
+                        recetaSeleccionada.medicamentos.length > 0 ? (
+                          (() => {
+                            // Deduplicar medicamentos
+                            const medicamentosUnicos =
+                              recetaSeleccionada.medicamentos.reduce(
+                                (unique: any[], med: any) => {
+                                  const existe = unique.some(
+                                    (u: any) =>
+                                      u.medicamento_id === med.medicamento_id ||
+                                      u.nombre_comercial ===
+                                        med.nombre_comercial
+                                  );
+                                  if (!existe) {
+                                    unique.push(med);
+                                  }
+                                  return unique;
+                                },
+                                []
+                              );
+
+                            return medicamentosUnicos.map((med, idx) => (
+                              <div
+                                key={`med-${
+                                  med.medicamento_id || med.nombre_comercial
+                                }-${idx}`}
+                                className="border border-gray-200 rounded-lg p-4 hover:bg-blue-50 transition-colors"
+                              >
+                                <div className="flex justify-between items-start gap-3 mb-3">
+                                  <div className="flex-1 min-w-0">
+                                    <p className="font-bold text-gray-900 text-base">
+                                      {med.nombre_comercial}
+                                    </p>
+                                    <p className="text-gray-600 text-sm italic">
+                                      {med.nombre_generico}
+                                    </p>
+                                  </div>
+                                  <Badge
+                                    className={`flex-shrink-0 text-xs font-semibold whitespace-nowrap ${
+                                      med.estado_disponibilidad === "disponible"
+                                        ? "bg-green-100 text-green-800"
+                                        : med.estado_disponibilidad ===
+                                          "sin-stock"
+                                        ? "bg-red-100 text-red-800"
+                                        : med.estado_disponibilidad ===
+                                          "stock-insuficiente"
+                                        ? "bg-orange-100 text-orange-800"
+                                        : "bg-yellow-100 text-yellow-800"
+                                    }`}
+                                  >
+                                    {med.estado_disponibilidad === "disponible"
+                                      ? "✓ OK"
+                                      : med.estado_disponibilidad ===
+                                        "sin-stock"
+                                      ? "Sin stock"
+                                      : med.estado_disponibilidad ===
+                                        "stock-insuficiente"
+                                      ? "Insuficiente"
+                                      : "Por vencer"}
+                                  </Badge>
+                                </div>
+
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                                  <div className="bg-blue-50 p-2 rounded">
+                                    <p className="text-gray-600 text-xs font-semibold mb-1">
+                                      Cantidad
+                                    </p>
+                                    <p className="font-bold text-gray-900">
+                                      {med.cantidad_requerida}
+                                    </p>
+                                  </div>
+                                  <div className="bg-green-50 p-2 rounded">
+                                    <p className="text-gray-600 text-xs font-semibold mb-1">
+                                      Stock
+                                    </p>
+                                    <p className="font-bold text-gray-900">
+                                      {med.stock_disponible}
+                                    </p>
+                                  </div>
+                                  {med.dosis && (
+                                    <div className="bg-purple-50 p-2 rounded">
+                                      <p className="text-gray-600 text-xs font-semibold mb-1">
+                                        Dosis
+                                      </p>
+                                      <p className="font-bold text-gray-900">
+                                        {med.dosis}
+                                      </p>
+                                    </div>
+                                  )}
+                                  <div className="bg-orange-50 p-2 rounded">
+                                    <p className="text-gray-600 text-xs font-semibold mb-1">
+                                      Precio
+                                    </p>
+                                    <p className="font-bold text-gray-900">
+                                      S/{" "}
+                                      {Number(med.precio_unitario).toFixed(2)}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                {med.frecuencia && (
+                                  <div className="mt-2 text-sm bg-gray-50 p-2 rounded">
+                                    <span className="font-semibold text-gray-700">
+                                      Frecuencia:
+                                    </span>{" "}
+                                    <span className="text-gray-600">
+                                      {med.frecuencia}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            ));
+                          })()
+                        ) : (
+                          <p className="text-center text-gray-500 py-8">
+                            No hay medicamentos en esta receta
+                          </p>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Formulario de Rechazo */}
+                  {recetaSeleccionada.estado_envio === "enviada" && (
+                    <Card className="border-l-4 border-l-red-500 bg-red-50">
+                      <CardHeader>
+                        <CardTitle className="text-lg flex items-center gap-2">
+                          <AlertTriangle className="w-5 h-5 text-red-600" />
+                          Rechazar Receta
+                        </CardTitle>
+                        <CardDescription>
+                          Proporciona un motivo para el rechazo
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <textarea
+                          placeholder="Ej: Sin stock de medicamentos, Documentación incompleta, Receta vencida..."
+                          value={motivoRechazo}
+                          onChange={(e) => setMotivoRechazo(e.target.value)}
+                          className="w-full border border-red-300 rounded-lg p-3 text-base focus:ring-2 focus:ring-red-500 focus:border-transparent transition resize-none"
+                          rows={3}
+                        />
+                        <Button
+                          className="w-full mt-4 bg-red-600 hover:bg-red-700 text-white font-semibold"
+                          onClick={() => {
+                            setAccionConfirmada("rechazar");
+                            setMostrarConfirmacion(true);
+                          }}
+                          disabled={procesando || !motivoRechazo.trim()}
+                        >
+                          {procesando ? (
+                            <>
+                              <LoaderCircle
+                                className="animate-spin mr-2"
+                                size={16}
+                              />
+                              Procesando...
+                            </>
+                          ) : (
+                            "Confirmar Rechazo"
+                          )}
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Botones de Acción */}
+                  <div className="flex gap-3 border-t pt-6">
+                    {recetaSeleccionada.estado_envio === "enviada" && (
+                      <Button
+                        className="flex-1 bg-green-600 hover:bg-green-700 text-white font-semibold text-base h-10"
+                        onClick={() => {
+                          setAccionConfirmada("aceptar");
+                          setMostrarConfirmacion(true);
+                        }}
+                        disabled={procesando}
+                      >
+                        {procesando ? (
+                          <>
+                            <LoaderCircle
+                              className="animate-spin mr-2"
+                              size={16}
+                            />
+                            Aceptando...
+                          </>
+                        ) : (
+                          "✓ Aceptar Receta"
+                        )}
+                      </Button>
+                    )}
+                    <Button
+                      variant="outline"
+                      className="flex-1 text-base h-10 font-semibold"
+                      onClick={() => {
+                        setMostrarDetalles(false);
+                        setMotivoRechazo("");
+                      }}
+                    >
+                      Cerrar
+                    </Button>
+                  </div>
+                </div>
+              </>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Dialog de Confirmación */}
+        <AlertDialog
+          open={mostrarConfirmacion}
+          onOpenChange={setMostrarConfirmacion}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {accionConfirmada === "aceptar"
+                  ? "Aceptar Receta"
+                  : "Rechazar Receta"}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {accionConfirmada === "aceptar"
+                  ? `¿Está seguro de que desea aceptar la receta ${recetaSeleccionada?.codigo_receta}? Se moverá a despacho inmediatamente.`
+                  : `¿Está seguro de que desea rechazar la receta ${recetaSeleccionada?.codigo_receta}?`}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="flex gap-2">
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (recetaSeleccionada && accionConfirmada) {
+                    responderReceta(recetaSeleccionada.id, accionConfirmada);
+                  }
+                }}
+                className={
+                  accionConfirmada === "aceptar"
+                    ? "bg-green-600 hover:bg-green-700"
+                    : "bg-red-600 hover:bg-red-700"
+                }
+              >
+                {procesando ? (
+                  <>
+                    <LoaderCircle className="animate-spin mr-2" size={16} />
+                    Procesando...
+                  </>
+                ) : accionConfirmada === "aceptar" ? (
+                  "Aceptar"
+                ) : (
+                  "Rechazar"
+                )}
+              </AlertDialogAction>
+            </div>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
     </div>
   );
 }

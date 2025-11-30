@@ -119,28 +119,87 @@ export async function PUT(
       console.log("🚀 Ejecutando update:", updateQuery);
       const result = await client.query(updateQuery, updateParams);
 
-      // Notificación si se completa
-      if (estado === "completada") {
+      const citaActualizada = result.rows[0];
+
+      // Notificación mejorada si se cambia el estado
+      if (estado) {
         const pacienteQuery = `
-    SELECT p.id_usuario 
-    FROM citas c
-    JOIN pacientes p ON c.id_paciente = p.id
-    WHERE c.id = $1
-  `;
+          SELECT p.id_usuario, u.nombre as paciente_nombre
+          FROM citas c
+          JOIN pacientes p ON c.id_paciente = p.id
+          JOIN usuarios u ON p.id_usuario = u.id
+          WHERE c.id = $1
+        `;
         const pacienteResult = await client.query(pacienteQuery, [citaRealId]);
 
         if (pacienteResult.rows.length > 0) {
-          // ✅ CORREGIDO: usuario_id en lugar de id_usuario
-          await client.query(
-            `INSERT INTO notificaciones (usuario_id, titulo, mensaje, tipo, entidad_relacionada, id_entidad)
-       VALUES ($1, $2, $3, 'cita', 'cita', $4)`,
-            [
-              pacienteResult.rows[0].id_usuario,
-              "Consulta Completada",
-              `El médico ha completado tu consulta médica. Revisa el diagnóstico y tratamiento en tu historial.`,
-              citaRealId, // ✅ id_entidad para referencia
-            ]
-          );
+          const usuarioPaciente = pacienteResult.rows[0].id_usuario;
+          
+          // Obtener datos del médico
+          const medicoInfoQuery = `
+            SELECT u.nombre, u.apellido
+            FROM medicos m
+            JOIN usuarios u ON m.id_usuario = u.id
+            WHERE m.id = $1
+          `;
+          const medicoInfoResult = await client.query(medicoInfoQuery, [medicoId]);
+          const nombreMedico = medicoInfoResult.rows.length > 0 
+            ? `${medicoInfoResult.rows[0].nombre} ${medicoInfoResult.rows[0].apellido}`
+            : "Su médico";
+
+          // Crear notificación directamente en la BD
+          try {
+            let titulo = "";
+            let accion = "";
+            
+            if (estado === "completada") {
+              titulo = "✔️ Cita Completada";
+              accion = "completar";
+            } else if (estado === "cancelada") {
+              titulo = "❌ Cita Cancelada";
+              accion = "cancelar";
+            } else {
+              titulo = "✅ Cita Confirmada";
+              accion = "confirmar";
+            }
+
+            const fechaObj = new Date(citaActualizada.fecha_cita + "T00:00:00");
+            const fechaFormato = isNaN(fechaObj.getTime())
+              ? citaActualizada.fecha_cita
+              : fechaObj.toLocaleDateString("es-PE");
+
+            const mensaje = accion === "completar"
+              ? `Tu consulta del ${fechaFormato} ha sido registrada`
+              : accion === "cancelar"
+              ? `Tu cita del ${fechaFormato} ha sido cancelada`
+              : `Tu cita del ${fechaFormato} ha sido confirmada`;
+
+            // Obtener usuario_id del paciente
+            const usuarioIdResult = await client.query(
+              "SELECT id_usuario FROM pacientes WHERE id = $1",
+              [pacienteResult.rows[0].paciente_id]
+            );
+
+            if (usuarioIdResult.rows.length > 0) {
+              const usuarioId = usuarioIdResult.rows[0].id_usuario;
+
+              const notifResult = await client.query(
+                `INSERT INTO notificaciones (id_usuario, titulo, mensaje, tipo, id_relacionado, leida, created_at)
+                 VALUES ($1, $2, $3, 'cita', $4, false, NOW())
+                 RETURNING id`,
+                [usuarioId, titulo, mensaje, citaRealId]
+              );
+
+              console.log("✅ Notificación de actualización de cita creada en BD:", {
+                id: notifResult.rows[0].id,
+                titulo,
+                accion,
+                estado,
+              });
+            }
+          } catch (notifError) {
+            console.error("❌ Error al crear notificación:", notifError);
+          }
         }
       }
 
