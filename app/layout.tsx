@@ -5,6 +5,7 @@ import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/auth-context";
+import { NotificacionesProvider } from "@/contexts/notificaciones-context";
 
 
 export const metadata: Metadata = {
@@ -20,7 +21,11 @@ export default function RootLayout({
   return (
     <html lang="es" className={`${GeistSans.variable} ${GeistMono.variable}`}>
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <NotificacionesProvider>
+            {children}
+          </NotificacionesProvider>
+        </AuthProvider>
       </body>
     </html>
   );

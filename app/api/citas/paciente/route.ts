@@ -295,10 +295,85 @@ export async function POST(request: Request) {
         ]
       );
 
-      await client.query("COMMIT");
-
       const nuevaCita = citaResult.rows[0];
       console.log("Cita creada exitosamente:", nuevaCita);
+
+      // ===== CREAR NOTIFICACIÓN PARA EL PACIENTE (DENTRO DE TRANSACCIÓN) =====
+      try {
+        const titulo = "📅 Nueva Cita Programada";
+        const fechaObj = new Date(fechaCitaPeru + "T00:00:00");
+        const fechaFormato = isNaN(fechaObj.getTime())
+          ? fechaCitaPeru
+          : fechaObj.toLocaleDateString("es-PE");
+
+        const medicoNombre = await client.query(
+          `SELECT u.nombre, u.apellido FROM medicos m 
+           JOIN usuarios u ON m.id_usuario = u.id WHERE m.id = $1`,
+          [medico_id]
+        );
+
+        const nombreMedico = medicoNombre.rows.length > 0
+          ? `${medicoNombre.rows[0].nombre} ${medicoNombre.rows[0].apellido}`
+          : "Su médico";
+
+        const mensaje = `Tu cita con ${nombreMedico} está programada para ${fechaFormato} a las ${horaFormateada}`;
+
+        const notifResult = await client.query(
+          `INSERT INTO notificaciones (id_usuario, titulo, mensaje, tipo, id_relacionado, leida, created_at)
+           VALUES ($1, $2, $3, 'cita', $4, false, NOW())
+           RETURNING id`,
+          [usuario.id, titulo, mensaje, nuevaCita.id]
+        );
+
+        console.log("✅ Notificación de cita creada para paciente:", {
+          id: notifResult.rows[0].id,
+          titulo,
+          usuarioId: usuario.id,
+          citaId: nuevaCita.id,
+        });
+
+        // ===== CREAR NOTIFICACIÓN PARA EL MÉDICO =====
+        const medicoUserResult = await client.query(
+          `SELECT id_usuario FROM medicos WHERE id = $1`,
+          [medico_id]
+        );
+
+        if (medicoUserResult.rows.length > 0) {
+          const medicoUserId = medicoUserResult.rows[0].id_usuario;
+          const pacienteNombre = await client.query(
+            `SELECT u.nombre FROM pacientes p 
+             JOIN usuarios u ON p.id_usuario = u.id WHERE p.id = $1`,
+            [paciente_id]
+          );
+
+          const nombrePaciente = pacienteNombre.rows.length > 0
+            ? pacienteNombre.rows[0].nombre
+            : "Un paciente";
+
+          const tituloMedico = "📅 Nueva Cita Agendada";
+          const mensajeMedico = `${nombrePaciente} ha agendado una cita para ${fechaFormato} a las ${horaFormateada}`;
+
+          const notifMedicoResult = await client.query(
+            `INSERT INTO notificaciones (id_usuario, titulo, mensaje, tipo, id_relacionado, leida, created_at)
+             VALUES ($1, $2, $3, 'cita', $4, false, NOW())
+             RETURNING id`,
+            [medicoUserId, tituloMedico, mensajeMedico, nuevaCita.id]
+          );
+
+          console.log("✅ Notificación de cita creada para médico:", {
+            id: notifMedicoResult.rows[0].id,
+            titulo: tituloMedico,
+            usuarioId: medicoUserId,
+            citaId: nuevaCita.id,
+          });
+        }
+      } catch (notifError) {
+        console.error("❌ Error al crear notificaciones:", notifError);
+        // No fallar la creación de cita si las notificaciones fallan
+      }
+
+      // COMMIT después de crear notificaciones
+      await client.query("COMMIT");
 
       return NextResponse.json(
         {

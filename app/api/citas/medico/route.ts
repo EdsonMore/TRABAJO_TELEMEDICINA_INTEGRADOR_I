@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
       SELECT 
         c.id,
         c.fecha_cita,
-        c.hora_cita, // ✅ AGREGAR ESTA LÍNEA
+        c.hora_cita,
         c.motivo_consulta,
         c.estado,
         c.tipo_cita,

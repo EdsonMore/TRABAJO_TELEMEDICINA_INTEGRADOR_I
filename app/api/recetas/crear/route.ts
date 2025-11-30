@@ -241,39 +241,39 @@ export async function POST(request: NextRequest) {
     // ===== 9. CREAR NOTIFICACIÓN PARA EL PACIENTE =====
     try {
       const pacienteUserResult = await client.query(
-        "SELECT id_usuario FROM pacientes WHERE id = $1",
+        "SELECT u.id as usuario_id, u.nombre FROM pacientes p JOIN usuarios u ON p.id_usuario = u.id WHERE p.id = $1",
         [pacienteId]
       );
 
       if (pacienteUserResult.rows.length > 0) {
-        const usuarioIdPaciente = pacienteUserResult.rows[0].id_usuario;
+        const pacienteUsuarioId = pacienteUserResult.rows[0].usuario_id;
+        const nombreMedico = `${usuario.nombre || "Su médico"}`;
 
-        await client.query(
-          `INSERT INTO notificaciones (
-            usuario_id,
+        // Crear notificación directamente en la BD
+        try {
+          const titulo = "💊 Nueva Receta Disponible";
+          const mensaje = `${nombreMedico} le ha enviado una nueva receta. Código: ${codigoReceta}`;
+
+          const notifResult = await client.query(
+            `INSERT INTO notificaciones (id_usuario, titulo, mensaje, tipo, id_relacionado, leida, created_at)
+             VALUES ($1, $2, $3, 'receta', $4, false, NOW())
+             RETURNING id`,
+            [pacienteUsuarioId, titulo, mensaje, recetaId]
+          );
+
+          console.log("✅ Notificación de receta creada en BD:", {
+            id: notifResult.rows[0].id,
             titulo,
-            mensaje,
-            tipo,
-            entidad_relacionada,
-            id_entidad,
-            fecha_creacion
-          ) VALUES (
-            $1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP
-          )`,
-          [
-            usuarioIdPaciente,
-            "Nueva Receta Médica",
-            `Tu médico ha emitido una nueva receta. Código: ${codigoReceta}`,
-            "receta",
-            "receta",
-            recetaId,
-          ]
-        );
-
-        console.log("✅ Notificación creada para paciente");
+            usuarioId: pacienteUsuarioId,
+            recetaId: recetaId,
+          });
+        } catch (notifDbError) {
+          console.error("❌ Error al crear notificación en BD:", notifDbError);
+          // No romper la transacción por error de notificación
+        }
       }
     } catch (notifError) {
-      console.warn("⚠️ Error al crear notificación:", notifError);
+      console.warn("⚠️ Error al procesar notificación:", notifError);
       // No romper la transacción por error de notificación
     }
 
