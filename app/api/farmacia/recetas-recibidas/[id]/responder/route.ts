@@ -155,14 +155,13 @@ export async function PATCH(
 
         await client.query(
           `INSERT INTO notificaciones 
-          (usuario_id, titulo, mensaje, tipo, entidad_relacionada, id_entidad)
-          VALUES ($1, $2, $3, $4, $5, $6)`,
+          (id_usuario, titulo, mensaje, tipo, id_relacionado)
+          VALUES ($1, $2, $3, $4, $5)`,
           [
             pacienteUserId,
             accion === "aceptar" ? "Receta Aceptada" : "Receta Rechazada",
             mensaje,
-            accion === "aceptar" ? "receta_aceptada" : "receta_rechazada",
-            "receta",
+            accion === "aceptar" ? "receta" : "receta",
             id,
           ]
         );

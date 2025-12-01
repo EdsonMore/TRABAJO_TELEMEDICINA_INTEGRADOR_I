@@ -137,6 +137,7 @@ export default function AgendarCitaPage() {
   const [citaCreada, setCitaCreada] = useState<any>(null);
   const [errores, setErrores] = useState<Record<string, string>>({});
   const [erroresPago, setErroresPago] = useState<Record<string, string>>({});
+  const [costoDinamico, setCostoDinamico] = useState<number>(0);
 
   // Cargar médicos al montar el componente
   useEffect(() => {
@@ -172,6 +173,18 @@ export default function AgendarCitaPage() {
       validarDatosPago();
     }
   }, [pagoData]);
+
+  // ✅ NUEVO: Actualizar costo dinámico cuando cambie médico o tipo de cita
+  useEffect(() => {
+    const nuevosCosto = calcularPrecio();
+    setCostoDinamico(nuevosCosto);
+    console.log("📊 Precio actualizado:", {
+      tipo_cita: formData.tipo_cita,
+      medico: medicoSeleccionado?.nombre,
+      tarifa_base: medicoSeleccionado?.tarifa_consulta,
+      costo: nuevosCosto,
+    });
+  }, [formData.tipo_cita, medicoSeleccionado]);
 
   // Función para obtener fecha y hora actual en Lima/Perú
   const getFechaHoraActual = () => {
@@ -597,15 +610,13 @@ export default function AgendarCitaPage() {
   };
 
   const procesarPago = async (citaId: string) => {
-    // ✅ Usar el monto real de la cita creada (que ya incluye ajustes por tipo)
-    const montoReal = citaCreada?.costo
-      ? parseFloat(citaCreada.costo)
-      : precioFinal;
+    // ✅ Usar el costo dinámico que ya está sincronizado con el tipo de cita
+    const montoReal = costoDinamico > 0 ? costoDinamico : citaCreada?.costo;
 
     const pagoPayload = {
       tipo_pago: "cita",
       referencia_id: citaId,
-      monto: montoReal, // ✅ Monto real de la cita (BD), no recalculado
+      monto: montoReal, // ✅ Usar costoDinamico sincronizado
       metodo_pago: pagoData.metodo_pago,
       datos_pago: pagoData,
     };
@@ -714,21 +725,37 @@ export default function AgendarCitaPage() {
     return hora.disponible && !hora.esPasado;
   };
 
+  // ✅ Función para convertir tarifa a número de forma segura
+  const convertirTarifa = (tarifa: any): number => {
+    const num = parseFloat(String(tarifa).replace(/[^0-9.-]/g, ""));
+    return isNaN(num) ? 0 : Math.round(num * 100) / 100;
+  };
+
+  // ✅ Función para formatear precio a número con 2 decimales
+  const redondearPrecio = (precio: number): number => {
+    return Math.round(precio * 100) / 100;
+  };
+
+  // ✅ Función para mostrar precio en UI
+  const formatearPrecio = (precio: number): string => {
+    return redondearPrecio(precio).toFixed(2);
+  };
+
   // Calcular precio según tipo de consulta
   const calcularPrecio = (): number => {
     if (!medicoSeleccionado) return 0;
 
+    const tarifaBase = convertirTarifa(medicoSeleccionado.tarifa_consulta);
+
     switch (formData.tipo_cita) {
       case "virtual":
-        return Math.max(medicoSeleccionado.tarifa_consulta - 20, 50);
+        return redondearPrecio(Math.max(tarifaBase - 20, 50));
       case "domicilio":
-        return medicoSeleccionado.tarifa_consulta + 50;
+        return redondearPrecio(tarifaBase + 50);
       default:
-        return medicoSeleccionado.tarifa_consulta;
+        return tarifaBase;
     }
   };
-
-  const precioFinal = calcularPrecio();
 
   return (
     <ProtectedRoute allowedRoles={["paciente"]}>
@@ -1083,29 +1110,29 @@ export default function AgendarCitaPage() {
                   {/* Resumen del Médico Seleccionado */}
                   <Card className="bg-blue-50 border-blue-200">
                     <CardContent className="p-4">
-                      <div className="flex items-center justify-between">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                         <div className="flex items-center space-x-4">
-                          <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center">
+                          <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
                             <User className="w-8 h-8 text-blue-600" />
                           </div>
-                          <div>
-                            <h3 className="font-bold text-lg text-gray-900">
+                          <div className="min-w-0">
+                            <h3 className="font-bold text-lg text-gray-900 break-words">
                               Dr. {medicoSeleccionado.nombre}{" "}
                               {medicoSeleccionado.apellido}
                             </h3>
                             <p className="text-blue-700 font-medium">
                               {medicoSeleccionado.especialidad}
                             </p>
-                            <div className="flex items-center gap-4 mt-1 text-sm text-gray-600">
+                            <div className="flex flex-wrap items-center gap-2 mt-1 text-sm text-gray-600">
                               <div className="flex items-center gap-1">
-                                <Star className="w-4 h-4 text-amber-600 fill-current" />
+                                <Star className="w-4 h-4 text-amber-600 fill-current flex-shrink-0" />
                                 <span>
                                   {medicoSeleccionado.calificacion_promedio ||
                                     "Nuevo"}
                                 </span>
                               </div>
                               <div className="flex items-center gap-1">
-                                <Award className="w-4 h-4" />
+                                <Award className="w-4 h-4 flex-shrink-0" />
                                 <span>
                                   {medicoSeleccionado.anos_experiencia} años
                                   exp.
@@ -1120,6 +1147,7 @@ export default function AgendarCitaPage() {
                         <Button
                           variant="outline"
                           onClick={() => setPasoActual(1)}
+                          className="w-full sm:w-auto flex-shrink-0"
                         >
                           Cambiar Médico
                         </Button>
@@ -1246,35 +1274,38 @@ export default function AgendarCitaPage() {
                             label: "Consulta Presencial",
                             icon: MapPin,
                             desc: "En el consultorio del médico",
-                            precio: medicoSeleccionado.tarifa_consulta,
+                            calcularPrecio: () => medicoSeleccionado.tarifa_consulta,
                           },
                           {
                             value: "virtual",
                             label: "Consulta Virtual",
                             icon: Video,
                             desc: "Videollamada desde tu casa",
-                            precio: Math.max(
+                            calcularPrecio: () => Math.max(
                               medicoSeleccionado.tarifa_consulta - 20,
                               50
                             ),
+                            badge: "Ahorro",
                           },
                           {
                             value: "domicilio",
                             label: "Consulta a Domicilio",
                             icon: Home,
                             desc: "El médico te visita",
-                            precio: medicoSeleccionado.tarifa_consulta + 50,
+                            calcularPrecio: () => Number(medicoSeleccionado.tarifa_consulta) + 50,
+                            badge: "+Tarifa",
                           },
                         ].map((tipo) => {
                           const IconComponent = tipo.icon;
                           const isSelected = formData.tipo_cita === tipo.value;
+                          const precioActual = tipo.calcularPrecio();
                           return (
                             <Card
                               key={tipo.value}
-                              className={`cursor-pointer border-2 transition-all ${
+                              className={`cursor-pointer border-2 transition-all hover:shadow-md ${
                                 isSelected
-                                  ? "border-blue-500 bg-blue-50"
-                                  : "border-gray-200"
+                                  ? "border-blue-500 bg-blue-50 ring-2 ring-blue-200"
+                                  : "border-gray-200 hover:border-blue-300"
                               }`}
                               onClick={() =>
                                 setFormData((prev) => ({
@@ -1284,22 +1315,43 @@ export default function AgendarCitaPage() {
                               }
                             >
                               <CardContent className="p-4 text-center">
-                                <IconComponent
-                                  className={`w-8 h-8 mx-auto mb-2 ${
-                                    isSelected
-                                      ? "text-blue-600"
-                                      : "text-gray-400"
-                                  }`}
-                                />
+                                <div className="relative mb-2">
+                                  <IconComponent
+                                    className={`w-8 h-8 mx-auto ${
+                                      isSelected
+                                        ? "text-blue-600"
+                                        : "text-gray-400"
+                                    }`}
+                                  />
+                                  {tipo.badge && (
+                                    <Badge
+                                      className={`absolute top-0 right-0 text-xs ${
+                                        tipo.badge === "Ahorro"
+                                          ? "bg-green-100 text-green-700"
+                                          : "bg-orange-100 text-orange-700"
+                                      }`}
+                                    >
+                                      {tipo.badge}
+                                    </Badge>
+                                  )}
+                                </div>
                                 <h4 className="font-bold text-gray-900">
                                   {tipo.label}
                                 </h4>
-                                <p className="text-sm text-gray-600 mb-2">
+                                <p className="text-sm text-gray-600 mb-3">
                                   {tipo.desc}
                                 </p>
-                                <div className="text-lg font-bold text-green-600">
-                                  S/ {tipo.precio}
+                                <div className="border-t pt-2">
+                                  <p className="text-xs text-gray-500 mb-1">Costo:</p>
+                                  <p className="text-lg font-bold text-green-600">
+                                    S/ {formatearPrecio(precioActual)}
+                                  </p>
                                 </div>
+                                {isSelected && (
+                                  <div className="mt-2 text-xs font-semibold text-blue-600">
+                                    ✓ Seleccionado
+                                  </div>
+                                )}
                               </CardContent>
                             </Card>
                           );
@@ -1309,11 +1361,12 @@ export default function AgendarCitaPage() {
                   </Card>
 
                   {/* Navegación */}
-                  <div className="flex justify-between pt-6">
+                  <div className="flex flex-col sm:flex-row sm:justify-between gap-3 pt-6">
                     <Button
                       type="button"
                       variant="outline"
                       onClick={() => setPasoActual(1)}
+                      className="w-full sm:w-auto"
                     >
                       ← Volver a Médicos
                     </Button>
@@ -1326,6 +1379,7 @@ export default function AgendarCitaPage() {
                         !!errores.fecha_cita ||
                         !!errores.hora_cita
                       }
+                      className="w-full sm:w-auto"
                     >
                       Continuar a Confirmación →
                     </Button>
@@ -1417,7 +1471,7 @@ export default function AgendarCitaPage() {
                             <div>
                               <span className="text-gray-600">Costo:</span>
                               <p className="font-semibold text-green-600 text-lg">
-                                S/ {precioFinal}
+                                S/ {formatearPrecio(costoDinamico)}
                               </p>
                             </div>
                           </div>
@@ -1562,23 +1616,23 @@ export default function AgendarCitaPage() {
                   {/* Resumen Final y Confirmación */}
                   <Card className="bg-gray-50">
                     <CardContent className="p-6">
-                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                         <div>
                           <h4 className="font-bold text-lg">Total a Pagar</h4>
                           <p className="text-2xl font-bold text-green-600">
-                            S/ {precioFinal}
+                            S/ {formatearPrecio(costoDinamico)}
                           </p>
                           <p className="text-sm text-gray-600">
                             El pago se realizará en el siguiente paso
                           </p>
                         </div>
-                        <div className="space-y-2">
+                        <div className="flex flex-col gap-2 w-full sm:w-auto">
                           <Button
                             type="submit"
                             disabled={
                               isLoading || Object.keys(errores).length > 0
                             }
-                            className="w-full sm:w-auto bg-green-600 hover:bg-green-700 h-12 px-8 text-lg font-bold"
+                            className="w-full bg-green-600 hover:bg-green-700 h-12 px-8 text-lg font-bold"
                           >
                             {isLoading ? (
                               <>
@@ -1596,7 +1650,7 @@ export default function AgendarCitaPage() {
                             type="button"
                             variant="outline"
                             onClick={() => setPasoActual(2)}
-                            className="w-full sm:w-auto"
+                            className="w-full"
                           >
                             ← Volver Atrás
                           </Button>
@@ -1642,7 +1696,7 @@ export default function AgendarCitaPage() {
                         </div>
                         <div className="text-right">
                           <p className="text-2xl font-bold text-green-600">
-                            S/ {precioFinal}
+                            S/ {costoDinamico}
                           </p>
                           <Badge
                             variant="outline"
@@ -1969,24 +2023,24 @@ export default function AgendarCitaPage() {
                   {/* Confirmación de Pago */}
                   <Card className="bg-gray-50">
                     <CardContent className="p-6">
-                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                         <div>
                           <h4 className="font-bold text-lg">Total a Pagar</h4>
                           <p className="text-2xl font-bold text-green-600">
-                            S/ {precioFinal}
+                            S/ {formatearPrecio(costoDinamico)}
                           </p>
                           <p className="text-sm text-gray-600">
                             Método: {pagoData.metodo_pago.toUpperCase()}
                           </p>
                         </div>
-                        <div className="space-y-2">
+                        <div className="flex flex-col gap-2 w-full sm:w-auto">
                           <Button
                             type="submit"
                             disabled={
                               isProcessingPago ||
                               Object.keys(erroresPago).length > 0
                             }
-                            className="w-full sm:w-auto bg-green-600 hover:bg-green-700 h-12 px-8 text-lg font-bold"
+                            className="w-full bg-green-600 hover:bg-green-700 h-12 px-8 text-lg font-bold"
                           >
                             {isProcessingPago ? (
                               <>
@@ -1996,7 +2050,7 @@ export default function AgendarCitaPage() {
                             ) : (
                               <>
                                 <CreditCard className="w-5 h-5 mr-2" />
-                                Pagar S/ {precioFinal}
+                                Pagar S/ {formatearPrecio(costoDinamico)}
                               </>
                             )}
                           </Button>
@@ -2004,7 +2058,7 @@ export default function AgendarCitaPage() {
                             type="button"
                             variant="outline"
                             onClick={() => setPasoActual(3)}
-                            className="w-full sm:w-auto"
+                            className="w-full"
                           >
                             ← Volver Atrás
                           </Button>

@@ -777,26 +777,7 @@ export default function RecetasRecibidas() {
                       <div className="space-y-3 max-h-96 overflow-y-auto">
                         {recetaSeleccionada.medicamentos &&
                         recetaSeleccionada.medicamentos.length > 0 ? (
-                          (() => {
-                            // Deduplicar medicamentos
-                            const medicamentosUnicos =
-                              recetaSeleccionada.medicamentos.reduce(
-                                (unique: any[], med: any) => {
-                                  const existe = unique.some(
-                                    (u: any) =>
-                                      u.medicamento_id === med.medicamento_id ||
-                                      u.nombre_comercial ===
-                                        med.nombre_comercial
-                                  );
-                                  if (!existe) {
-                                    unique.push(med);
-                                  }
-                                  return unique;
-                                },
-                                []
-                              );
-
-                            return medicamentosUnicos.map((med, idx) => (
+                          recetaSeleccionada.medicamentos.map((med, idx) => (
                               <div
                                 key={`med-${
                                   med.medicamento_id || med.nombre_comercial
@@ -886,8 +867,7 @@ export default function RecetasRecibidas() {
                                   </div>
                                 )}
                               </div>
-                            ));
-                          })()
+                            ))
                         ) : (
                           <p className="text-center text-gray-500 py-8">
                             No hay medicamentos en esta receta

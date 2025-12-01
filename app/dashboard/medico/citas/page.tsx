@@ -38,34 +38,48 @@ export default function GestionCitasPage() {
   const [pacienteHistorial, setPacienteHistorial] = useState<any>(null);
 
   // Cargar agenda y citas
-  useEffect(() => {
-    const cargarAgenda = async () => {
-      if (!token) return;
+  const cargarAgenda = async (silencioso = false) => {
+    if (!token) return;
 
+    if (!silencioso) {
       setIsLoading(true);
-      try {
-        const headers = {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        };
+    }
+    try {
+      const headers = {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      };
 
-        // Cargar agenda (próximos 30 días)
-        const agendaRes = await fetch("/api/medico/agenda?dias=30", { headers });
-        if (agendaRes.ok) {
-          const agendaData = await agendaRes.json();
-          setAgenda(agendaData.agenda || []);
-        } else {
-          setError("No se pudo cargar la agenda");
-        }
-      } catch (err) {
-        console.error("Error cargando agenda:", err);
+      // Cargar agenda (próximos 30 días)
+      const agendaRes = await fetch("/api/medico/agenda?dias=30", { headers });
+      if (agendaRes.ok) {
+        const agendaData = await agendaRes.json();
+        setAgenda(agendaData.agenda || []);
+        setError(null);
+      } else {
+        setError("No se pudo cargar la agenda");
+      }
+    } catch (err) {
+      console.error("Error cargando agenda:", err);
+      if (!silencioso) {
         setError("Error de conexión");
-      } finally {
+      }
+    } finally {
+      if (!silencioso) {
         setIsLoading(false);
       }
-    };
+    }
+  };
 
+  useEffect(() => {
     cargarAgenda();
+
+    // 🔄 Auto-actualizar cada 20 segundos (silencioso)
+    const intervalId = setInterval(() => {
+      cargarAgenda(true);
+    }, 20000);
+
+    return () => clearInterval(intervalId);
   }, [token]);
 
   // Convertir agenda a array de citas plano

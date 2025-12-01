@@ -38,6 +38,7 @@ import {
   Users,
   MoreVertical,
   Stethoscope, // Icono añadido para gestión médica
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -80,6 +81,7 @@ interface CalendarioCitasProps {
   onVerDetalles?: (cita: Cita) => void;
   onCrearReceta?: (cita: Cita) => void;
   onUnirseVideollamada?: (cita: Cita) => void;
+  onActualizar?: () => void;
 }
 
 export function CalendarioCitas({
@@ -87,15 +89,51 @@ export function CalendarioCitas({
   onVerDetalles,
   onCrearReceta,
   onUnirseVideollamada,
+  onActualizar,
 }: CalendarioCitasProps) {
   const [mesActual, setMesActual] = useState(new Date());
   const [filtroEstado, setFiltroEstado] = useState<string>("todas");
   const [filtroTipo, setFiltroTipo] = useState<string>("todos");
   const [busqueda, setBusqueda] = useState("");
+  const [actualizando, setActualizando] = useState(false);
+
+  console.log(`[CALENDARIO CITAS] Recibidas ${citas.length} citas`);
+  console.log(`[CALENDARIO CITAS] Mes actual: ${format(mesActual, "yyyy-MM")}`);
+  if (citas.length > 0) {
+    console.log(`[CALENDARIO CITAS] Primera cita:`, {
+      id: citas[0].id,
+      fecha: citas[0].fecha_cita,
+      estado: citas[0].estado,
+      paciente: citas[0].paciente?.nombre
+    });
+  }
+
+  // Función para convertir string de fecha YYYY-MM-DD a Date sin problemas de timezone
+  const parsearFechaLocal = (fechaStr: string): Date => {
+    // Si es un string formato YYYY-MM-DD, parsear como fecha local
+    if (typeof fechaStr === 'string' && fechaStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      const [year, month, day] = fechaStr.split('-').map(Number);
+      return new Date(year, month - 1, day);
+    }
+    // Sino, intentar como ISO string normal
+    return new Date(fechaStr);
+  };
 
   // Estados para el modal de gestión
   const [modalGestionAbierto, setModalGestionAbierto] = useState(false);
   const [citaSeleccionada, setCitaSeleccionada] = useState<Cita | null>(null);
+
+  // Función para actualizar agenda
+  const manejarActualizar = async () => {
+    setActualizando(true);
+    try {
+      if (onActualizar) {
+        await onActualizar();
+      }
+    } finally {
+      setActualizando(false);
+    }
+  };
 
   // Obtener días del mes
   const primerDia = startOfMonth(mesActual);
@@ -104,8 +142,11 @@ export function CalendarioCitas({
 
   // Filtrar citas según los criterios
   const citasFiltradas = useMemo(() => {
-    return citas.filter((cita) => {
-      const citaEnMes = isSameMonth(new Date(cita.fecha_cita), mesActual);
+    console.log(`[DEBUG CALENDARIO] Filtrando ${citas.length} citas para mes ${format(mesActual, "yyyy-MM")}`);
+    
+    const filtradas = citas.filter((cita) => {
+      const fechaCita = parsearFechaLocal(cita.fecha_cita);
+      const citaEnMes = isSameMonth(fechaCita, mesActual);
       const coincideEstado =
         filtroEstado === "todas" || cita.estado === filtroEstado;
       const coincideTipo =
@@ -118,14 +159,21 @@ export function CalendarioCitas({
           .includes(busqueda.toLowerCase()) ||
         cita.motivo_consulta?.toLowerCase().includes(busqueda.toLowerCase());
 
+      if (!citaEnMes) {
+        console.log(`[DEBUG CITA] ID ${cita.id}: Fecha ${format(fechaCita, "yyyy-MM-dd")} NO en mes ${format(mesActual, "yyyy-MM")}`);
+      }
+
       return citaEnMes && coincideEstado && coincideTipo && coincideBusqueda;
     });
+    
+    console.log(`[DEBUG CALENDARIO] Citas filtradas: ${filtradas.length}`);
+    return filtradas;
   }, [citas, mesActual, filtroEstado, filtroTipo, busqueda]);
 
   // Obtener citas para un día específico
   const obtenerCitasDelDia = (dia: Date) => {
     const citasDelDia = citasFiltradas.filter((cita) =>
-      isSameDay(convertirFechaAPeru(cita.fecha_cita), dia)
+      isSameDay(parsearFechaLocal(cita.fecha_cita), dia)
     );
 
     // Eliminar duplicados por ID + Hora para este día específico
@@ -143,7 +191,7 @@ export function CalendarioCitas({
 
   const convertirFechaAPeru = (fecha: string): Date => {
     // Ya viene convertida del backend, solo crear Date object
-    return new Date(fecha + "T00:00:00-05:00");
+    return parsearFechaLocal(fecha);
   };
 
   // Obtener estadísticas
@@ -173,25 +221,22 @@ export function CalendarioCitas({
       return true;
     });
 
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+
     return citasSinDuplicados
       .filter((c) => {
-        const fechaCitaPeru = convertirFechaAPeru(c.fecha_cita);
-        const horaParts = c.hora_cita?.split(":") || ["00", "00"];
-        fechaCitaPeru.setHours(parseInt(horaParts[0]), parseInt(horaParts[1]));
-
-        const ahoraPeru = new Date();
-        const offsetPeru = -5 * 60 * 60 * 1000;
-        const ahoraPeruAjustado = new Date(ahoraPeru.getTime() + offsetPeru);
-
+        const fechaCita = parsearFechaLocal(c.fecha_cita);
+        // Mostrar solo citas de hoy en adelante que estén confirmadas o programadas
         return (
-          fechaCitaPeru >= ahoraPeruAjustado &&
+          fechaCita >= hoy &&
           (c.estado === "confirmada" || c.estado === "programada")
         );
       })
       .sort(
         (a, b) =>
-          convertirFechaAPeru(a.fecha_cita).getTime() -
-          convertirFechaAPeru(b.fecha_cita).getTime()
+          parsearFechaLocal(a.fecha_cita).getTime() -
+          parsearFechaLocal(b.fecha_cita).getTime()
       )
       .slice(0, 6);
   }, [citasFiltradas]);
@@ -264,57 +309,69 @@ export function CalendarioCitas({
   return (
     <div className="space-y-6 p-2 sm:p-4">
       {/* Header Principal */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-2xl p-6 text-white shadow-lg">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold mb-2 flex items-center gap-3">
-              <Calendar className="w-8 h-8" />
-              Calendario de Citas
-            </h1>
-            <p className="text-blue-100 text-lg">
-              {format(mesActual, "MMMM 'de' yyyy", { locale: es })}
-            </p>
-          </div>
+      <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-2xl p-4 sm:p-6 text-white shadow-lg">
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h1 className="text-xl sm:text-3xl font-bold mb-2 flex items-center gap-2 sm:gap-3">
+                <Calendar className="w-6 h-6 sm:w-8 sm:h-8" />
+                Calendario de Citas
+              </h1>
+              <p className="text-blue-100 text-base sm:text-lg">
+                {format(mesActual, "MMMM 'de' yyyy", { locale: es })}
+              </p>
+            </div>
 
-          <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() =>
-                setMesActual(
-                  (prev) => new Date(prev.getFullYear(), prev.getMonth() - 1)
-                )
-              }
-              className="h-10 w-10 bg-white/10 border-white/20 text-white hover:bg-white/20"
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => setMesActual(new Date())}
-              className="bg-white/10 border-white/20 text-white hover:bg-white/20 px-4"
-            >
-              Hoy
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() =>
-                setMesActual(
-                  (prev) => new Date(prev.getFullYear(), prev.getMonth() + 1)
-                )
-              }
-              className="h-10 w-10 bg-white/10 border-white/20 text-white hover:bg-white/20"
-            >
-              <ChevronRight className="h-5 w-5" />
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() =>
+                  setMesActual(
+                    (prev) => new Date(prev.getFullYear(), prev.getMonth() - 1)
+                  )
+                }
+                className="h-9 w-9 sm:h-10 sm:w-10 bg-white/10 border-white/20 text-white hover:bg-white/20 flex-shrink-0"
+              >
+                <ChevronLeft className="h-4 w-4 sm:h-5 sm:w-5" />
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setMesActual(new Date())}
+                className="bg-white/10 border-white/20 text-white hover:bg-white/20 px-3 sm:px-4 text-xs sm:text-base"
+              >
+                Hoy
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() =>
+                  setMesActual(
+                    (prev) => new Date(prev.getFullYear(), prev.getMonth() + 1)
+                  )
+                }
+                className="h-9 w-9 sm:h-10 sm:w-10 bg-white/10 border-white/20 text-white hover:bg-white/20 flex-shrink-0"
+              >
+                <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={manejarActualizar}
+                disabled={actualizando}
+                className="h-9 w-9 sm:h-10 sm:w-10 bg-white/10 border-white/20 text-white hover:bg-white/20 flex-shrink-0"
+                title="Actualizar citas"
+              >
+                <RefreshCw className={`h-4 w-4 sm:h-5 sm:w-5 ${actualizando ? "animate-spin" : ""}`} />
+              </Button>
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
-        {/* Panel Lateral - Filtros y Estadísticas */}
-        <div className="xl:col-span-1 space-y-6">
+      <div className="grid grid-cols-1 xl:grid-cols-4 gap-4 sm:gap-6">
+        {/* Panel Lateral - Filtros y Estadísticas (Colapsible en móvil) */}
+        <div className="xl:col-span-1 space-y-4 xl:space-y-6 order-2 xl:order-1">
           {/* Buscador */}
           <Card className="shadow-sm border border-gray-200 rounded-2xl">
             <CardHeader className="pb-4">
@@ -377,40 +434,40 @@ export function CalendarioCitas({
           {/* Estadísticas */}
           <Card className="shadow-sm border border-gray-200 rounded-2xl">
             <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Users className="w-5 h-5 text-blue-600" />
+              <CardTitle className="text-base sm:text-lg flex items-center gap-2">
+                <Users className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" />
                 Resumen del Mes
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-blue-50 rounded-xl p-4 text-center border border-blue-100">
-                  <div className="text-2xl font-bold text-blue-700">
+            <CardContent className="space-y-3 sm:space-y-4">
+              <div className="grid grid-cols-2 sm:grid-cols-2 gap-2 sm:gap-4">
+                <div className="bg-blue-50 rounded-xl p-2 sm:p-4 text-center border border-blue-100">
+                  <div className="text-xl sm:text-2xl font-bold text-blue-700">
                     {estadisticas.total}
                   </div>
-                  <div className="text-sm text-blue-600 font-medium">Total</div>
+                  <div className="text-xs sm:text-sm text-blue-600 font-medium">Total</div>
                 </div>
-                <div className="bg-amber-50 rounded-xl p-4 text-center border border-amber-100">
-                  <div className="text-2xl font-bold text-amber-700">
+                <div className="bg-amber-50 rounded-xl p-2 sm:p-4 text-center border border-amber-100">
+                  <div className="text-xl sm:text-2xl font-bold text-amber-700">
                     {estadisticas.programadas}
                   </div>
-                  <div className="text-sm text-amber-600 font-medium">
+                  <div className="text-xs sm:text-sm text-amber-600 font-medium">
                     Programadas
                   </div>
                 </div>
-                <div className="bg-green-50 rounded-xl p-4 text-center border border-green-100">
-                  <div className="text-2xl font-bold text-green-700">
+                <div className="bg-green-50 rounded-xl p-2 sm:p-4 text-center border border-green-100">
+                  <div className="text-xl sm:text-2xl font-bold text-green-700">
                     {estadisticas.completadas}
                   </div>
-                  <div className="text-sm text-green-600 font-medium">
+                  <div className="text-xs sm:text-sm text-green-600 font-medium">
                     Completadas
                   </div>
                 </div>
-                <div className="bg-red-50 rounded-xl p-4 text-center border border-red-100">
-                  <div className="text-2xl font-bold text-red-700">
+                <div className="bg-red-50 rounded-xl p-2 sm:p-4 text-center border border-red-100">
+                  <div className="text-xl sm:text-2xl font-bold text-red-700">
                     {estadisticas.canceladas}
                   </div>
-                  <div className="text-sm text-red-600 font-medium">
+                  <div className="text-xs sm:text-sm text-red-600 font-medium">
                     Canceladas
                   </div>
                 </div>
@@ -447,15 +504,15 @@ export function CalendarioCitas({
         {/* Contenido Principal - Calendario y Próximas Citas */}
         <div className="xl:col-span-3 space-y-6">
           {/* Calendario */}
-          <Card className="shadow-sm border border-gray-200 rounded-2xl">
-            <CardContent className="p-6">
+          <Card className="shadow-sm border border-gray-200 rounded-2xl overflow-hidden">
+            <CardContent className="p-3 sm:p-6">
               {/* Encabezado días de semana */}
-              <div className="grid grid-cols-7 gap-1 mb-6 bg-gray-50 rounded-xl p-2">
+              <div className="grid grid-cols-7 gap-0.5 sm:gap-1 mb-3 sm:mb-6 bg-gray-50 rounded-xl p-1 sm:p-2">
                 {["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"].map(
                   (dia) => (
                     <div
                       key={dia}
-                      className="text-center font-semibold text-sm text-gray-600 py-3"
+                      className="text-center font-semibold text-xs sm:text-sm text-gray-600 py-2 sm:py-3"
                     >
                       {dia}
                     </div>
@@ -464,7 +521,7 @@ export function CalendarioCitas({
               </div>
 
               {/* Grid de días */}
-              <div className="grid grid-cols-7 gap-2">
+              <div className="grid grid-cols-7 gap-1 sm:gap-2">
                 {diasDelMes.map((dia) => {
                   const citasDelDia = obtenerCitasDelDia(dia);
                   const esHoy = isToday(dia);
@@ -473,7 +530,7 @@ export function CalendarioCitas({
                   return (
                     <div
                       key={dia.toISOString()}
-                      className={`min-h-28 p-2 rounded-xl border-2 transition-all ${
+                      className={`min-h-20 sm:min-h-28 p-1.5 sm:p-2 rounded-lg sm:rounded-xl border-2 transition-all text-xs sm:text-base ${
                         esHoy
                           ? "border-blue-500 bg-blue-50 shadow-sm"
                           : esDelMes
@@ -482,7 +539,7 @@ export function CalendarioCitas({
                       } ${citasDelDia.length > 0 ? "cursor-pointer" : ""}`}
                     >
                       <div
-                        className={`text-sm font-semibold mb-2 ${
+                        className={`text-xs sm:text-sm font-semibold mb-1 sm:mb-2 ${
                           esHoy
                             ? "text-blue-700"
                             : esDelMes
@@ -492,18 +549,18 @@ export function CalendarioCitas({
                       >
                         {format(dia, "d")}
                       </div>
-                      <div className="space-y-1">
-                        {citasDelDia.slice(0, 3).map((cita, idx) => (
+                      <div className="space-y-0.5 sm:space-y-1">
+                        {citasDelDia.slice(0, 2).map((cita, idx) => (
                           <div
                             key={`${cita.id}-${idx}`}
-                            className={`text-xs p-1.5 rounded-lg text-white font-medium truncate shadow-sm ${getColorTipoCita(
+                            className={`text-xs p-1 sm:p-1.5 rounded-lg text-white font-medium truncate shadow-sm hidden sm:block ${getColorTipoCita(
                               cita.tipo_cita
                             )}`}
                             title={`${cita.hora_cita} - ${
                               cita.paciente?.nombre || "Sin nombre"
                             } - ${cita.motivo_consulta || "Sin motivo"}`}
                           >
-                            <div className="flex items-center justify-between">
+                            <div className="flex items-center justify-between gap-1">
                               <span className="truncate">
                                 {cita.hora_cita?.slice(0, 5)}
                               </span>
@@ -515,9 +572,26 @@ export function CalendarioCitas({
                             </div>
                           </div>
                         ))}
-                        {citasDelDia.length > 3 && (
-                          <div className="text-xs text-blue-600 font-semibold px-1 text-center">
-                            +{citasDelDia.length - 3} más
+                        {/* Indicador de citas en móvil */}
+                        {citasDelDia.length > 0 && (
+                          <div className="sm:hidden">
+                            <div className="flex gap-0.5">
+                              {citasDelDia.slice(0, 3).map((cita, idx) => (
+                                <div
+                                  key={idx}
+                                  className={`w-1.5 h-1.5 rounded-full ${getColorTipoCita(cita.tipo_cita)}`}
+                                  title={`${cita.hora_cita} - ${cita.paciente?.nombre || "Paciente"}`}
+                                ></div>
+                              ))}
+                              {citasDelDia.length > 3 && (
+                                <div className="w-1.5 h-1.5 bg-gray-400 rounded-full"></div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        {citasDelDia.length > 2 && (
+                          <div className="text-xs text-blue-600 font-semibold px-1 text-center hidden sm:block">
+                            +{citasDelDia.length - 2} más
                           </div>
                         )}
                       </div>

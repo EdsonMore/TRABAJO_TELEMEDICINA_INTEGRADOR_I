@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
     // Crear notificación
     const result = await client.query(
       `INSERT INTO notificaciones (
-        id_usuario, titulo, descripcion, tipo, referencia_id, leida, fecha_creacion
+        id_usuario, titulo, mensaje, tipo, id_relacionado, leida, created_at
       ) VALUES ($1, $2, $3, $4, $5, false, NOW())
       RETURNING id`,
       [id_paciente, titulo, descripcion, tipo, referencia_id || null]

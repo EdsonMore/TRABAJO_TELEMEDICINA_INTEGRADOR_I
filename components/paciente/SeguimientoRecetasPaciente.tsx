@@ -32,11 +32,14 @@ import {
 
 interface Medicamento {
   id: string;
-  medicamento: {
-    nombre_comercial: string;
-    nombre_generico: string;
+  medicamento?: {
+    nombre_comercial?: string;
+    nombre_generico?: string;
   };
-  cantidad: number;
+  nombre_comercial?: string;
+  nombre_generico?: string;
+  cantidad?: number;
+  dosis?: string;
 }
 
 interface HistorialEvento {
@@ -181,9 +184,12 @@ export default function SeguimientoRecetasPaciente() {
         localStorage.getItem("medilink_token") ||
         localStorage.getItem("token");
 
-      const response = await fetch(`/api/paciente/recetas/${recetaId}/historial`, {
-        headers: { Authorization: `Bearer ${authToken}` },
-      });
+      const response = await fetch(
+        `/api/paciente/recetas/${recetaId}/historial`,
+        {
+          headers: { Authorization: `Bearer ${authToken}` },
+        }
+      );
 
       if (!response.ok) throw new Error("Error al cargar historial");
 
@@ -208,10 +214,12 @@ export default function SeguimientoRecetasPaciente() {
     const diffMinutes = Math.floor(diffMs / 60000);
 
     if (diffMinutes < 1) return "Hace un momento";
-    if (diffMinutes < 60) return `Hace ${diffMinutes} minuto${diffMinutes !== 1 ? "s" : ""}`;
+    if (diffMinutes < 60)
+      return `Hace ${diffMinutes} minuto${diffMinutes !== 1 ? "s" : ""}`;
 
     const diffHours = Math.floor(diffMinutes / 60);
-    if (diffHours < 24) return `Hace ${diffHours} hora${diffHours !== 1 ? "s" : ""}`;
+    if (diffHours < 24)
+      return `Hace ${diffHours} hora${diffHours !== 1 ? "s" : ""}`;
 
     const diffDays = Math.floor(diffHours / 24);
     if (diffDays < 7) return `Hace ${diffDays} día${diffDays !== 1 ? "s" : ""}`;
@@ -301,12 +309,13 @@ export default function SeguimientoRecetasPaciente() {
       {/* Notificación de actualizaciones */}
       {notificacion && (
         <div
-          className={`p-4 rounded-lg flex items-start gap-3 animate-in slide-in-from-top ${notificacion.tipo === "exito"
-            ? "bg-green-50 border border-green-200"
-            : notificacion.tipo === "error"
+          className={`p-4 rounded-lg flex items-start gap-3 animate-in slide-in-from-top ${
+            notificacion.tipo === "exito"
+              ? "bg-green-50 border border-green-200"
+              : notificacion.tipo === "error"
               ? "bg-red-50 border border-red-200"
               : "bg-blue-50 border border-blue-200"
-            }`}
+          }`}
         >
           {notificacion.tipo === "exito" ? (
             <CheckCircle2
@@ -327,8 +336,8 @@ export default function SeguimientoRecetasPaciente() {
                 notificacion.tipo === "exito"
                   ? "text-green-800 font-medium"
                   : notificacion.tipo === "error"
-                    ? "text-red-800 font-medium"
-                    : "text-blue-800 font-medium"
+                  ? "text-red-800 font-medium"
+                  : "text-blue-800 font-medium"
               }
             >
               {notificacion.mensaje}
@@ -450,9 +459,31 @@ export default function SeguimientoRecetasPaciente() {
                     DETALLES
                   </p>
                   <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Medicamentos:</span>
-                      <span className="font-medium">
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <span className="text-gray-600">Medicamentos:</span>
+                        <div className="mt-1 space-y-1">
+                          {receta.medicamentos &&
+                          receta.medicamentos.length > 0 ? (
+                            receta.medicamentos.map((med, idx) => (
+                              <div
+                                key={idx}
+                                className="text-xs text-gray-700 font-medium"
+                              >
+                                •{" "}
+                                {med?.medicamento?.nombre_comercial ||
+                                  med?.nombre_comercial ||
+                                  "Medicamento"}
+                              </div>
+                            ))
+                          ) : (
+                            <div className="text-xs text-gray-500">
+                              Sin medicamentos
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <span className="font-medium ml-2">
                         {receta.medicamentos?.length || 0} producto
                         {receta.medicamentos && receta.medicamentos.length !== 1
                           ? "s"
@@ -479,10 +510,11 @@ export default function SeguimientoRecetasPaciente() {
                 <div className="flex items-center space-x-3 text-sm">
                   <div className="flex items-center space-x-2">
                     <div
-                      className={`w-3 h-3 rounded-full ${receta.estado_envio !== "no_enviada"
-                        ? "bg-blue-600"
-                        : "bg-gray-300"
-                        }`}
+                      className={`w-3 h-3 rounded-full ${
+                        receta.estado_envio !== "no_enviada"
+                          ? "bg-blue-600"
+                          : "bg-gray-300"
+                      }`}
                     ></div>
                     <span className="text-xs">Enviada</span>
                   </div>
@@ -491,12 +523,13 @@ export default function SeguimientoRecetasPaciente() {
 
                   <div className="flex items-center space-x-2">
                     <div
-                      className={`w-3 h-3 rounded-full ${["recibida", "en_proceso", "dispensada"].includes(
-                        receta.estado_envio
-                      )
-                        ? "bg-blue-600"
-                        : "bg-gray-300"
-                        }`}
+                      className={`w-3 h-3 rounded-full ${
+                        ["recibida", "en_proceso", "dispensada"].includes(
+                          receta.estado_envio
+                        )
+                          ? "bg-blue-600"
+                          : "bg-gray-300"
+                      }`}
                     ></div>
                     <span className="text-xs">Recibida</span>
                   </div>
@@ -505,12 +538,13 @@ export default function SeguimientoRecetasPaciente() {
 
                   <div className="flex items-center space-x-2">
                     <div
-                      className={`w-3 h-3 rounded-full ${["en_proceso", "dispensada"].includes(
-                        receta.estado_envio
-                      )
-                        ? "bg-blue-600"
-                        : "bg-gray-300"
-                        }`}
+                      className={`w-3 h-3 rounded-full ${
+                        ["en_proceso", "dispensada"].includes(
+                          receta.estado_envio
+                        )
+                          ? "bg-blue-600"
+                          : "bg-gray-300"
+                      }`}
                     ></div>
                     <span className="text-xs">Preparando</span>
                   </div>
@@ -519,10 +553,11 @@ export default function SeguimientoRecetasPaciente() {
 
                   <div className="flex items-center space-x-2">
                     <div
-                      className={`w-3 h-3 rounded-full ${receta.estado_envio === "dispensada"
-                        ? "bg-green-600"
-                        : "bg-gray-300"
-                        }`}
+                      className={`w-3 h-3 rounded-full ${
+                        receta.estado_envio === "dispensada"
+                          ? "bg-green-600"
+                          : "bg-gray-300"
+                      }`}
                     ></div>
                     <span className="text-xs">
                       {receta.tipo_entrega === "domicilio"
@@ -614,13 +649,17 @@ export default function SeguimientoRecetasPaciente() {
                     >
                       <div className="flex-1">
                         <p className="font-medium text-gray-900">
-                          {med.medicamento.nombre_comercial}
+                          {med?.medicamento?.nombre_comercial ||
+                            med?.nombre_comercial ||
+                            "Medicamento"}
                         </p>
                         <p className="text-xs text-gray-600">
-                          {med.medicamento.nombre_generico}
+                          {med?.medicamento?.nombre_generico ||
+                            med?.nombre_generico ||
+                            "Sin especificar"}
                         </p>
                         <p className="text-xs text-gray-600 mt-1">
-                          Cantidad: {med.cantidad} unidades
+                          Cantidad: {med?.cantidad || 0} unidades
                         </p>
                       </div>
                     </div>
@@ -730,17 +769,15 @@ export default function SeguimientoRecetasPaciente() {
                   ) : (
                     <div className="space-y-4">
                       {historialReceta.map((evento, idx) => (
-                        <div
-                          key={evento.id}
-                          className="flex items-start gap-4"
-                        >
+                        <div key={evento.id} className="flex items-start gap-4">
                           {/* Línea vertical y punto */}
                           <div className="flex flex-col items-center">
                             <div
-                              className={`w-4 h-4 rounded-full border-2 ${idx === historialReceta.length - 1
-                                ? "bg-blue-600 border-blue-600 ring-4 ring-blue-100"
-                                : "bg-white border-gray-300"
-                                }`}
+                              className={`w-4 h-4 rounded-full border-2 ${
+                                idx === historialReceta.length - 1
+                                  ? "bg-blue-600 border-blue-600 ring-4 ring-blue-100"
+                                  : "bg-white border-gray-300"
+                              }`}
                             />
                             {idx < historialReceta.length - 1 && (
                               <div className="w-0.5 h-full min-h-[40px] bg-gray-300 mt-1" />
