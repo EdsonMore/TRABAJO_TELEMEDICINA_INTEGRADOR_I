@@ -734,7 +734,7 @@ export function ModalHistorialPaciente({
                     )}
                     {cita.costo && (
                       <p>
-                        <strong>Costo:</strong> S/ {cita.costo.toFixed(2)}
+                        <strong>Costo:</strong> S/ {Number(cita.costo).toFixed(2)}
                       </p>
                     )}
                   </div>

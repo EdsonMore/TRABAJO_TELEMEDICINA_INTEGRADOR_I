@@ -129,9 +129,20 @@ export async function POST(request: NextRequest) {
       citaId,
     });
 
+    // ===== ACTUALIZAR recordatorio_enviado = true =====
+    const updateResult = await client.query(
+      `UPDATE citas SET recordatorio_enviado = true WHERE id = $1 RETURNING id, recordatorio_enviado`,
+      [citaId]
+    );
+
+    console.log(`✅ recordatorio_enviado actualizado para cita:`, {
+      citaId,
+      recordatorio_enviado: updateResult.rows[0].recordatorio_enviado,
+    });
+
     return NextResponse.json({
       success: true,
-      message: "Notificación creada",
+      message: "Notificación creada y recordatorio registrado",
       notificationId: notificacionId,
     });
   } catch (error: any) {

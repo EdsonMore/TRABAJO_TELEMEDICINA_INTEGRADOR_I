@@ -6,6 +6,7 @@ import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/auth-context";
 import { NotificacionesProvider } from "@/contexts/notificaciones-context";
+import { SSEInitializer } from "@/components/notificaciones/sse-initializer";
 
 
 export const metadata: Metadata = {
@@ -23,6 +24,7 @@ export default function RootLayout({
       <body>
         <AuthProvider>
           <NotificacionesProvider>
+            <SSEInitializer />
             {children}
           </NotificacionesProvider>
         </AuthProvider>

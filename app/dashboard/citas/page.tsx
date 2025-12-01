@@ -216,14 +216,12 @@ export default function AgendarCitaPage() {
 
   // Función para verificar si una fecha/hora es en el pasado
   const esFechaHoraPasada = (fecha: string, hora: number): boolean => {
-    const ahora = getFechaHoraActual();
-
-    // ✅ CORREGIR: Crear la fecha de la cita correctamente
-    // Usar la fecha proporcionada + la hora, en zona horaria Perú
-    const fechaCita = new Date(
-      `${fecha}T${hora.toString().padStart(2, "0")}:00:00-05:00`
-    );
-
+    const ahora = new Date();
+    
+    // Parsear fecha del string YYYY-MM-DD
+    const [año, mes, día] = fecha.split("-").map(Number);
+    const fechaCita = new Date(año, mes - 1, día, hora, 0, 0);
+    
     const MARGEN_MINUTOS = 5;
     const limite = new Date(ahora.getTime() + MARGEN_MINUTOS * 60 * 1000);
 
@@ -233,7 +231,7 @@ export default function AgendarCitaPage() {
       fecha,
       hora: `${hora}:00`,
       ahora: ahora.toLocaleString("es-PE"),
-      cita: fechaCita.toLocaleString("es-PE"), // ✅ Debe mostrar 17/11/2025, 8:00:00 a. m.
+      cita: fechaCita.toLocaleString("es-PE"),
       esPasado,
     });
 
@@ -427,11 +425,15 @@ export default function AgendarCitaPage() {
     if (!formData.fecha_cita) {
       nuevosErrores.fecha_cita = "Debes seleccionar una fecha";
     } else {
-      const fechaSeleccionada = new Date(formData.fecha_cita);
-      const hoy = getFechaHoraActual();
-      hoy.setHours(0, 0, 0, 0);
+      // Parsear ambas fechas de la misma forma para comparar solo el día
+      const [añoSel, mesSel, díaSel] = formData.fecha_cita.split("-").map(Number);
+      const fechaSeleccionada = new Date(añoSel, mesSel - 1, díaSel);
+      
+      const ahora = new Date();
+      const [añoHoy, mesHoy, díaHoy] = [ahora.getFullYear(), ahora.getMonth() + 1, ahora.getDate()];
+      const fechaHoy = new Date(añoHoy, mesHoy - 1, díaHoy);
 
-      if (fechaSeleccionada < hoy) {
+      if (fechaSeleccionada < fechaHoy) {
         nuevosErrores.fecha_cita = "No puedes seleccionar una fecha pasada";
       }
     }
@@ -573,6 +575,7 @@ export default function AgendarCitaPage() {
       motivo_consulta: formData.motivo_consulta.trim(),
       sintomas: formData.sintomas.trim(),
       urgencia: formData.urgencia,
+      metodo_pago: pagoData.metodo_pago, // ✅ AGREGADO: Enviar método de pago
     };
 
     const response = await fetch("/api/citas/paciente", {
@@ -631,7 +634,7 @@ export default function AgendarCitaPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // En el paso 3, solo crear la cita y avanzar al pago
+    // En el paso 3, solo validar y avanzar al pago (NO crear la cita aún)
     if (pasoActual === 3) {
       if (!validarFormulario()) {
         toast({
@@ -642,30 +645,16 @@ export default function AgendarCitaPage() {
         return;
       }
 
-      setIsLoading(true);
-      try {
-        const cita = await crearCita();
-        setCitaCreada(cita);
-        setPasoActual(4);
-        toast({
-          title: "Cita creada exitosamente",
-          description: "Ahora procede con el pago para confirmar tu cita",
-        });
-      } catch (error: any) {
-        console.error("Error agendando cita:", error);
-        toast({
-          title: "Error al agendar cita",
-          description:
-            error.message || "No se pudo agendar la cita. Intenta nuevamente.",
-          variant: "destructive",
-        });
-      } finally {
-        setIsLoading(false);
-      }
+      // Avanzar al paso de pago sin crear la cita
+      setPasoActual(4);
+      toast({
+        title: "Detalles confirmados",
+        description: "Ahora procede con el pago para crear y confirmar tu cita",
+      });
       return;
     }
 
-    // En el paso 4, procesar el pago
+    // En el paso 4, crear la cita Y procesar el pago
     if (pasoActual === 4) {
       if (!validarDatosPago()) {
         toast({
@@ -678,7 +667,12 @@ export default function AgendarCitaPage() {
 
       setIsProcessingPago(true);
       try {
-        const resultadoPago = await procesarPago(citaCreada.id);
+        // Primero crear la cita
+        const cita = await crearCita();
+        setCitaCreada(cita);
+
+        // Luego procesar el pago
+        const resultadoPago = await procesarPago(cita.id);
 
         toast({
           title: "✅ ¡Pago procesado exitosamente!",
@@ -690,7 +684,7 @@ export default function AgendarCitaPage() {
           router.push("/dashboard/paciente?tab=citas");
         }, 3000);
       } catch (error: any) {
-        console.error("Error procesando pago:", error);
+        console.error("Error en pago o creación de cita:", error);
         toast({
           title: "Error al procesar pago",
           description:
@@ -1387,14 +1381,16 @@ export default function AgendarCitaPage() {
                             <div>
                               <span className="text-gray-600">Fecha:</span>
                               <p className="font-semibold">
-                                {new Date(
-                                  formData.fecha_cita
-                                ).toLocaleDateString("es-ES", {
-                                  weekday: "long",
-                                  year: "numeric",
-                                  month: "long",
-                                  day: "numeric",
-                                })}
+                                {(() => {
+                                  const [año, mes, día] = formData.fecha_cita.split("-").map(Number);
+                                  const fechaLocal = new Date(año, mes - 1, día);
+                                  return fechaLocal.toLocaleDateString("es-ES", {
+                                    weekday: "long",
+                                    year: "numeric",
+                                    month: "long",
+                                    day: "numeric",
+                                  });
+                                })()}
                               </p>
                             </div>
                             <div>
@@ -1612,7 +1608,7 @@ export default function AgendarCitaPage() {
               )}
 
               {/* PASO 4: PAGO */}
-              {pasoActual === 4 && citaCreada && medicoSeleccionado && (
+              {pasoActual === 4 && medicoSeleccionado && (
                 <div className="max-w-2xl mx-auto space-y-6">
                   <div className="text-center">
                     <h2 className="text-2xl font-bold text-gray-900">
@@ -1629,13 +1625,15 @@ export default function AgendarCitaPage() {
                       <div className="flex items-center justify-between">
                         <div>
                           <h3 className="font-bold text-lg text-gray-900">
-                            Cita #{citaCreada.id.slice(-8)}
+                            Resumen de tu Cita
                           </h3>
                           <p className="text-blue-700">
-                            {new Date(citaCreada.fecha_cita).toLocaleDateString(
-                              "es-ES"
-                            )}{" "}
-                            - {formatHora12h(parseInt(citaCreada.hora_cita))}
+                            {(() => {
+                              const [año, mes, día] = formData.fecha_cita.split("-").map(Number);
+                              const fechaLocal = new Date(año, mes - 1, día);
+                              return fechaLocal.toLocaleDateString("es-ES");
+                            })()}{" "}
+                            - {formatHora12h(parseInt(formData.hora_cita))}
                           </p>
                           <p className="text-sm text-gray-600">
                             Dr. {medicoSeleccionado.nombre}{" "}
