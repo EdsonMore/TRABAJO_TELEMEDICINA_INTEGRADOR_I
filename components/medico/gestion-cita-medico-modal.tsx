@@ -23,6 +23,13 @@ import {
   Phone,
 } from "lucide-react";
 import { ModalHistorialPaciente } from "./modal-historial-paciente";
+import {
+  validarTransicion,
+  obtenerEstadosPermitidos,
+  describirEstado,
+  esEstadoTerminal,
+  type EstadoCita,
+} from "@/lib/cita-state-machine";
 
 interface GestionCitaMedicoModalProps {
   isOpen: boolean;
@@ -208,6 +215,8 @@ export default function GestionCitaMedicoModal({
     observaciones_paciente: "",
   });
 
+  const [pacienteIdLocal, setPacienteIdLocal] = useState<string>("");
+
   // Cargar datos de la cita cuando se abre el modal
   useEffect(() => {
     if (cita && isOpen) {
@@ -240,6 +249,7 @@ export default function GestionCitaMedicoModal({
 
         // 🔥 SIEMPRE cargar datos del paciente desde BD si tenemos ID
         const pacienteId = citaReal.id_paciente || citaReal.paciente?.id;
+        setPacienteIdLocal(pacienteId || "");
         if (pacienteId && !pacienteId.startsWith("temp-")) {
           console.log("🔄 Cargando datos del paciente desde BD con ID:", pacienteId);
           await cargarDatosPacienteCompletos(pacienteId);
@@ -720,42 +730,12 @@ export default function GestionCitaMedicoModal({
     }
   };
 
-  const cambiarEstadoCita = async (nuevoEstado: string) => {
-    setIsLoading(true);
-    try {
-      const response = await fetch(`/api/citas/${citaData.id}`, {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          estado: nuevoEstado,
-        }),
-      });
-
-      if (response.ok) {
-        toast({
-          title: "Estado actualizado",
-          description: `La cita ha sido marcada como ${nuevoEstado}`,
-        });
-        onCitaActualizada();
-        setFormData((prev) => ({ ...prev, estado: nuevoEstado }));
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Error al cambiar estado");
-      }
-    } catch (error: any) {
-      console.error("Error cambiando estado:", error);
-      toast({
-        title: "Error",
-        description: error.message || "No se pudo cambiar el estado",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  // ⚠️ DEPRECATED: El cambio de estado ahora se maneja en guardarDatosMedicos()
+  // El estado se actualiza localmente en formData y se envía a la BD solo cuando
+  // el usuario presiona "Guardar Expediente"
+  // const cambiarEstadoCita = async (nuevoEstado: string) => {
+  //   ... código removido ...
+  // };
 
   const getEstadoConfig = (estado: string) => {
     const configs: any = {
@@ -972,24 +952,81 @@ export default function GestionCitaMedicoModal({
                 <h3 className="font-semibold text-gray-800 mb-3">
                   Estado de la Cita
                 </h3>
-                <div className="flex flex-wrap gap-4 items-center">
-                  <span
-                    className={`inline-flex px-3 py-1 text-sm font-semibold rounded-full ${estadoConfig.color}`}
-                  >
-                    {estadoConfig.label}
-                  </span>
+                <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3 sm:gap-4 sm:items-center">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`inline-flex px-3 py-1 text-sm font-semibold rounded-full ${getEstadoConfig(formData.estado).color}`}
+                    >
+                      {getEstadoConfig(formData.estado).label}
+                    </span>
+                    {citaData.estado !== formData.estado && (
+                      <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded font-medium animate-pulse">
+                        ⚠ Cambio pendiente
+                      </span>
+                    )}
+                  </div>
+                  
+                  {/* SELECT MEJORADO CON MÁQUINA DE ESTADOS */}
                   <select
                     value={formData.estado}
-                    onChange={(e) => cambiarEstadoCita(e.target.value)}
-                    disabled={isLoading}
-                    className="border border-gray-300 rounded-lg px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-black-800"
+                    onChange={(e) => {
+                      const nuevoEstado = e.target.value as EstadoCita;
+                      const validacion = validarTransicion(
+                        citaData.estado as EstadoCita,
+                        nuevoEstado
+                      );
+                      
+                      if (validacion.esValida) {
+                        setFormData((prev) => ({
+                          ...prev,
+                          estado: nuevoEstado,
+                        }));
+                        console.log(`✅ [STATE-MACHINE] Transición válida: ${citaData.estado} → ${nuevoEstado}`);
+                      } else {
+                        console.warn(`❌ [STATE-MACHINE] Transición inválida: ${validacion.razon}`);
+                        toast?.({
+                          title: "Transición no permitida",
+                          description: validacion.motivo_rechazo || validacion.razon,
+                          variant: "destructive",
+                        });
+                      }
+                    }}
+                    disabled={esEstadoTerminal(citaData.estado as EstadoCita)}
+                    className={`border rounded-lg px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-800 ${
+                      esEstadoTerminal(citaData.estado as EstadoCita)
+                        ? 'border-gray-200 opacity-50 cursor-not-allowed'
+                        : 'border-gray-300'
+                    }`}
                   >
-                    <option value="en_curso">En Curso</option>
-                    <option value="completada">Completada</option>
-                    <option value="no_asistio">No Asistió</option>
-                    <option value="cancelada">Cancelada</option>
+                    <option value={formData.estado} disabled>
+                      Estado actual: {describirEstado(formData.estado as EstadoCita)}
+                    </option>
+                    
+                    {/* Mostrar SOLO transiciones válidas */}
+                    {obtenerEstadosPermitidos(citaData.estado as EstadoCita).map(
+                      (estado) => (
+                        <option key={estado} value={estado}>
+                          → {describirEstado(estado as EstadoCita)}
+                        </option>
+                      )
+                    )}
                   </select>
                 </div>
+                
+                {/* AYUDA Y RESTRICCIONES */}
+                {esEstadoTerminal(citaData.estado as EstadoCita) ? (
+                  <p className="text-xs text-red-600 mt-2 font-medium">
+                    🔒 Esta cita está en estado terminal y no puede cambiar
+                  </p>
+                ) : obtenerEstadosPermitidos(citaData.estado as EstadoCita).length === 0 ? (
+                  <p className="text-xs text-orange-600 mt-2">
+                    ⚠️ No hay transiciones válidas disponibles desde este estado
+                  </p>
+                ) : (
+                  <p className="text-xs text-gray-500 mt-2">
+                    💡 Selecciona el nuevo estado y haz clic en "Guardar Expediente" para actualizar
+                  </p>
+                )}
               </div>
 
               {/* Información del paciente */}
@@ -1477,7 +1514,8 @@ export default function GestionCitaMedicoModal({
           historial={historialData}
           canAccess={canViewHistorial}
           accessDenialReason={historialAccess.reason}
-          citaFecha={citaData?.fecha_cita ? new Date(citaData.fecha_cita) : undefined}
+          citaFecha={citaData?.fecha_cita}
+          pacienteId={pacienteIdLocal}
         />
       )}
     </div>

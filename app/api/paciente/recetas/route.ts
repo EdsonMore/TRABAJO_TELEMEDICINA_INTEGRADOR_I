@@ -75,6 +75,15 @@ export async function GET(request: NextRequest) {
             [receta.id],
           )
 
+          // Deduplicar medicamentos por medicamento_id (por si hay duplicados en receta_detalle)
+          const medicamentosUnicos = medicamentosResult.rows.reduce((unique: any[], med: any) => {
+            const existe = unique.some((u: any) => u.medicamento_id === med.medicamento_id);
+            if (!existe) {
+              unique.push(med);
+            }
+            return unique;
+          }, []);
+
           return {
             id: receta.id,
             codigo_receta: receta.codigo_receta,
@@ -99,7 +108,7 @@ export async function GET(request: NextRequest) {
               especialidad: receta.especialidad_nombre,
             },
             farmacia_dispensadora: receta.farmacia_nombre,
-            medicamentos: medicamentosResult.rows.map((med: any) => ({
+            medicamentos: medicamentosUnicos.map((med: any) => ({
               id: med.detalle_id,
               medicamento: {
                 id: med.medicamento_id,

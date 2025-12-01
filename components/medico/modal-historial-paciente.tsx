@@ -1,7 +1,8 @@
 // components/medico/modal-historial-paciente.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { useAuth } from "@/contexts/auth-context";
 import {
   Dialog,
   DialogContent,
@@ -13,6 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { VirtualKeyboard } from "@/components/ui/virtual-keyboard";
 import {
   FileText,
   AlertCircle,
@@ -102,7 +104,6 @@ interface ModalHistorialPacienteProps {
   accessDenialReason?: string;
   citaFecha?: string;
   pacienteId?: string;
-  token?: string;
 }
 
 // ============= COMPONENTES AUXILIARES =============
@@ -124,8 +125,8 @@ export function ModalHistorialPaciente({
   accessDenialReason = "",
   citaFecha,
   pacienteId = "",
-  token = "",
 }: ModalHistorialPacienteProps) {
+  const { token } = useAuth();
   // ============= STATE =============
   const [isPasswordProtected, setIsPasswordProtected] = useState(false);
   const [password, setPassword] = useState("");
@@ -176,17 +177,17 @@ export function ModalHistorialPaciente({
 
   // ============= EFFECTS =============
   useEffect(() => {
-    if (isOpen && pacienteId && token) {
+    if (isOpen && token) {
       checkPasswordProtection();
     }
-  }, [isOpen, pacienteId, token]);
+  }, [isOpen, token]);
 
   // ============= FUNCIONES DE CONTRASEÑA =============
   const checkPasswordProtection = async () => {
     try {
       setLoading(true);
       const res = await fetch(
-        `/api/medico/pacientes/${pacienteId}/historial-protegido`,
+        `/api/medico/proteccion-historial`,
         {
           method: "POST",
           headers: {
@@ -223,7 +224,7 @@ export function ModalHistorialPaciente({
       setPasswordError("");
 
       const res = await fetch(
-        `/api/medico/pacientes/${pacienteId}/historial-protegido`,
+        `/api/medico/proteccion-historial`,
         {
           method: "POST",
           headers: {
@@ -273,7 +274,7 @@ export function ModalHistorialPaciente({
       setPasswordError("");
 
       const res = await fetch(
-        `/api/medico/pacientes/${pacienteId}/historial-protegido`,
+        `/api/medico/proteccion-historial`,
         {
           method: "POST",
           headers: {
@@ -303,12 +304,158 @@ export function ModalHistorialPaciente({
     }
   };
 
-  // ============= EARLY RETURNS =============
-  if (!historial) {
+  // ============= MEMOIZED MODAL COMPONENT =============
+  // IMPORTANTE: Este hook DEBE estar ANTES de cualquier early return
+  // para que React siempre lo cuente
+  const ModalCrearProteccion = useMemo(() => {
+    return () => (
+      <Dialog open={showPasswordSetup} onOpenChange={setShowPasswordSetup}>
+        <DialogContent className="rounded-2xl max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center text-lg font-semibold">
+              <Key className="w-5 h-5 mr-2 text-green-600" />
+              Crear Protección de Contraseña
+            </DialogTitle>
+            <DialogDescription>
+              Protege tus historiales médicos con una contraseña. Usa el teclado seguro para máxima protección.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6 py-4">
+            {/* Campo: Nueva Contraseña */}
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Nueva Contraseña
+              </label>
+              <div className="relative">
+                <Input
+                  type="password"
+                  value={setupPassword}
+                  onChange={(e) => {
+                    setSetupPassword(e.target.value);
+                    setPasswordError("");
+                  }}
+                  placeholder="Ingresa con el teclado seguro"
+                  className="pr-10 bg-gray-50"
+                  disabled={isSettingUp}
+                  readOnly
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+                  {setupPassword.length}/6+
+                </span>
+              </div>
+            </div>
+
+            {/* Teclado Virtual para Primera Contraseña */}
+            <div className="border-l-4 border-green-500 bg-green-50 p-4 rounded">
+              <p className="text-xs font-semibold text-green-700 mb-3">TECLADO SEGURO - NUEVA CONTRASEÑA</p>
+              <VirtualKeyboard
+                onInput={(char) => setSetupPassword(prev => prev + char)}
+                onBackspace={() => setSetupPassword(prev => prev.slice(0, -1))}
+                onClear={() => setSetupPassword("")}
+                inputLength={setupPassword.length}
+              />
+            </div>
+
+            {/* Campo: Confirmar Contraseña */}
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Confirmar Contraseña
+              </label>
+              <div className="relative">
+                <Input
+                  type="password"
+                  value={setupPasswordConfirm}
+                  onChange={(e) => {
+                    setSetupPasswordConfirm(e.target.value);
+                    setPasswordError("");
+                  }}
+                  placeholder="Confirma en el teclado seguro"
+                  className="pr-10 bg-gray-50"
+                  disabled={isSettingUp}
+                  readOnly
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+                  {setupPasswordConfirm.length}/6+
+                </span>
+              </div>
+            </div>
+
+            {/* Teclado Virtual para Confirmación */}
+            <div className="border-l-4 border-blue-500 bg-blue-50 p-4 rounded">
+              <p className="text-xs font-semibold text-blue-700 mb-3">TECLADO SEGURO - CONFIRMAR CONTRASEÑA</p>
+              <VirtualKeyboard
+                onInput={(char) => setSetupPasswordConfirm(prev => prev + char)}
+                onBackspace={() => setSetupPasswordConfirm(prev => prev.slice(0, -1))}
+                onClear={() => setSetupPasswordConfirm("")}
+                inputLength={setupPasswordConfirm.length}
+              />
+            </div>
+
+            {/* Mensaje de Error */}
+            {passwordError && (
+              <div className="bg-red-50 border border-red-200 rounded p-3">
+                <p className="text-sm text-red-700">❌ {passwordError}</p>
+              </div>
+            )}
+
+            {/* Validación */}
+            {setupPassword && setupPasswordConfirm && (
+              <div className="space-y-2">
+                {setupPassword.length >= 6 ? (
+                  <p className="text-xs text-green-600 flex items-center gap-1">
+                    ✅ Contraseña válida ({setupPassword.length} caracteres)
+                  </p>
+                ) : (
+                  <p className="text-xs text-orange-600 flex items-center gap-1">
+                    ⚠️ Mínimo 6 caracteres ({setupPassword.length}/6)
+                  </p>
+                )}
+
+                {setupPassword === setupPasswordConfirm ? (
+                  <p className="text-xs text-green-600 flex items-center gap-1">
+                    ✅ Las contraseñas coinciden
+                  </p>
+                ) : (
+                  <p className="text-xs text-red-600 flex items-center gap-1">
+                    ❌ Las contraseñas no coinciden
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Botones de Acción */}
+            <div className="flex gap-3 pt-4 border-t">
+              <Button
+                onClick={handleSetupPassword}
+                disabled={isSettingUp || setupPassword.length < 6 || setupPassword !== setupPasswordConfirm}
+                className="flex-1 bg-green-600 hover:bg-green-700"
+              >
+                {isSettingUp ? "Creando..." : "✓ Crear Protección"}
+              </Button>
+              <Button
+                onClick={() => setShowPasswordSetup(false)}
+                variant="outline"
+                className="flex-1"
+                disabled={isSettingUp}
+              >
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }, [showPasswordSetup, setupPassword, setupPasswordConfirm, passwordError, isSettingUp]);
+
+  // ============= CONDITIONAL RENDERING - SIN EARLY RETURNS =============
+
+  // Renderizar null si no hay datos
+  if (!historial || !isOpen) {
     return null;
   }
 
-  // Sin acceso
+  // Screen 1: Sin acceso (denegado)
   if (!canAccess && !accessGranted) {
     return (
       <Dialog open={isOpen} onOpenChange={onClose}>
@@ -358,73 +505,77 @@ export function ModalHistorialPaciente({
     );
   }
 
-  // Pantalla de protección por contraseña
+  // Screen 2: Protección por contraseña
   if (isPasswordProtected && !accessGranted) {
     return (
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="rounded-2xl max-w-md">
+        <DialogContent className="rounded-2xl max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center text-lg font-semibold">
               <Lock className="w-5 h-5 mr-2 text-blue-600" />
-              Historial Protegido
+              Acceso a Historial Protegido
             </DialogTitle>
             <DialogDescription>
-              Este historial está protegido con contraseña. Ingresa la
-              contraseña para continuar.
+              Este historial está protegido. Ingresa tu contraseña usando el teclado seguro.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
+          <div className="space-y-6 py-4">
+            {/* Campo de contraseña */}
             <div>
               <label className="block text-sm font-medium mb-2">
                 Contraseña
               </label>
               <div className="relative">
                 <Input
-                  type={showPassword ? "text" : "password"}
+                  type="password"
                   value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value);
-                    setPasswordError("");
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      handleVerifyPassword();
-                    }
-                  }}
-                  placeholder="Ingresa la contraseña"
-                  className="pr-10"
-                  disabled={isVerifying}
+                  placeholder="Ingresa con el teclado seguro"
+                  className="pr-10 bg-gray-50"
+                  disabled
+                  readOnly
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600"
-                >
-                  {showPassword ? (
-                    <EyeOff className="w-4 h-4" />
-                  ) : (
-                    <Eye className="w-4 h-4" />
-                  )}
-                </button>
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+                  {password.length} dígitos
+                </span>
               </div>
-              {passwordError && (
-                <p className="text-sm text-red-600 mt-2">{passwordError}</p>
-              )}
             </div>
 
-            <div className="flex gap-3">
+            {/* Teclado Virtual para Verificación */}
+            <div className="border-l-4 border-blue-500 bg-blue-50 p-4 rounded">
+              <p className="text-xs font-semibold text-blue-700 mb-3">🔒 TECLADO SEGURO - INGRESA TU CONTRASEÑA</p>
+              <VirtualKeyboard
+                onInput={(char) => {
+                  setPassword(prev => prev + char);
+                  setPasswordError("");
+                }}
+                onBackspace={() => setPassword(prev => prev.slice(0, -1))}
+                onClear={() => setPassword("")}
+                inputLength={password.length}
+              />
+            </div>
+
+            {/* Mensaje de Error */}
+            {passwordError && (
+              <div className="bg-red-50 border border-red-200 rounded p-3">
+                <p className="text-sm text-red-700">❌ {passwordError}</p>
+              </div>
+            )}
+
+            {/* Botones de Acción */}
+            <div className="flex gap-3 pt-4 border-t">
               <Button
                 onClick={handleVerifyPassword}
-                disabled={isVerifying}
+                disabled={isVerifying || password.length === 0}
                 className="flex-1 bg-blue-600 hover:bg-blue-700"
               >
-                {isVerifying ? "Verificando..." : "Verificar"}
+                {isVerifying ? "Verificando..." : "✓ Verificar"}
               </Button>
               <Button
                 onClick={onClose}
                 variant="outline"
                 className="flex-1"
+                disabled={isVerifying}
               >
                 Cancelar
               </Button>
@@ -435,170 +586,89 @@ export function ModalHistorialPaciente({
     );
   }
 
-  // Pantalla de crear contraseña (primera vez)
-  if (!isPasswordProtected && !accessGranted && showPasswordSetup) {
-    return (
-      <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="rounded-2xl max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center text-lg font-semibold">
-              <Key className="w-5 h-5 mr-2 text-green-600" />
-              Crear Protección de Contraseña
-            </DialogTitle>
-            <DialogDescription>
-              Protege este historial con una contraseña. La próxima vez que lo
-              consultes, necesitarás esta contraseña.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-4">
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                Nueva Contraseña
-              </label>
-              <div className="relative">
-                <Input
-                  type={showNewPassword ? "text" : "password"}
-                  value={setupPassword}
-                  onChange={(e) => {
-                    setSetupPassword(e.target.value);
-                    setPasswordError("");
-                  }}
-                  placeholder="Mínimo 6 caracteres"
-                  className="pr-10"
-                  disabled={isSettingUp}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowNewPassword(!showNewPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600"
-                >
-                  {showNewPassword ? (
-                    <EyeOff className="w-4 h-4" />
-                  ) : (
-                    <Eye className="w-4 h-4" />
-                  )}
-                </button>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                Confirmar Contraseña
-              </label>
-              <div className="relative">
-                <Input
-                  type={showConfirmPassword ? "text" : "password"}
-                  value={setupPasswordConfirm}
-                  onChange={(e) => {
-                    setSetupPasswordConfirm(e.target.value);
-                    setPasswordError("");
-                  }}
-                  placeholder="Confirma tu contraseña"
-                  className="pr-10"
-                  disabled={isSettingUp}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600"
-                >
-                  {showConfirmPassword ? (
-                    <EyeOff className="w-4 h-4" />
-                  ) : (
-                    <Eye className="w-4 h-4" />
-                  )}
-                </button>
-              </div>
-              {passwordError && (
-                <p className="text-sm text-red-600 mt-2">{passwordError}</p>
-              )}
-            </div>
-
-            <div className="flex gap-3">
-              <Button
-                onClick={handleSetupPassword}
-                disabled={isSettingUp}
-                className="flex-1 bg-green-600 hover:bg-green-700"
-              >
-                {isSettingUp ? "Creando..." : "Crear Protección"}
-              </Button>
-              <Button
-                onClick={() => setShowPasswordSetup(false)}
-                variant="outline"
-                className="flex-1"
-              >
-                Cancelar
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-    );
-  }
-
-  // PANTALLA PRINCIPAL - Mostrar historial completo
+  // Screen 3: PANTALLA PRINCIPAL - Mostrar historial completo
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent
         className="
-          max-w-6xl 
-          max-h-[85vh] 
+          max-w-7xl 
+          max-h-[90vh] 
           w-full 
           overflow-y-auto 
           rounded-2xl 
-          p-6 
+          p-8 
           scrollbar-thin 
           scrollbar-thumb-gray-300 
           scrollbar-track-transparent
         "
       >
-        <DialogHeader className="pb-2 sticky top-0 bg-white z-10">
-          <DialogTitle className="flex items-center text-xl font-semibold">
-            <FileText className="w-5 h-5 mr-2 text-primary" />
-            Historial Médico de {getPacienteNombre()} {getPacienteApellido()}
-          </DialogTitle>
-          <DialogDescription>
-            Evolución clínica completa del paciente
-            {isPasswordProtected && (
-              <span className="ml-2 inline-flex items-center text-blue-600">
-                <Lock className="w-4 h-4 mr-1" /> Protegido
-              </span>
-            )}
-            {!isPasswordProtected && !loading && (
-              <button
-                onClick={() => setShowPasswordSetup(true)}
-                className="ml-2 text-blue-600 hover:text-blue-700 text-sm underline"
-              >
-                Proteger con contraseña
-              </button>
-            )}
-          </DialogDescription>
+        <DialogHeader className="pb-6 sticky top-0 bg-white z-10 border-b">
+          <div className="space-y-4">
+            {/* Título principal */}
+            <div className="flex items-center justify-between gap-4">
+              <DialogTitle className="flex items-center text-2xl font-bold">
+                <FileText className="w-6 h-6 mr-3 text-blue-600" />
+                Historial Médico de {getPacienteNombre()} {getPacienteApellido()}
+              </DialogTitle>
+            </div>
+
+            {/* Descripción y botones de protección */}
+            <div className="flex items-center justify-between">
+              <div>
+                <DialogDescription>
+                  Evolución clínica completa del paciente
+                </DialogDescription>
+              </div>
+
+              {/* Botones de protección */}
+              <div className="flex items-center gap-3">
+                {isPasswordProtected && (
+                  <div className="inline-flex items-center px-3 py-1 bg-blue-100 rounded-full">
+                    <Lock className="w-4 h-4 mr-2 text-blue-600" />
+                    <span className="text-sm font-medium text-blue-700">Protegido</span>
+                  </div>
+                )}
+                {!isPasswordProtected && !loading && (
+                  <button
+                    onClick={() => setShowPasswordSetup(true)}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors cursor-pointer"
+                  >
+                    🔐 Proteger
+                  </button>
+                )}
+                {loading && (
+                  <span className="text-sm text-gray-500">Cargando...</span>
+                )}
+              </div>
+            </div>
+          </div>
         </DialogHeader>
 
-        <Tabs defaultValue="resumen" className="w-full mt-4">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="resumen">Resumen</TabsTrigger>
-            <TabsTrigger value="citas">
+        <Tabs defaultValue="resumen" className="w-full mt-6">
+          <TabsList className="grid w-full grid-cols-4 bg-gray-100 p-1 rounded-lg">
+            <TabsTrigger value="resumen" className="data-[state=active]:bg-white data-[state=active]:shadow-sm">
+              Resumen
+            </TabsTrigger>
+            <TabsTrigger value="citas" className="data-[state=active]:bg-white data-[state=active]:shadow-sm">
               Citas ({historial.historial_citas?.length || 0})
             </TabsTrigger>
-            <TabsTrigger value="recetas">
+            <TabsTrigger value="recetas" className="data-[state=active]:bg-white data-[state=active]:shadow-sm">
               Recetas ({historial.recetas?.length || 0})
             </TabsTrigger>
-            <TabsTrigger value="examenes">
+            <TabsTrigger value="examenes" className="data-[state=active]:bg-white data-[state=active]:shadow-sm">
               Exámenes ({historial.examenes_laboratorio?.length || 0})
             </TabsTrigger>
           </TabsList>
 
           {/* 📋 Resumen Clínico */}
-          <TabsContent value="resumen" className="space-y-4 py-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <TabsContent value="resumen" className="space-y-6 py-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Datos Personales */}
-              <div className="p-4 border rounded-lg bg-white shadow-sm">
-                <h4 className="font-semibold text-blue-700 mb-3">
-                  Datos Personales
+              <div className="p-6 border border-blue-200 rounded-lg bg-blue-50 shadow-sm hover:shadow-md transition-shadow">
+                <h4 className="font-bold text-blue-800 mb-4 flex items-center">
+                  👤 Datos Personales
                 </h4>
-                <div className="space-y-2 text-sm">
+                <div className="space-y-3 text-sm text-blue-900">
                   <p>
                     <strong>Nombre:</strong> {getPacienteNombre()}{" "}
                     {getPacienteApellido()}
@@ -615,12 +685,12 @@ export function ModalHistorialPaciente({
                 </div>
               </div>
 
-              {/* Información Médica */}
-              <div className="p-4 border rounded-lg bg-white shadow-sm">
-                <h4 className="font-semibold text-red-700 mb-3">
-                  Antecedentes Médicos
+              {/* Antecedentes Médicos */}
+              <div className="p-6 border border-red-200 rounded-lg bg-red-50 shadow-sm hover:shadow-md transition-shadow">
+                <h4 className="font-bold text-red-800 mb-4 flex items-center">
+                  ⚕️ Antecedentes Médicos
                 </h4>
-                <div className="space-y-2 text-sm">
+                <div className="space-y-3 text-sm text-red-900">
                   <p>
                     <strong>Tipo de Sangre:</strong>{" "}
                     {historial.paciente?.informacion_medica?.tipo_sangre ||
@@ -640,9 +710,10 @@ export function ModalHistorialPaciente({
               </div>
 
               {/* Estadísticas */}
-              <div className="p-4 border rounded-lg bg-white shadow-sm">
-                <h4 className="font-semibold text-green-700 mb-3">
-                  Estadísticas
+              <div className="p-6 border border-green-200 rounded-lg bg-green-50 shadow-sm hover:shadow-md transition-shadow">
+                <h4 className="font-bold text-green-800 mb-4 flex items-center">
+                  📊 Estadísticas
+
                 </h4>
                 <div className="space-y-2 text-sm">
                   <p>
@@ -864,6 +935,9 @@ export function ModalHistorialPaciente({
             Cerrar
           </Button>
         </div>
+
+        {/* Modal superpuesto para crear protección */}
+        <ModalCrearProteccion />
       </DialogContent>
     </Dialog>
   );

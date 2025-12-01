@@ -1,4 +1,3 @@
-// components/farmacia/gestion-inventario.tsx
 "use client";
 
 import { useState, useEffect } from "react";
@@ -18,7 +17,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -37,12 +35,19 @@ import {
   BarChart3,
   Clock,
   Loader2,
-  Download,
-  Filter,
   RefreshCw,
   AlertCircle,
   CheckCircle,
   XCircle,
+  Filter,
+  ArrowLeft,
+  MoreVertical,
+  Pill,
+  Calendar,
+  Tag,
+  Box,
+  Building,
+  Package2,
 } from "lucide-react";
 
 // Interfaces
@@ -83,7 +88,7 @@ interface GestionInventarioProps {
 export default function GestionInventario({
   onVolver,
 }: GestionInventarioProps) {
-  const { usuario, token } = useAuth();
+  const { token } = useAuth();
 
   // Estados principales
   const [inventario, setInventario] = useState<ItemInventario[]>([]);
@@ -94,9 +99,9 @@ export default function GestionInventario({
 
   // Estados para filtros
   const [busqueda, setBusqueda] = useState("");
-  const [filtroCategoria, setFiltroCategoria] = useState("");
-  const [filtroEstado, setFiltroEstado] = useState("");
-  const [filtroStock, setFiltroStock] = useState("");
+  const [filtroCategoria, setFiltroCategoria] = useState("todas");
+  const [filtroEstado, setFiltroEstado] = useState("todos");
+  const [filtroStock, setFiltroStock] = useState("todos");
 
   // Estados para modales y formularios
   const [mostrarModalAgregar, setMostrarModalAgregar] = useState(false);
@@ -106,6 +111,7 @@ export default function GestionInventario({
     MedicamentoCatalogo[]
   >([]);
   const [procesando, setProcesando] = useState<string | null>(null);
+  const [mostrarAcciones, setMostrarAcciones] = useState<string | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -137,14 +143,15 @@ export default function GestionInventario({
 
     try {
       setCargandoInventario(true);
+
       const queryParams = new URLSearchParams();
-      if (filtroCategoria) queryParams.append("categoria", filtroCategoria);
-      if (filtroEstado) queryParams.append("estado", filtroEstado);
+      if (filtroCategoria && filtroCategoria !== "todas")
+        queryParams.append("categoria", filtroCategoria);
+      if (filtroEstado && filtroEstado !== "todos")
+        queryParams.append("estado", filtroEstado);
 
       const response = await fetch(`/api/farmacia/inventario?${queryParams}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (response.ok) {
@@ -165,9 +172,7 @@ export default function GestionInventario({
 
     try {
       const response = await fetch("/api/medicamentos?limit=1000", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (response.ok) {
@@ -195,30 +200,32 @@ export default function GestionInventario({
     }
 
     // Filtro por categoría
-    if (filtroCategoria) {
+    if (filtroCategoria && filtroCategoria !== "todas") {
       filtrados = filtrados.filter(
         (item) => item.categoria_terapeutica === filtroCategoria
       );
     }
 
     // Filtro por estado de stock
-    if (filtroEstado) {
+    if (filtroEstado && filtroEstado !== "todos") {
       filtrados = filtrados.filter(
         (item) => item.estado_stock === filtroEstado
       );
     }
 
     // Filtro por nivel de stock
-    if (filtroStock === "bajo") {
-      filtrados = filtrados.filter(
-        (item) => item.stock_actual <= item.stock_minimo
-      );
-    } else if (filtroStock === "agotado") {
-      filtrados = filtrados.filter((item) => item.stock_actual === 0);
-    } else if (filtroStock === "normal") {
-      filtrados = filtrados.filter(
-        (item) => item.stock_actual > item.stock_minimo
-      );
+    if (filtroStock && filtroStock !== "todos") {
+      if (filtroStock === "bajo") {
+        filtrados = filtrados.filter(
+          (item) => item.stock_actual <= item.stock_minimo
+        );
+      } else if (filtroStock === "agotado") {
+        filtrados = filtrados.filter((item) => item.stock_actual === 0);
+      } else if (filtroStock === "normal") {
+        filtrados = filtrados.filter(
+          (item) => item.stock_actual > item.stock_minimo
+        );
+      }
     }
 
     setInventarioFiltrado(filtrados);
@@ -305,9 +312,7 @@ export default function GestionInventario({
 
       const response = await fetch(`/api/farmacia/inventario/${id}`, {
         method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (response.ok) {
@@ -336,9 +341,7 @@ export default function GestionInventario({
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          stock_actual: nuevoStock,
-        }),
+        body: JSON.stringify({ stock_actual: nuevoStock }),
       });
 
       if (response.ok) {
@@ -411,7 +414,7 @@ export default function GestionInventario({
     return (
       <Badge
         variant="outline"
-        className={`flex items-center gap-1 ${config.className}`}
+        className={`flex items-center gap-1 px-2 py-1 text-xs font-medium ${config.className}`}
       >
         <IconComponent className="w-3 h-3" />
         {config.label}
@@ -423,8 +426,7 @@ export default function GestionInventario({
     const hoy = new Date();
     const vencimiento = new Date(fechaVencimiento);
     const diffTime = vencimiento.getTime() - hoy.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays;
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   };
 
   const getAlertaVencimiento = (fechaVencimiento: string) => {
@@ -434,25 +436,25 @@ export default function GestionInventario({
       return {
         tipo: "vencido",
         texto: "Vencido",
-        clase: "text-red-600 bg-red-50",
+        clase: "bg-red-100 text-red-700",
       };
     } else if (dias <= 30) {
       return {
         tipo: "critico",
         texto: `${dias}d`,
-        clase: "text-red-600 bg-red-50",
+        clase: "bg-red-50 text-red-600",
       };
     } else if (dias <= 90) {
       return {
         tipo: "advertencia",
         texto: `${dias}d`,
-        clase: "text-orange-600 bg-orange-50",
+        clase: "bg-orange-50 text-orange-600",
       };
     } else {
       return {
         tipo: "normal",
         texto: `${dias}d`,
-        clase: "text-green-600 bg-green-50",
+        clase: "bg-green-50 text-green-600",
       };
     }
   };
@@ -469,7 +471,14 @@ export default function GestionInventario({
     return new Intl.NumberFormat("es-PE", {
       style: "currency",
       currency: "PEN",
+      minimumFractionDigits: 2,
     }).format(monto);
+  };
+
+  const getStockColor = (actual: number, minimo: number) => {
+    if (actual === 0) return "text-red-600";
+    if (actual <= minimo) return "text-yellow-600";
+    return "text-green-600";
   };
 
   // ========== ESTADÍSTICAS ==========
@@ -498,632 +507,775 @@ export default function GestionInventario({
 
   // ========== RENDERIZADO ==========
   return (
-    <div className="space-y-6">
-      {/* Header con botón de volver */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800">
-            Gestión de Inventario
-          </h1>
-          <p className="text-gray-600">
-            Control y administración de stock de medicamentos
-          </p>
-        </div>
-        {onVolver && (
-          <Button variant="outline" onClick={onVolver}>
-            ← Volver al Dashboard
-          </Button>
-        )}
-      </div>
-
-      {/* Tarjetas de Estadísticas */}
-      <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Total Items</p>
-                <p className="text-2xl font-bold text-gray-800">
-                  {estadisticas.total}
-                </p>
-              </div>
-              <Package className="w-8 h-8 text-blue-600" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Stock Bajo</p>
-                <p className="text-2xl font-bold text-yellow-600">
-                  {estadisticas.stockBajo}
-                </p>
-              </div>
-              <AlertTriangle className="w-8 h-8 text-yellow-600" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Agotados</p>
-                <p className="text-2xl font-bold text-red-600">
-                  {estadisticas.agotados}
-                </p>
-              </div>
-              <XCircle className="w-8 h-8 text-red-600" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Por Vencer</p>
-                <p className="text-2xl font-bold text-orange-600">
-                  {estadisticas.porVencer}
-                </p>
-              </div>
-              <Clock className="w-8 h-8 text-orange-600" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Vencidos</p>
-                <p className="text-2xl font-bold text-red-600">
-                  {estadisticas.vencidos}
-                </p>
-              </div>
-              <AlertCircle className="w-8 h-8 text-red-600" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Valor Total</p>
-                <p className="text-lg font-bold text-green-600">
-                  {formatearMoneda(estadisticas.valorTotal)}
-                </p>
-              </div>
-              <BarChart3 className="w-8 h-8 text-green-600" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Barra de Acciones y Filtros */}
-      <Card>
-        <CardContent className="p-6">
-          <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
-            {/* Búsqueda */}
-            <div className="relative w-full lg:w-64">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-              <Input
-                placeholder="Buscar medicamento..."
-                value={busqueda}
-                onChange={(e) => setBusqueda(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-
-            {/* Filtros */}
-            <div className="flex flex-wrap gap-2 w-full lg:w-auto">
-              <Select
-                value={filtroCategoria}
-                onValueChange={setFiltroCategoria}
-              >
-                <SelectTrigger className="w-40">
-                  <SelectValue placeholder="Categoría" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todas">Todas las categorías</SelectItem>
-                  {categoriasUnicas.map((categoria) => (
-                    <SelectItem key={categoria} value={categoria}>
-                      {categoria}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <Select value={filtroEstado} onValueChange={setFiltroEstado}>
-                <SelectTrigger className="w-40">
-                  <SelectValue placeholder="Estado stock" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todos los estados</SelectItem>
-                  <SelectItem value="normal">Normal</SelectItem>
-                  <SelectItem value="bajo">Stock Bajo</SelectItem>
-                  <SelectItem value="agotado">Agotado</SelectItem>
-                  <SelectItem value="por_vencer">Por Vencer</SelectItem>
-                </SelectContent>
-              </Select>
-
-              <Select value={filtroStock} onValueChange={setFiltroStock}>
-                <SelectTrigger className="w-40">
-                  <SelectValue placeholder="Nivel stock" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todos los niveles</SelectItem>
-                  <SelectItem value="normal">Stock Normal</SelectItem>
-                  <SelectItem value="bajo">Stock Bajo</SelectItem>
-                  <SelectItem value="agotado">Agotado</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Botones de Acción */}
-            <div className="flex gap-2 w-full lg:w-auto">
-              <Button
-                variant="outline"
-                onClick={cargarInventario}
-                disabled={cargandoInventario}
-                className="flex items-center gap-2"
-              >
-                <RefreshCw
-                  className={`w-4 h-4 ${
-                    cargandoInventario ? "animate-spin" : ""
-                  }`}
-                />
-                Actualizar
-              </Button>
-
-              <Dialog
-                open={mostrarModalAgregar}
-                onOpenChange={setMostrarModalAgregar}
-              >
-                <DialogTrigger asChild>
-                  <Button className="bg-blue-600 hover:bg-blue-700 flex items-center gap-2">
-                    <Plus className="w-4 h-4" />
-                    Agregar Item
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-2xl">
-                  <DialogHeader>
-                    <DialogTitle>Agregar al Inventario</DialogTitle>
-                  </DialogHeader>
-                  <form onSubmit={agregarItemInventario} className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium">
-                          Medicamento *
-                        </label>
-                        <Select
-                          value={formData.medicamento_id}
-                          onValueChange={(value) =>
-                            setFormData({ ...formData, medicamento_id: value })
-                          }
-                          required
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Seleccionar medicamento" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {catalogoMedicamentos.map((med) => (
-                              <SelectItem
-                                key={med.id}
-                                value={med.id.toString()}
-                              >
-                                {med.nombre_comercial} - {med.nombre_generico}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium">Lote *</label>
-                        <Input
-                          value={formData.lote}
-                          onChange={(e) =>
-                            setFormData({ ...formData, lote: e.target.value })
-                          }
-                          placeholder="Número de lote"
-                          required
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium">
-                          Stock Actual *
-                        </label>
-                        <Input
-                          type="number"
-                          value={formData.stock_actual}
-                          onChange={(e) =>
-                            setFormData({
-                              ...formData,
-                              stock_actual: parseInt(e.target.value) || 0,
-                            })
-                          }
-                          min="0"
-                          required
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium">
-                          Stock Mínimo *
-                        </label>
-                        <Input
-                          type="number"
-                          value={formData.stock_minimo}
-                          onChange={(e) =>
-                            setFormData({
-                              ...formData,
-                              stock_minimo: parseInt(e.target.value) || 0,
-                            })
-                          }
-                          min="1"
-                          required
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium">
-                          Precio de Venta (S/) *
-                        </label>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          value={formData.precio_venta}
-                          onChange={(e) =>
-                            setFormData({
-                              ...formData,
-                              precio_venta: parseFloat(e.target.value) || 0,
-                            })
-                          }
-                          min="0"
-                          required
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium">
-                          Fecha de Vencimiento *
-                        </label>
-                        <Input
-                          type="date"
-                          value={formData.fecha_vencimiento}
-                          onChange={(e) =>
-                            setFormData({
-                              ...formData,
-                              fecha_vencimiento: e.target.value,
-                            })
-                          }
-                          required
-                        />
-                      </div>
-                    </div>
-
-                    <div className="flex justify-end space-x-3 pt-4">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => {
-                          setMostrarModalAgregar(false);
-                          resetForm();
-                        }}
-                      >
-                        Cancelar
-                      </Button>
-                      <Button
-                        type="submit"
-                        className="bg-blue-600 hover:bg-blue-700"
-                        disabled={procesando === "agregando"}
-                      >
-                        {procesando === "agregando" ? (
-                          <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                        ) : null}
-                        Agregar al Inventario
-                      </Button>
-                    </div>
-                  </form>
-                </DialogContent>
-              </Dialog>
-            </div>
+    <div className="w-full min-h-screen bg-gray-50 py-6 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="space-y-1">
+            <h1 className="text-2xl font-bold text-gray-900">
+              Gestión de Inventario
+            </h1>
+            <p className="text-sm text-gray-600">
+              Control y administración de stock de medicamentos
+            </p>
           </div>
-        </CardContent>
-      </Card>
+          {onVolver && (
+            <Button
+              variant="outline"
+              onClick={onVolver}
+              className="hidden sm:flex gap-2"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Volver
+            </Button>
+          )}
+        </div>
 
-      {/* Lista de Inventario */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Inventario de Medicamentos</CardTitle>
-          <CardDescription>
-            {inventarioFiltrado.length} items encontrados
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {cargandoInventario ? (
-            <div className="text-center py-12">
-              <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
-              <p className="text-gray-600">Cargando inventario...</p>
-            </div>
-          ) : inventarioFiltrado.length === 0 ? (
-            <div className="text-center py-12">
-              <Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-600 mb-4">
-                No se encontraron medicamentos en inventario
-              </p>
-              <Button
-                onClick={() => setMostrarModalAgregar(true)}
-                className="bg-blue-600 hover:bg-blue-700"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Agregar Primer Item
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {inventarioFiltrado.map((item) => {
-                const alertaVencimiento = getAlertaVencimiento(
-                  item.fecha_vencimiento
-                );
+        {/* Tarjetas de Estadísticas */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          <Card className="border-0 shadow-sm">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-gray-600">
+                    Total Items
+                  </p>
+                  <p className="text-xl font-bold text-gray-800">
+                    {estadisticas.total}
+                  </p>
+                </div>
+                <Package className="w-6 h-6 text-blue-600" />
+              </div>
+            </CardContent>
+          </Card>
 
-                return (
-                  <div
-                    key={item.id}
-                    className="flex flex-col lg:flex-row lg:items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-                  >
-                    {/* Información del Medicamento */}
-                    <div className="flex-1 mb-4 lg:mb-0">
-                      <div className="flex items-start justify-between mb-3">
-                        <div>
-                          <h3 className="font-semibold text-gray-800 text-lg">
-                            {item.nombre_comercial}
-                          </h3>
-                          <p className="text-sm text-gray-600">
-                            {item.nombre_generico}
-                          </p>
+          <Card className="border-0 shadow-sm">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-gray-600">
+                    Stock Bajo
+                  </p>
+                  <p className="text-xl font-bold text-yellow-600">
+                    {estadisticas.stockBajo}
+                  </p>
+                </div>
+                <AlertTriangle className="w-6 h-6 text-yellow-600" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-0 shadow-sm">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-gray-600">Agotados</p>
+                  <p className="text-xl font-bold text-red-600">
+                    {estadisticas.agotados}
+                  </p>
+                </div>
+                <XCircle className="w-6 h-6 text-red-600" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-0 shadow-sm">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-gray-600">
+                    Por Vencer
+                  </p>
+                  <p className="text-xl font-bold text-orange-600">
+                    {estadisticas.porVencer}
+                  </p>
+                </div>
+                <Clock className="w-6 h-6 text-orange-600" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-0 shadow-sm">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-gray-600">Vencidos</p>
+                  <p className="text-xl font-bold text-red-600">
+                    {estadisticas.vencidos}
+                  </p>
+                </div>
+                <AlertCircle className="w-6 h-6 text-red-600" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-0 shadow-sm">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-gray-600">
+                    Valor Total
+                  </p>
+                  <p className="text-sm font-bold text-green-600">
+                    {formatearMoneda(estadisticas.valorTotal)}
+                  </p>
+                </div>
+                <BarChart3 className="w-6 h-6 text-green-600" />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Barra de Búsqueda y Filtros */}
+        <Card className="border-0 shadow-sm">
+          <CardContent className="p-4">
+            <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
+              {/* Búsqueda */}
+              <div className="relative w-full lg:w-80">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                <Input
+                  placeholder="Buscar medicamento, lote..."
+                  value={busqueda}
+                  onChange={(e) => setBusqueda(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+
+              {/* Filtros */}
+              <div className="flex flex-wrap gap-2 w-full lg:w-auto">
+                <Select
+                  value={filtroCategoria}
+                  onValueChange={setFiltroCategoria}
+                >
+                  <SelectTrigger className="w-36">
+                    <SelectValue placeholder="Categoría" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todas">Todas</SelectItem>
+                    {categoriasUnicas.map((categoria) => (
+                      <SelectItem key={categoria} value={categoria}>
+                        {categoria}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select value={filtroEstado} onValueChange={setFiltroEstado}>
+                  <SelectTrigger className="w-36">
+                    <SelectValue placeholder="Estado" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos</SelectItem>
+                    <SelectItem value="normal">Normal</SelectItem>
+                    <SelectItem value="bajo">Bajo</SelectItem>
+                    <SelectItem value="agotado">Agotado</SelectItem>
+                    <SelectItem value="por_vencer">Por Vencer</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Select value={filtroStock} onValueChange={setFiltroStock}>
+                  <SelectTrigger className="w-36">
+                    <SelectValue placeholder="Nivel" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos</SelectItem>
+                    <SelectItem value="normal">Normal</SelectItem>
+                    <SelectItem value="bajo">Bajo</SelectItem>
+                    <SelectItem value="agotado">Agotado</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Botones de Acción */}
+              <div className="flex gap-2 w-full lg:w-auto">
+                <Button
+                  variant="outline"
+                  onClick={cargarInventario}
+                  disabled={cargandoInventario}
+                  className="flex items-center gap-2"
+                >
+                  <RefreshCw
+                    className={`w-4 h-4 ${
+                      cargandoInventario ? "animate-spin" : ""
+                    }`}
+                  />
+                  Actualizar
+                </Button>
+
+                <Button
+                  onClick={() => setMostrarModalAgregar(true)}
+                  className="bg-blue-600 hover:bg-blue-700 flex items-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  Agregar
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Lista de Inventario */}
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Inventario de Medicamentos</CardTitle>
+                <CardDescription>
+                  {inventarioFiltrado.length} items encontrados
+                </CardDescription>
+              </div>
+              <div className="text-sm text-gray-500">
+                Última actualización: {new Date().toLocaleDateString("es-PE")}
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {cargandoInventario ? (
+              <div className="text-center py-12">
+                <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
+                <p className="text-gray-600">Cargando inventario...</p>
+              </div>
+            ) : inventarioFiltrado.length === 0 ? (
+              <div className="text-center py-12">
+                <Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-gray-700 mb-2">
+                  No se encontraron resultados
+                </h3>
+                <p className="text-gray-500 mb-6">
+                  Intenta con otros términos de búsqueda o filtros
+                </p>
+                <Button
+                  onClick={() => {
+                    setBusqueda("");
+                    setFiltroCategoria("todas");
+                    setFiltroEstado("todos");
+                    setFiltroStock("todos");
+                  }}
+                  variant="outline"
+                  className="mr-2"
+                >
+                  Limpiar filtros
+                </Button>
+                <Button
+                  onClick={() => setMostrarModalAgregar(true)}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Agregar Item
+                </Button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+                {inventarioFiltrado.map((item) => {
+                  const alertaVencimiento = getAlertaVencimiento(
+                    item.fecha_vencimiento
+                  );
+                  const diasVencimiento = calcularDiasParaVencimiento(
+                    item.fecha_vencimiento
+                  );
+
+                  return (
+                    <div
+                      key={item.id}
+                      className="border border-gray-200 rounded-lg hover:shadow-md transition-shadow bg-white relative overflow-hidden group"
+                    >
+                      {/* Estado y Acciones */}
+                      <div className="absolute top-3 right-3 flex items-center gap-2 z-10">
+                        {getEstadoBadge(item.estado_stock)}
+                        <div className="relative">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() =>
+                              setMostrarAcciones(
+                                mostrarAcciones === item.id ? null : item.id
+                              )
+                            }
+                          >
+                            <MoreVertical className="w-4 h-4" />
+                          </Button>
+
+                          {mostrarAcciones === item.id && (
+                            <div className="absolute right-0 top-10 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-20 p-1">
+                              <button
+                                onClick={() => {
+                                  const nuevoStock = prompt(
+                                    "Nuevo stock:",
+                                    item.stock_actual.toString()
+                                  );
+                                  if (
+                                    nuevoStock !== null &&
+                                    !isNaN(parseInt(nuevoStock))
+                                  ) {
+                                    actualizarStock(
+                                      item.id,
+                                      parseInt(nuevoStock)
+                                    );
+                                    setMostrarAcciones(null);
+                                  }
+                                }}
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded flex items-center gap-2"
+                              >
+                                <Package2 className="w-4 h-4" />
+                                Actualizar Stock
+                              </button>
+                              <button
+                                onClick={() => {
+                                  abrirModalEditar(item);
+                                  setMostrarAcciones(null);
+                                }}
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded flex items-center gap-2"
+                              >
+                                <Edit className="w-4 h-4" />
+                                Editar Item
+                              </button>
+                              <button
+                                onClick={() => {
+                                  if (
+                                    confirm(
+                                      "¿Eliminar este item del inventario?"
+                                    )
+                                  ) {
+                                    eliminarItemInventario(item.id);
+                                    setMostrarAcciones(null);
+                                  }
+                                }}
+                                className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded flex items-center gap-2"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                                Eliminar
+                              </button>
+                            </div>
+                          )}
                         </div>
-                        <div className="flex items-center gap-2">
-                          {getEstadoBadge(item.estado_stock)}
-                          <span
+                      </div>
+
+                      {/* Header del Medicamento */}
+                      <div className="p-4 pb-3 border-b border-gray-100">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <h3 className="font-bold text-gray-900 text-lg">
+                              {item.nombre_comercial}
+                            </h3>
+                            <p className="text-sm text-gray-500">
+                              {item.nombre_generico}
+                            </p>
+                          </div>
+                          <div
                             className={`text-xs font-medium px-2 py-1 rounded-full ${alertaVencimiento.clase}`}
                           >
-                            {alertaVencimiento.texto}
-                          </span>
+                            {diasVencimiento < 0
+                              ? "Vencido"
+                              : `${diasVencimiento}d`}
+                          </div>
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+                          <Tag className="w-3 h-3" />
+                          {item.categoria_terapeutica}
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-600">
-                        <div>
-                          <span className="font-medium">Concentración:</span>
-                          <p>{item.concentracion}</p>
+                      {/* Información del Medicamento */}
+                      <div className="p-4">
+                        {/* Fila 1: Información básica */}
+                        <div className="grid grid-cols-2 gap-4 mb-4">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1 text-xs text-gray-500">
+                              <Pill className="w-3 h-3" />
+                              Concentración
+                            </div>
+                            <p className="font-medium text-gray-900">
+                              {item.concentracion}
+                            </p>
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1 text-xs text-gray-500">
+                              <Box className="w-3 h-3" />
+                              Forma
+                            </div>
+                            <p className="font-medium text-gray-900">
+                              {item.forma_farmaceutica}
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <span className="font-medium">Forma:</span>
-                          <p>{item.forma_farmaceutica}</p>
+
+                        {/* Fila 2: Lote y Laboratorio */}
+                        <div className="grid grid-cols-2 gap-4 mb-4">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1 text-xs text-gray-500">
+                              <Package className="w-3 h-3" />
+                              Lote
+                            </div>
+                            <p className="font-medium text-gray-900 font-mono text-sm">
+                              {item.lote}
+                            </p>
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1 text-xs text-gray-500">
+                              <Building className="w-3 h-3" />
+                              Laboratorio
+                            </div>
+                            <p className="font-medium text-gray-900">
+                              {item.laboratorio}
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <span className="font-medium">Lote:</span>
-                          <p className="font-mono">{item.lote}</p>
+
+                        {/* Fila 3: Stock y Precio */}
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1 text-xs text-gray-500">
+                              <Package2 className="w-3 h-3" />
+                              Stock
+                            </div>
+                            <div className="flex items-baseline gap-2">
+                              <p
+                                className={`font-bold text-lg ${getStockColor(
+                                  item.stock_actual,
+                                  item.stock_minimo
+                                )}`}
+                              >
+                                {item.stock_actual}
+                              </p>
+                              <span className="text-sm text-gray-500">
+                                / {item.stock_minimo} und.
+                              </span>
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1 text-xs text-gray-500">
+                              <Tag className="w-3 h-3" />
+                              Precio
+                            </div>
+                            <p className="font-bold text-blue-600 text-lg">
+                              {formatearMoneda(item.precio_venta)}
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <span className="font-medium">Laboratorio:</span>
-                          <p>{item.laboratorio}</p>
+
+                        {/* Fila 4: Vencimiento */}
+                        <div className="mt-4 pt-4 border-t border-gray-100">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1 text-xs text-gray-500">
+                              <Calendar className="w-3 h-3" />
+                              Vencimiento
+                            </div>
+                            <p className="font-medium text-gray-900">
+                              {formatearFecha(item.fecha_vencimiento)}
+                            </p>
+                          </div>
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-600 mt-2">
-                        <div>
-                          <span className="font-medium">Stock:</span>
-                          <p>
-                            <span
-                              className={
-                                item.stock_actual <= item.stock_minimo
-                                  ? "text-red-600 font-semibold"
-                                  : "text-green-600"
-                              }
+                      {/* Footer */}
+                      <div className="px-4 py-3 bg-gray-50 border-t border-gray-100">
+                        <div className="flex items-center justify-between">
+                          <div className="text-xs text-gray-500">
+                            Actualizado:{" "}
+                            {formatearFecha(item.fecha_actualizacion)}
+                          </div>
+                          <div className="flex gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 px-2"
+                              onClick={() => {
+                                const nuevoStock = prompt(
+                                  "Nuevo stock:",
+                                  item.stock_actual.toString()
+                                );
+                                if (
+                                  nuevoStock !== null &&
+                                  !isNaN(parseInt(nuevoStock))
+                                ) {
+                                  actualizarStock(
+                                    item.id,
+                                    parseInt(nuevoStock)
+                                  );
+                                }
+                              }}
+                              disabled={procesando === `stock-${item.id}`}
                             >
-                              {item.stock_actual}
-                            </span>
-                            /{item.stock_minimo} und.
-                          </p>
-                        </div>
-                        <div>
-                          <span className="font-medium">Precio:</span>
-                          <p>{formatearMoneda(item.precio_venta)}</p>
-                        </div>
-                        <div>
-                          <span className="font-medium">Categoría:</span>
-                          <p>{item.categoria_terapeutica}</p>
-                        </div>
-                        <div>
-                          <span className="font-medium">Vence:</span>
-                          <p>{formatearFecha(item.fecha_vencimiento)}</p>
+                              {procesando === `stock-${item.id}` ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                "Stock"
+                              )}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 px-2"
+                              onClick={() => abrirModalEditar(item)}
+                            >
+                              Editar
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
-                    {/* Acciones */}
-                    <div className="flex items-center gap-2 lg:flex-col lg:items-end">
-                      <div className="flex gap-1">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            const nuevoStock = prompt(
-                              "Nuevo stock:",
-                              item.stock_actual.toString()
-                            );
-                            if (
-                              nuevoStock !== null &&
-                              !isNaN(parseInt(nuevoStock))
-                            ) {
-                              actualizarStock(item.id, parseInt(nuevoStock));
-                            }
-                          }}
-                          disabled={procesando === `stock-${item.id}`}
-                        >
-                          {procesando === `stock-${item.id}` ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <Edit className="w-4 h-4" />
-                          )}
-                        </Button>
+        {/* Modales (mantener igual que antes) */}
+        <Dialog
+          open={mostrarModalAgregar}
+          onOpenChange={setMostrarModalAgregar}
+        >
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Agregar al Inventario</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={agregarItemInventario} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Medicamento *</label>
+                  <Select
+                    value={formData.medicamento_id}
+                    onValueChange={(value) =>
+                      setFormData({ ...formData, medicamento_id: value })
+                    }
+                    required
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar medicamento" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {catalogoMedicamentos.map((med) => (
+                        <SelectItem key={med.id} value={med.id.toString()}>
+                          {med.nombre_comercial} - {med.nombre_generico}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => abrirModalEditar(item)}
-                        >
-                          <Edit className="w-4 h-4" />
-                        </Button>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Lote *</label>
+                  <Input
+                    value={formData.lote}
+                    onChange={(e) =>
+                      setFormData({ ...formData, lote: e.target.value })
+                    }
+                    placeholder="Número de lote"
+                    required
+                  />
+                </div>
 
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => eliminarItemInventario(item.id)}
-                          disabled={procesando === `eliminando-${item.id}`}
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                        >
-                          {procesando === `eliminando-${item.id}` ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <Trash2 className="w-4 h-4" />
-                          )}
-                        </Button>
-                      </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Stock Actual *</label>
+                  <Input
+                    type="number"
+                    value={formData.stock_actual}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        stock_actual: parseInt(e.target.value) || 0,
+                      })
+                    }
+                    min="0"
+                    required
+                  />
+                </div>
 
-                      <div className="text-xs text-gray-500 mt-2">
-                        Actualizado: {formatearFecha(item.fecha_actualizacion)}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Stock Mínimo *</label>
+                  <Input
+                    type="number"
+                    value={formData.stock_minimo}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        stock_minimo: parseInt(e.target.value) || 0,
+                      })
+                    }
+                    min="1"
+                    required
+                  />
+                </div>
 
-      {/* Modal de Edición */}
-      <Dialog open={mostrarModalEditar} onOpenChange={setMostrarModalEditar}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Editar Item de Inventario</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={actualizarItemInventario} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Lote *</label>
-                <Input
-                  value={formData.lote}
-                  onChange={(e) =>
-                    setFormData({ ...formData, lote: e.target.value })
-                  }
-                  required
-                />
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">
+                    Precio de Venta (S/) *
+                  </label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={formData.precio_venta}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        precio_venta: parseFloat(e.target.value) || 0,
+                      })
+                    }
+                    min="0"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">
+                    Fecha de Vencimiento *
+                  </label>
+                  <Input
+                    type="date"
+                    value={formData.fecha_vencimiento}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        fecha_vencimiento: e.target.value,
+                      })
+                    }
+                    required
+                  />
+                </div>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Stock Actual *</label>
-                <Input
-                  type="number"
-                  value={formData.stock_actual}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      stock_actual: parseInt(e.target.value) || 0,
-                    })
-                  }
-                  min="0"
-                  required
-                />
+              <div className="flex justify-end space-x-3 pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setMostrarModalAgregar(false);
+                    resetForm();
+                  }}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  className="bg-blue-600 hover:bg-blue-700"
+                  disabled={procesando === "agregando"}
+                >
+                  {procesando === "agregando" ? (
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  ) : null}
+                  Agregar al Inventario
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={mostrarModalEditar} onOpenChange={setMostrarModalEditar}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Editar Item de Inventario</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={actualizarItemInventario} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Lote *</label>
+                  <Input
+                    value={formData.lote}
+                    onChange={(e) =>
+                      setFormData({ ...formData, lote: e.target.value })
+                    }
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Stock Actual *</label>
+                  <Input
+                    type="number"
+                    value={formData.stock_actual}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        stock_actual: parseInt(e.target.value) || 0,
+                      })
+                    }
+                    min="0"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Stock Mínimo *</label>
+                  <Input
+                    type="number"
+                    value={formData.stock_minimo}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        stock_minimo: parseInt(e.target.value) || 0,
+                      })
+                    }
+                    min="1"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">
+                    Precio de Venta (S/) *
+                  </label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={formData.precio_venta}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        precio_venta: parseFloat(e.target.value) || 0,
+                      })
+                    }
+                    min="0"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">
+                    Fecha de Vencimiento *
+                  </label>
+                  <Input
+                    type="date"
+                    value={formData.fecha_vencimiento}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        fecha_vencimiento: e.target.value,
+                      })
+                    }
+                    required
+                  />
+                </div>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Stock Mínimo *</label>
-                <Input
-                  type="number"
-                  value={formData.stock_minimo}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      stock_minimo: parseInt(e.target.value) || 0,
-                    })
-                  }
-                  min="1"
-                  required
-                />
+              <div className="flex justify-end space-x-3 pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setMostrarModalEditar(false);
+                    resetForm();
+                    setItemEditando(null);
+                  }}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  className="bg-blue-600 hover:bg-blue-700"
+                  disabled={procesando === "editando"}
+                >
+                  {procesando === "editando" ? (
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  ) : null}
+                  Actualizar Item
+                </Button>
               </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">
-                  Precio de Venta (S/) *
-                </label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={formData.precio_venta}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      precio_venta: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  min="0"
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">
-                  Fecha de Vencimiento *
-                </label>
-                <Input
-                  type="date"
-                  value={formData.fecha_vencimiento}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      fecha_vencimiento: e.target.value,
-                    })
-                  }
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end space-x-3 pt-4">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setMostrarModalEditar(false);
-                  resetForm();
-                  setItemEditando(null);
-                }}
-              >
-                Cancelar
-              </Button>
-              <Button
-                type="submit"
-                className="bg-blue-600 hover:bg-blue-700"
-                disabled={procesando === "editando"}
-              >
-                {procesando === "editando" ? (
-                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                ) : null}
-                Actualizar Item
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
     </div>
   );
 }

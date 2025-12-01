@@ -46,12 +46,17 @@ export async function GET(request: NextRequest) {
 
     const medicoId = medicoResult.rows[0].id
 
-    // Calcular rango de fechas
+    // Calcular rango de fechas (asegurar que la zona horaria sea correcta)
     const fechaInicio = new Date(fecha)
+    fechaInicio.setHours(0, 0, 0, 0) // Inicio del día
     const fechaFin = new Date(fechaInicio)
     fechaFin.setDate(fechaFin.getDate() + dias)
+    fechaFin.setHours(23, 59, 59, 999) // Fin del día
+
+    console.log(`[DEBUG AGENDA] Médico ID: ${medicoId}, Rango: ${fechaInicio.toISOString()} a ${fechaFin.toISOString()}`)
 
     // Obtener citas del médico en el rango de fechas - CON DATOS DE SESIÓN TELEMEDICINA
+    // NOTA: Usar CAST para convertir timestamps correctamente y evitar problemas de timezone
     const citasResult = await query(
       `
       SELECT 
@@ -59,24 +64,53 @@ export async function GET(request: NextRequest) {
         p.dni, p.fecha_nacimiento, p.sexo, p.tipo_sangre, p.alergias, p.enfermedades_cronicas,
         u.nombre as paciente_nombre, u.apellido as paciente_apellido, u.telefono as paciente_telefono,
         u.email as paciente_email,
-        st.id as id_sesion, st.codigo_acceso, st.estado as estado_sesion
+        st.id as id_sesion, st.codigo_acceso, st.estado as estado_sesion,
+        (c.fecha_cita AT TIME ZONE 'America/Lima')::date::text as fecha_cita_peru
       FROM citas c
       JOIN pacientes p ON c.id_paciente = p.id
       JOIN usuarios u ON p.id_usuario = u.id
       LEFT JOIN sesiones_telemedicina st ON st.id_cita = c.id
       WHERE c.id_medico = $1 
-        AND c.fecha_cita >= $2 
-        AND c.fecha_cita <= $3
-      ORDER BY c.fecha_cita, c.hora_cita
+        AND c.fecha_cita::date >= $2::date
+        AND c.fecha_cita::date <= $3::date
+      ORDER BY c.fecha_cita ASC, c.hora_cita ASC
     `,
-      [medicoId, fechaInicio.toISOString().split("T")[0], fechaFin.toISOString().split("T")[0]],
+      [medicoId, fechaInicio.toISOString(), fechaFin.toISOString()],
     )
 
-    // Procesar citas por día
+    console.log(`[DEBUG AGENDA] Citas encontradas: ${citasResult.rows.length}`)
+
+    // Debug: mostrar detalles de citas encontradas
+    if (citasResult.rows.length === 0) {
+      console.warn(`[WARN AGENDA] NO SE ENCONTRARON CITAS para médico ${medicoId} en rango ${fechaInicio.toISOString().split("T")[0]} a ${fechaFin.toISOString().split("T")[0]}`)
+      console.log(`[DEBUG AGENDA] Verificando BD: SELECT COUNT(*) FROM citas WHERE id_medico = ${medicoId}`)
+    } else {
+      citasResult.rows.slice(0, 3).forEach((c, idx) => {
+        console.log(`[DEBUG CITA ${idx}] ID: ${c.id}, Fecha: ${c.fecha_cita}, Hora: ${c.hora_cita}, Paciente: ${c.paciente_nombre}`)
+      })
+    }
+
+    // Procesar citas por día (sin duplicados)
     const citasPorDia = new Map()
+    const citasVistas = new Set()
 
     citasResult.rows.forEach((cita) => {
-      const fechaCita = cita.fecha_cita.toISOString().split("T")[0]
+      // Usar la fecha ya convertida a timezone de Perú desde PostgreSQL
+      // Asegurar que es YYYY-MM-DD sin hora
+      const fechaCita = cita.fecha_cita_peru 
+        ? cita.fecha_cita_peru.split("T")[0] // Si es ISO, sacar solo fecha
+        : cita.fecha_cita_peru
+      
+      const clave = `${cita.id}-${fechaCita}` // Clave única para evitar duplicados
+
+      console.log(`[DEBUG FECHA] Cita ${cita.id}: fecha_cita_peru=${cita.fecha_cita_peru}, fechaCita=${fechaCita}`)
+
+      // Evitar duplicados
+      if (citasVistas.has(clave)) {
+        console.warn(`[WARN] Cita duplicada detectada: ${clave}`)
+        return
+      }
+      citasVistas.add(clave)
 
       if (!citasPorDia.has(fechaCita)) {
         citasPorDia.set(fechaCita, [])
@@ -132,10 +166,13 @@ export async function GET(request: NextRequest) {
     }))
 
     // Estadísticas del período
-    const totalCitas = citasResult.rows.length
+    const totalCitas = citasVistas.size
+    const hoy = new Date().toISOString().split("T")[0]
     const citasHoy = citasResult.rows.filter(
-      (c) => c.fecha_cita.toISOString().split("T")[0] === new Date().toISOString().split("T")[0],
+      (c) => new Date(c.fecha_cita).toISOString().split("T")[0] === hoy,
     ).length
+
+    console.log(`[DEBUG AGENDA] Total de citas retornadas: ${totalCitas}, Citas hoy: ${citasHoy}`)
 
     return NextResponse.json({
       agenda,

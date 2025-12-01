@@ -180,14 +180,25 @@ export default function DashboardMedicoPage() {
         const perfilRes = await fetch("/api/medico/perfil", { headers });
         if (perfilRes.ok) {
           const perfilData = await perfilRes.json();
+          console.log("✅ [PERFIL] Cargado - Citas hoy:", perfilData.estadisticas.citas_hoy);
           setPerfil(perfilData);
+        } else {
+          console.error("❌ [PERFIL] Error:", perfilRes.status);
         }
 
         // Cargar agenda de los próximos 7 días
         const agendaRes = await fetch("/api/medico/agenda?dias=7", { headers });
         if (agendaRes.ok) {
           const agendaData = await agendaRes.json();
-          setAgenda(agendaData.agenda);
+          console.log("✅ [AGENDA] Cargada - estructura completa:", agendaData);
+          console.log("✅ [AGENDA] Fechas retornadas:", agendaData.agenda?.map((d: any) => ({
+            fecha: d.fecha,
+            totalCitas: d.total_citas,
+            citasProgramadas: d.citas_programadas
+          })));
+          setAgenda(agendaData.agenda || []);
+        } else {
+          console.error("❌ [AGENDA] Error:", agendaRes.status);
         }
 
         // Cargar pacientes del médico (lista básica)
@@ -433,23 +444,37 @@ export default function DashboardMedicoPage() {
 
   const verHistorialPaciente = async (pacienteId: string) => {
     try {
+      if (!pacienteId) {
+        console.error("❌ Error: pacienteId es vacío");
+        alert("Error: ID de paciente no válido");
+        return;
+      }
+
+      if (!token) {
+        console.error("❌ Error: No hay token de autenticación");
+        alert("Error: No estás autenticado");
+        return;
+      }
+
       const headers = {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       };
 
-      console.log("🔍 Cargando historial del paciente:", pacienteId);
+      console.log("🔍 Abriendo historial del paciente:", pacienteId);
 
-      const response = await fetch(
-        `/api/medico/pacientes/${pacienteId}/historial`,
-        { headers }
-      );
+      // Generar un ID temporal para la cita (para acceso directo desde dashboard)
+      const citaIdTemporal = `temp-${Date.now()}`;
+      const url = `/api/medico/pacientes/${pacienteId}/historial?cita_id=${citaIdTemporal}`;
+
+      const response = await fetch(url, { headers });
 
       if (response.ok) {
         const data = await response.json();
-        console.log("✅ Historial cargado:", data);
+        console.log("✅ Historial cargado exitosamente:", data);
         setPacienteHistorial(data);
         setMostrarHistorialPaciente(true);
+        console.log("✅ Modal de historial abierto");
       } else {
         const errorData = await response.json();
         console.error("❌ Error obteniendo historial del paciente:", errorData);
@@ -457,8 +482,12 @@ export default function DashboardMedicoPage() {
           `Error: ${errorData.message || "No se pudo cargar el historial"}`
         );
       }
-    } catch (error) {
-      console.error("❌ Error cargando historial del paciente:", error);
+    } catch (error: any) {
+      console.error("❌ Error cargando historial del paciente:", {
+        mensaje: error.message,
+        stack: error.stack,
+        error: error,
+      });
       alert("Error de conexión al cargar el historial");
     }
   };
@@ -663,9 +692,34 @@ export default function DashboardMedicoPage() {
     }
   };
 
-  const citasHoy = agenda.find(
-    (dia) => dia.fecha === new Date().toISOString().split("T")[0]
-  );
+  // ✅ Obtener citas de hoy con mejor manejo de timezone
+  const obtenerCitasHoy = () => {
+    const hoy = new Date();
+    const fechaHoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}-${String(hoy.getDate()).padStart(2, "0")}`;
+    
+    console.log("[DEBUG] Buscando citas para:", fechaHoyStr);
+    console.log("[DEBUG] Total días en agenda:", agenda.length);
+    console.log("[DEBUG] Agenda disponible:", agenda.map(d => ({ fecha: d.fecha, tipo: typeof d.fecha, citas: d.total_citas })));
+    
+    const resultado = agenda.find((dia) => {
+      // La fecha puede venir en dos formatos:
+      // 1. YYYY-MM-DD (si viene limpia de API)
+      // 2. 2025-12-01T05:00:00.000Z (si viene en ISO)
+      let fechaDiaStr = dia.fecha;
+      if (fechaDiaStr.includes("T")) {
+        fechaDiaStr = fechaDiaStr.split("T")[0];
+      }
+      
+      const coinciden = fechaDiaStr === fechaHoyStr;
+      console.log(`  [DEBUG] Comparando: "${fechaDiaStr}" === "${fechaHoyStr}" → ${coinciden} (citas: ${dia.total_citas})`);
+      return coinciden;
+    });
+    
+    console.log("[DEBUG] Resultado citasHoy:", resultado ? `${resultado.total_citas} citas encontradas` : "NINGUNO");
+    return resultado;
+  };
+
+  const citasHoy = obtenerCitasHoy();
 
   const pacientesFiltrados = pacientes.filter((paciente) => {
     const nombre = paciente?.nombre?.toLowerCase() || "";
@@ -837,21 +891,23 @@ export default function DashboardMedicoPage() {
                 {/* Citas de Hoy */}
                 <div className="lg:col-span-2">
                   <Card className="bg-white shadow-sm border-0 sm:border">
-                    <CardHeader>
-                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-3 sm:space-y-0">
-                        <div>
-                          <CardTitle className="flex items-center text-base sm:text-lg">
-                            <Calendar className="w-4 h-4 sm:w-5 sm:h-5 mr-2 text-blue-600" />
-                            Citas de Hoy -{" "}
-                            {new Date().toLocaleDateString("es-PE")}
+                    <CardHeader className="pb-3 sm:pb-4">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0">
+                          <CardTitle className="flex items-center text-base sm:text-lg gap-2">
+                            <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600 flex-shrink-0" />
+                            <span className="truncate">Citas de Hoy</span>
+                            <span className="text-xs sm:text-sm text-gray-500 whitespace-nowrap">
+                              {new Date().toLocaleDateString("es-PE")}
+                            </span>
                           </CardTitle>
-                          <CardDescription className="text-sm sm:text-base">
+                          <CardDescription className="text-xs sm:text-base mt-1">
                             {citasHoy?.total_citas || 0} citas programadas
                           </CardDescription>
                         </div>
                         <Badge
                           variant="outline"
-                          className="bg-blue-50 text-blue-700 w-fit"
+                          className="bg-blue-50 text-blue-700 w-fit text-xs sm:text-sm flex-shrink-0"
                         >
                           {citasHoy?.citas?.filter(
                             (c) => c.tipo_cita === "virtual"
@@ -875,14 +931,14 @@ export default function DashboardMedicoPage() {
                             return (
                               <div
                                 key={`${cita.id}-${index}`} // ← Ahora index está definido
-                                className="p-3 sm:p-4 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors cursor-pointer shadow-sm"
+                                className="p-2 sm:p-4 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors cursor-pointer shadow-sm"
                                 onClick={() => verDetallesCita(cita)}
                               >
-                                <div className="flex items-start justify-between">
-                                  <div className="flex items-start space-x-3 sm:space-x-4 flex-1 min-w-0">
+                                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
+                                  <div className="flex items-start gap-2 sm:gap-3 flex-1 min-w-0">
                                     {/* Hora */}
-                                    <div className="text-center min-w-[70px] sm:min-w-[80px] flex-shrink-0">
-                                      <div className="text-base sm:text-lg font-bold text-blue-600">
+                                    <div className="text-center min-w-[60px] sm:min-w-[80px] flex-shrink-0">
+                                      <div className="text-sm sm:text-lg font-bold text-blue-600">
                                         {cita.hora_cita?.slice(0, 5) || "--:--"}
                                       </div>
                                       <Badge
@@ -895,7 +951,7 @@ export default function DashboardMedicoPage() {
                                             ? "default"
                                             : "outline"
                                         }
-                                        className="capitalize text-xs mt-1"
+                                        className="capitalize text-xs mt-1 w-full justify-center"
                                       >
                                         {cita.estado}
                                       </Badge>
@@ -903,14 +959,14 @@ export default function DashboardMedicoPage() {
 
                                     {/* Información del Paciente */}
                                     <div className="flex-1 min-w-0">
-                                      <h4 className="font-semibold text-sm sm:text-base truncate">
+                                      <h4 className="font-semibold text-xs sm:text-base truncate">
                                         {cita.paciente?.nombre || ""}{" "}
                                         {cita.paciente?.apellido || ""}
                                       </h4>
-                                      <div className="flex items-center space-x-2 mt-1 sm:mt-2 flex-wrap">
+                                      <div className="flex items-center gap-1 sm:gap-2 mt-1 flex-wrap">
                                         <Badge
                                           variant="outline"
-                                          className={`text-xs ${
+                                          className={`text-xs py-0.5 px-2 ${
                                             cita.tipo_cita === "virtual"
                                               ? "bg-blue-50 text-blue-700 border-blue-300"
                                               : cita.tipo_cita === "presencial"
@@ -922,12 +978,12 @@ export default function DashboardMedicoPage() {
                                         >
                                           {getEtiquetaCita(cita.tipo_cita)}
                                         </Badge>
-                                        <p className="text-xs sm:text-sm text-gray-600">
+                                        <p className="text-xs text-gray-600">
                                           {cita.paciente?.edad || 0} años
                                         </p>
                                       </div>
                                       {cita.motivo_consulta && (
-                                        <p className="text-xs sm:text-sm text-gray-500 mt-2 truncate">
+                                        <p className="text-xs text-gray-500 mt-1 truncate">
                                           {cita.motivo_consulta}
                                         </p>
                                       )}
@@ -935,43 +991,43 @@ export default function DashboardMedicoPage() {
                                   </div>
 
                                   {/* Estado y Acciones */}
-                                  <div className="flex flex-col items-end space-y-2 sm:space-y-3 ml-2 sm:ml-4">
+                                  <div className="flex items-center sm:flex-col sm:items-end gap-1 sm:gap-2 ml-0 flex-shrink-0">
                                     <div
-                                      className="flex space-x-1 sm:space-x-2"
+                                      className="flex gap-1 sm:gap-1"
                                       onClick={(e) => e.stopPropagation()}
                                     >
                                       <Button
                                         variant="ghost"
                                         size="sm"
-                                        className="h-8 w-8 sm:h-9 sm:w-9 p-0 hover:bg-purple-50"
+                                        className="h-7 w-7 sm:h-9 sm:w-9 p-0 hover:bg-purple-50"
                                         onClick={() => gestionarCita(cita)}
                                         title="Gestionar cita completa"
                                       >
-                                        <ClipboardList className="w-4 h-4 text-purple-600" />
+                                        <ClipboardList className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-600" />
                                       </Button>
 
                                       <Button
                                         variant="ghost"
                                         size="sm"
-                                        className="h-8 w-8 sm:h-9 sm:w-9 p-0 hover:bg-blue-50"
+                                        className="h-7 w-7 sm:h-9 sm:w-9 p-0 hover:bg-blue-50"
                                         onClick={() => verDetallesCita(cita)}
                                         title="Ver detalles de la cita"
                                       >
-                                        <Eye className="w-4 h-4 text-blue-600" />
+                                        <Eye className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-600" />
                                       </Button>
 
                                       {puedeCrearReceta(cita as any) && (
                                         <Button
                                           variant="ghost"
                                           size="sm"
-                                          className="h-8 w-8 sm:h-9 sm:w-9 p-0 hover:bg-green-50"
+                                          className="h-7 w-7 sm:h-9 sm:w-9 p-0 hover:bg-green-50"
                                           onClick={(e) => {
                                             e.stopPropagation();
                                             crearRecetaDesdeCita(cita);
                                           }}
                                           title="Crear receta"
                                         >
-                                          <FileText className="w-4 h-4 text-green-600" />
+                                          <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-green-600" />
                                         </Button>
                                       )}
 
@@ -980,13 +1036,13 @@ export default function DashboardMedicoPage() {
                                       ) && (
                                         <Button
                                           size="sm"
-                                          className="h-8 sm:h-9 px-2 sm:px-3 bg-green-600 hover:bg-green-700 text-white"
+                                          className="h-7 sm:h-9 px-2 sm:px-3 bg-green-600 hover:bg-green-700 text-white text-xs sm:text-sm"
                                           onClick={() =>
                                             unirseAVideollamada(cita)
                                           }
                                           title="Iniciar videollamada"
                                         >
-                                          <Video className="w-4 h-4" />
+                                          <Video className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                                         </Button>
                                       )}
                                     </div>
@@ -1037,25 +1093,25 @@ export default function DashboardMedicoPage() {
                 {/* Resumen Semanal */}
                 <div>
                   <Card className="bg-white shadow-sm border-0 sm:border">
-                    <CardHeader>
-                      <CardTitle className="flex items-center text-base sm:text-lg">
-                        <Activity className="w-4 h-4 sm:w-5 sm:h-5 mr-2 text-blue-600" />
-                        Próximos 7 Días
+                    <CardHeader className="pb-3 sm:pb-4">
+                      <CardTitle className="flex items-center text-base sm:text-lg gap-2">
+                        <Activity className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600 flex-shrink-0" />
+                        <span className="truncate">Próximos 7 Días</span>
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="space-y-3">
-                        {agenda.map((dia) => {
+                      <div className="space-y-2 sm:space-y-3">
+                        {agenda.map((dia, index) => {
                           const citasVirtuales = dia.citas.filter(
                             (c) => c.tipo_cita === "virtual"
                           ).length;
                           return (
                             <div
-                              key={dia.fecha}
-                              className="flex flex-col sm:flex-row items-center justify-between p-2 sm:p-3 rounded-lg hover:bg-gray-50 transition-colors"
+                              key={`${dia.fecha}-${index}`}
+                              className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 p-2 sm:p-3 rounded-lg hover:bg-gray-50 transition-colors"
                             >
-                              <div className="flex-1">
-                                <p className="font-medium text-sm sm:text-base">
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-sm sm:text-base truncate">
                                   {new Date(dia.fecha).toLocaleDateString(
                                     "es-PE",
                                     {
@@ -1065,20 +1121,20 @@ export default function DashboardMedicoPage() {
                                     }
                                   )}
                                 </p>
-                                <p className="text-xs text-gray-600">
-                                  {dia.citas_completadas}/{dia.total_citas}{" "}
-                                  completadas
-                                </p>
-                                {citasVirtuales > 0 && (
-                                  <p className="text-xs text-green-600 font-medium">
-                                    {citasVirtuales} virtual
-                                    {citasVirtuales !== 1 ? "es" : ""}
+                                <div className="flex flex-wrap gap-2 mt-1">
+                                  <p className="text-xs text-gray-600">
+                                    {dia.citas_completadas}/{dia.total_citas} completadas
                                   </p>
-                                )}
+                                  {citasVirtuales > 0 && (
+                                    <p className="text-xs text-green-600 font-medium">
+                                      {citasVirtuales} virtual{citasVirtuales !== 1 ? "es" : ""}
+                                    </p>
+                                  )}
+                                </div>
                               </div>
                               <Badge
                                 variant="outline"
-                                className="mt-1 sm:mt-0 text-xs"
+                                className="text-xs w-fit flex-shrink-0"
                               >
                                 {dia.total_citas} citas
                               </Badge>
@@ -1089,14 +1145,14 @@ export default function DashboardMedicoPage() {
 
                       {/* Estadísticas Rápidas de Telemedicina */}
                       <div className="mt-4 sm:mt-6 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                        <h4 className="text-sm font-medium text-blue-700 mb-2 flex items-center">
-                          <Video className="w-4 h-4 mr-2" />
-                          Telemedicina Esta Semana
+                        <h4 className="text-sm font-medium text-blue-700 mb-2 flex items-center gap-1">
+                          <Video className="w-4 h-4 flex-shrink-0" />
+                          <span className="truncate">Telemedicina Esta Semana</span>
                         </h4>
-                        <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="grid grid-cols-2 gap-3 text-xs">
                           <div>
-                            <p className="text-blue-600">Total Virtuales</p>
-                            <p className="font-semibold text-blue-800">
+                            <p className="text-blue-600 text-xs">Total Virtuales</p>
+                            <p className="font-semibold text-blue-800 text-sm">
                               {agenda.reduce(
                                 (total, dia) =>
                                   total +
@@ -1108,8 +1164,8 @@ export default function DashboardMedicoPage() {
                             </p>
                           </div>
                           <div>
-                            <p className="text-blue-600">Hoy</p>
-                            <p className="font-semibold text-blue-800">
+                            <p className="text-blue-600 text-xs">Hoy</p>
+                            <p className="font-semibold text-blue-800 text-sm">
                               {citasHoy?.citas?.filter(
                                 (c) => c.tipo_cita === "virtual"
                               ).length || 0}
@@ -1222,6 +1278,10 @@ export default function DashboardMedicoPage() {
                                 <Button
                                   size="sm"
                                   className="h-8 sm:h-9 px-2 sm:px-3 bg-blue-600 hover:bg-blue-700 text-white text-xs"
+                                  onClick={() =>
+                                    window.location.href = "/dashboard/medico?tab=agenda"
+                                  }
+                                  title="Ir al calendario del médico"
                                 >
                                   <Calendar className="w-4 h-4" />
                                 </Button>

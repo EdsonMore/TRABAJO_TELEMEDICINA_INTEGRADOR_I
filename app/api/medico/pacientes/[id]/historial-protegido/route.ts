@@ -12,7 +12,8 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const { password, action } = await request.json();
+    const body = await request.json();
+    const { password, action } = body;
 
     const authHeader = request.headers.get("authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -41,15 +42,17 @@ export async function POST(
     }
 
     // Obtener o crear protección de historial
-    if (action === "check" || action === "verify") {
+    if (action === "check") {
+      return handleCheckProtection(id);
+    } else if (action === "verify" && password) {
       return handleVerifyPassword(payload.userId, id, password);
-    } else if (action === "create") {
+    } else if (action === "create" && password) {
       return handleCreatePassword(payload.userId, id, password);
-    } else if (action === "update") {
+    } else if (action === "update" && password) {
       return handleUpdatePassword(payload.userId, id, password);
     } else {
       return NextResponse.json(
-        { error: "Acción no válida" },
+        { error: "Acción no válida o parámetros incompletos" },
         { status: 400 }
       );
     }
@@ -57,6 +60,28 @@ export async function POST(
     console.error("❌ Error en historial protegido:", error);
     return NextResponse.json(
       { error: "Error interno del servidor" },
+      { status: 500 }
+    );
+  }
+}
+
+async function handleCheckProtection(pacienteId: string) {
+  try {
+    const protectionResult = await query(
+      `SELECT id FROM historial_protecciones WHERE id_paciente = $1`,
+      [pacienteId]
+    );
+
+    const isProtected = protectionResult.rows.length > 0;
+
+    return NextResponse.json({
+      isProtected,
+      message: isProtected ? "Este historial está protegido" : "No hay protección",
+    });
+  } catch (error) {
+    console.error("Error verificando protección:", error);
+    return NextResponse.json(
+      { error: "Error al verificar protección" },
       { status: 500 }
     );
   }

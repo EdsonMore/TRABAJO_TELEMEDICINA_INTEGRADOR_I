@@ -131,19 +131,13 @@ export async function POST(request: NextRequest) {
         await client.query(
           `
           INSERT INTO notificaciones (
-            usuario_id, tipo, titulo, mensaje, datos_adicionales, created_at
-          ) VALUES ($1, 'pago_exitoso', 'Pago Procesado', $2, $3, NOW())
+            id_usuario, tipo, titulo, mensaje, id_relacionado, created_at
+          ) VALUES ($1, 'pago', 'Pago Procesado', $2, $3, NOW())
         `,
           [
             usuario.id,
             `Su pago de S/ ${monto} ha sido procesado exitosamente. Código: ${codigoPago}`,
-            JSON.stringify({
-              codigo_pago: codigoPago,
-              monto,
-              metodo_pago,
-              tipo_pago,
-              referencia_id,
-            }),
+            referencia_id || null,
           ]
         );
       }

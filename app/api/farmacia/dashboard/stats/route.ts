@@ -35,16 +35,16 @@ export async function GET(request: NextRequest) {
 
     const farmaciaId = farmaciaResult.rows[0].id;
 
-    // 1. Obtener estadísticas de recetas
+    // 1. Obtener estadísticas de recetas (usando estado_envio para recibidas)
     const recetasResult = await client.query(
       `SELECT 
-        COUNT(CASE WHEN r.estado = 'activa' THEN 1 END) as pendientes,
-        COUNT(CASE WHEN r.estado = 'en_proceso' THEN 1 END) as en_proceso,
-        COUNT(CASE WHEN r.estado = 'dispensada' AND DATE(r.fecha_dispensacion) = CURRENT_DATE THEN 1 END) as dispensadas_hoy,
+        COUNT(CASE WHEN r.estado_envio = 'enviada' THEN 1 END) as pendientes,
+        COUNT(CASE WHEN r.estado_envio = 'recibida' THEN 1 END) as en_proceso,
+        COUNT(CASE WHEN r.estado_envio = 'dispensada' AND DATE(r.fecha_envio_farmacia) = CURRENT_DATE THEN 1 END) as dispensadas_hoy,
         COUNT(*) as total
       FROM recetas r
-      WHERE r.id_farmacia_dispensadora = $1 
-      AND r.estado IN ('activa', 'en_proceso', 'dispensada', 'vencida')`,
+      WHERE r.farmacia_seleccionada_id = $1 
+      AND r.estado_envio IN ('enviada', 'recibida', 'dispensada')`,
       [farmaciaId]
     );
 
@@ -78,8 +78,8 @@ export async function GET(request: NextRequest) {
     const ventasResult = await client.query(
       `SELECT 
         COALESCE(SUM(CAST(p.monto AS DECIMAL(10,2))), 0) as total_hoy,
-        -- Contar recetas dispensadas hoy por esta farmacia (tabla recetas)
-        (SELECT COUNT(*) FROM recetas r WHERE r.id_farmacia_dispensadora = $1 AND DATE(r.fecha_dispensacion) = CURRENT_DATE AND r.estado = 'dispensada') as recetas_hoy,
+        -- Contar recetas dispensadas hoy por esta farmacia usando estado_envio
+        (SELECT COUNT(*) FROM recetas r WHERE r.farmacia_seleccionada_id = $1 AND DATE(r.fecha_envio_farmacia) = CURRENT_DATE AND r.estado_envio = 'dispensada') as recetas_hoy,
         COUNT(DISTINCT CASE WHEN p.entidad_tipo = 'medicamento' THEN p.entidad_id END) as productos_vendidos
       FROM pagos p
       WHERE p.usuario_id IN (SELECT id_usuario FROM farmacias WHERE id = $1)

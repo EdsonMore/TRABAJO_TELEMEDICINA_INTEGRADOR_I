@@ -58,8 +58,8 @@ export async function GET(request: NextRequest) {
         COUNT(*) as total_citas,
         COUNT(CASE WHEN estado = 'completada' THEN 1 END) as citas_completadas,
         COUNT(CASE WHEN estado = 'programada' OR estado = 'confirmada' THEN 1 END) as citas_programadas,
-        COUNT(CASE WHEN fecha_cita = CURRENT_DATE THEN 1 END) as citas_hoy,
-        COUNT(CASE WHEN fecha_cita > CURRENT_DATE THEN 1 END) as citas_futuras,
+        COUNT(CASE WHEN DATE(fecha_cita AT TIME ZONE 'America/Lima') = CURRENT_DATE AT TIME ZONE 'America/Lima' THEN 1 END) as citas_hoy,
+        COUNT(CASE WHEN DATE(fecha_cita AT TIME ZONE 'America/Lima') > CURRENT_DATE AT TIME ZONE 'America/Lima' THEN 1 END) as citas_futuras,
         AVG(CASE WHEN costo IS NOT NULL THEN costo END) as ingreso_promedio_cita
       FROM citas 
       WHERE id_medico = $1

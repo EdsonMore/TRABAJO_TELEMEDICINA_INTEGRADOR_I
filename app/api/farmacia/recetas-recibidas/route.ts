@@ -135,7 +135,16 @@ export async function GET(request: NextRequest) {
         [farmaciaId, receta.id]
       );
 
-      const medicamentosNoDisponibles = medicamentosResult.rows.filter(
+      // DEDUPLICAR MEDICAMENTOS por medicamento_id
+      const medicamentosUnicos = medicamentosResult.rows.reduce((unique: any[], med: any) => {
+        const existe = unique.some((u: any) => u.medicamento_id === med.medicamento_id);
+        if (!existe) {
+          unique.push(med);
+        }
+        return unique;
+      }, []);
+
+      const medicamentosNoDisponibles = medicamentosUnicos.filter(
         (m: any) => m.estado_disponibilidad !== "disponible"
       );
 
@@ -158,7 +167,7 @@ export async function GET(request: NextRequest) {
           nombre: receta.medico_nombre,
           apellido: receta.medico_apellido,
         },
-        medicamentos: medicamentosResult.rows.map((med: any) => ({
+        medicamentos: medicamentosUnicos.map((med: any) => ({
           id: med.id,
           medicamento_id: med.medicamento_id,
           nombre_comercial: med.nombre_comercial,
@@ -176,12 +185,12 @@ export async function GET(request: NextRequest) {
           fecha_vencimiento: med.fecha_vencimiento,
           estado_disponibilidad: med.estado_disponibilidad,
         })),
-        medicamentos_totales: medicamentosResult.rows.length,
-        medicamentos_disponibles: medicamentosResult.rows.filter(
+        medicamentos_totales: medicamentosUnicos.length,
+        medicamentos_disponibles: medicamentosUnicos.filter(
           (m: any) => m.estado_disponibilidad === "disponible"
         ).length,
         medicamentos_no_disponibles: medicamentosNoDisponibles.length,
-        precio_estimado: medicamentosResult.rows.reduce(
+        precio_estimado: medicamentosUnicos.reduce(
           (total, med: any) => total + (med.precio_venta ? med.precio_venta * med.cantidad : 0),
           0
         ),

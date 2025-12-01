@@ -71,19 +71,9 @@ export async function PATCH(
     await client.query("BEGIN");
 
     try {
-      // 🔄 SINCRONIZACIÓN: Determinar estados
-      let nuevoEstado = accion;
-      let nuevoEstadoEnvio = null;
+      // 🔄 SINCRONIZACIÓN: Determinar estados según acción
+      // IMPORTANTE: estado_envio solo acepta: 'no_enviada', 'enviada', 'recibida', 'rechazada', 'dispensada'
       
-      if (accion === "en_proceso") {
-        nuevoEstadoEnvio = "en_proceso";
-      } else if (accion === "dispensada") {
-        nuevoEstadoEnvio = "dispensada";
-      } else if (accion === "rechazada") {
-        nuevoEstado = "cancelada";
-        nuevoEstadoEnvio = "rechazada";
-      }
-
       if (accion === "dispensada") {
         // Verificar disponibilidad de medicamentos si es necesario
         if (medicamentos_procesados && medicamentos_procesados.length > 0) {
@@ -112,13 +102,14 @@ export async function PATCH(
           }
         }
 
-        // Actualizar estado de la receta con sincronización
+        // Actualizar estado de la receta: cambiar a dispensada
         await client.query(
           `UPDATE recetas 
            SET estado = 'dispensada',
                estado_envio = 'dispensada',
                id_farmacia_dispensadora = $1,
-               fecha_dispensacion = CURRENT_TIMESTAMP
+               fecha_dispensacion = CURRENT_TIMESTAMP,
+               fecha_finalizacion_preparacion = CURRENT_TIMESTAMP
            WHERE id = $2`,
           [farmaciaId, recetaId]
         );
@@ -142,11 +133,11 @@ export async function PATCH(
           ]
         );
       } else if (accion === "en_proceso") {
-        // Cambiar estado a en_proceso con sincronización
+        // Cambiar estado a en_proceso: SOLO actualizar estado, mantener estado_envio = 'recibida'
         await client.query(
           `UPDATE recetas 
            SET estado = 'en_proceso',
-               estado_envio = 'en_proceso'
+               fecha_inicio_preparacion = CURRENT_TIMESTAMP
            WHERE id = $1`,
           [recetaId]
         );
@@ -162,13 +153,13 @@ export async function PATCH(
             JSON.stringify({
               estado_anterior: receta.estado,
               estado_nuevo: "en_proceso",
-              estado_envio_nuevo: "en_proceso",
+              estado_envio_actual: "recibida",
               observaciones,
             }),
           ]
         );
       } else if (accion === "rechazada") {
-        // Cambiar estado a cancelada (rechazada) con sincronización
+        // Cambiar estado a cancelada y estado_envio a rechazada
         await client.query(
           `UPDATE recetas 
            SET estado = 'cancelada',
@@ -240,13 +231,12 @@ export async function PATCH(
 
         await client.query(
           `INSERT INTO notificaciones 
-           (usuario_id, titulo, mensaje, tipo, entidad_relacionada, id_entidad)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
+           (id_usuario, titulo, mensaje, tipo, id_relacionado)
+           VALUES ($1, $2, $3, $4, $5)`,
           [
             pacienteUserId,
             titulos[accion],
             mensajes[accion],
-            `receta_${accion}`,
             "receta",
             recetaId,
           ]
