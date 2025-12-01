@@ -91,19 +91,33 @@ export async function GET(
         );
       }
 
-      const fechaCita = new Date(citaResult.rows[0].fecha_cita);
+      // Parsear fecha de forma segura (formato "YYYY-MM-DD" de BD)
+      const fechaCitaRaw = citaResult.rows[0].fecha_cita;
+      const fechaCitaStr = typeof fechaCitaRaw === 'string' 
+        ? fechaCitaRaw 
+        : new Date(fechaCitaRaw).toISOString().split('T')[0];
+      
+      const [año, mes, día] = fechaCitaStr.split("-").map(Number);
+      const fechaCita = new Date(año, mes - 1, día);
+      
       const ahora = new Date();
+      ahora.setHours(0, 0, 0, 0);
+      fechaCita.setHours(0, 0, 0, 0);
 
-      // Acceso permitido sólo durante 7 días después de la cita (y si la cita ya ocurrió)
+      // Acceso permitido:
+      // 1. ANTES de la cita (para revisar antecedentes del paciente)
+      // 2. DESPUÉS de la cita durante 7 días
       const diffMs = ahora.getTime() - fechaCita.getTime();
       const sieteDiasMs = 7 * 24 * 60 * 60 * 1000;
 
-      if (fechaCita > ahora || diffMs > sieteDiasMs) {
+      // Si la cita ya pasó más de 7 días, rechazar
+      if (diffMs > sieteDiasMs) {
         return NextResponse.json(
           { error: "El acceso al historial de este paciente expiró para esta cita" },
           { status: 403 }
         );
       }
+      // Si no, permitir (cita futura o dentro de 7 días después)
     }
 
     // Obtener información básica del paciente

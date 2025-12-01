@@ -121,6 +121,15 @@ export async function PUT(
 
       const citaActualizada = result.rows[0];
 
+      // ✅ NUEVO: Si se cambia el estado y hay notificación, marcar recordatorio_enviado = true
+      if (estado) {
+        await client.query(
+          `UPDATE citas SET recordatorio_enviado = true WHERE id = $1`,
+          [citaRealId]
+        );
+        console.log(`✅ recordatorio_enviado marcado como true para cita: ${citaRealId}`);
+      }
+
       // Notificación mejorada si se cambia el estado
       if (estado) {
         const pacienteQuery = `

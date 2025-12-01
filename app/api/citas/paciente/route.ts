@@ -131,7 +131,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     console.log("Body recibido:", body);
 
-    const { medico_id, fecha_cita, hora_cita, tipo_cita, motivo_consulta } =
+    const { medico_id, fecha_cita, hora_cita, tipo_cita, motivo_consulta, metodo_pago } =
       body;
 
     // ✅ Validar datos requeridos
@@ -149,13 +149,19 @@ export async function POST(request: Request) {
     }
 
     // ✅ VALIDACIÓN CRÍTICA: Verificar que la fecha no sea pasada
-    const fechaSeleccionada = new Date(fecha_cita + "T00:00:00-05:00");
-    const fechaHoyPeru = getFechaActualPeru();
-    const fechaMinimaValida = new Date(
-      fechaHoyPeru.toISOString().split("T")[0] + "T00:00:00-05:00"
-    );
+    // Parsear fecha local sin asumir timezone
+    const [año, mes, día] = fecha_cita.split("-").map(Number);
+    const fechaSeleccionada = new Date(año, mes - 1, día);
+    
+    // Obtener hoy en timezone Perú
+    const ahora = new Date();
+    const offsetPeru = -5 * 60 * 60 * 1000;
+    const ahoraPeru = new Date(ahora.getTime() + offsetPeru);
+    const stringHoyPeru = ahoraPeru.toISOString().split("T")[0];
+    const [añoHoy, mesHoy, díaHoy] = stringHoyPeru.split("-").map(Number);
+    const fechaHoy = new Date(añoHoy, mesHoy - 1, díaHoy);
 
-    if (fechaSeleccionada < fechaMinimaValida) {
+    if (fechaSeleccionada < fechaHoy) {
       return NextResponse.json(
         { error: "No puedes agendar citas en fechas pasadas" },
         { status: 400 }
@@ -278,10 +284,10 @@ export async function POST(request: Request) {
       const citaResult = await client.query(
         `INSERT INTO citas (
      id_paciente, id_medico, fecha_cita, hora_cita, tipo_cita, 
-     motivo_consulta, estado, pagado, costo
+     motivo_consulta, estado, pagado, costo, metodo_pago
    )
-   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-   RETURNING id, fecha_cita, hora_cita, tipo_cita, estado, pagado, costo, motivo_consulta`,
+   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+   RETURNING id, fecha_cita, hora_cita, tipo_cita, estado, pagado, costo, motivo_consulta, metodo_pago`,
         [
           paciente_id,
           medico_id,
@@ -292,11 +298,32 @@ export async function POST(request: Request) {
           "programada",
           false,
           costoFinal,
+          metodo_pago || null, // ✅ AGREGADO: Guardar método de pago
         ]
       );
 
       const nuevaCita = citaResult.rows[0];
       console.log("Cita creada exitosamente:", nuevaCita);
+
+      // ===== CREAR REGISTRO DE PAGO EN TABLA PAGOS =====
+      try {
+        const pagoResult = await client.query(
+          `INSERT INTO pagos (usuario_id, entidad_tipo, entidad_id, monto, metodo_pago, estado)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING id`,
+          [usuario.id, "cita", nuevaCita.id, costoFinal, metodo_pago || "pendiente", "pendiente"]
+        );
+        
+        console.log("✅ Registro de pago creado:", {
+          id: pagoResult.rows[0].id,
+          citaId: nuevaCita.id,
+          monto: costoFinal,
+          metodo_pago: metodo_pago || "pendiente",
+        });
+      } catch (pagoError) {
+        console.error("❌ Error al crear registro de pago:", pagoError);
+        // No fallar la creación de cita si el pago falla
+      }
 
       // ===== CREAR NOTIFICACIÓN PARA EL PACIENTE (DENTRO DE TRANSACCIÓN) =====
       try {
@@ -330,6 +357,17 @@ export async function POST(request: Request) {
           titulo,
           usuarioId: usuario.id,
           citaId: nuevaCita.id,
+        });
+
+        // ===== MARCAR recordatorio_enviado = true =====
+        const updateRecordatorioResult = await client.query(
+          `UPDATE citas SET recordatorio_enviado = true WHERE id = $1 RETURNING id, recordatorio_enviado`,
+          [nuevaCita.id]
+        );
+
+        console.log("✅ recordatorio_enviado actualizado:", {
+          citaId: nuevaCita.id,
+          recordatorio_enviado: updateRecordatorioResult.rows[0].recordatorio_enviado,
         });
 
         // ===== CREAR NOTIFICACIÓN PARA EL MÉDICO =====

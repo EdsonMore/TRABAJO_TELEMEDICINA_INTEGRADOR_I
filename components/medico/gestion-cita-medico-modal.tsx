@@ -823,7 +823,9 @@ export default function GestionCitaMedicoModal({
       }
 
       const fechaCita = new Date(citaData.fecha_cita);
+      fechaCita.setHours(0, 0, 0, 0);
       const ahora = new Date();
+      ahora.setHours(0, 0, 0, 0);
 
       // Si la cita es en el futuro, no permitir acceso
       if (fechaCita > ahora) {
