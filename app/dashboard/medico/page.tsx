@@ -636,6 +636,36 @@ export default function DashboardMedicoPage() {
       const urlVideollamada = `/telemedicina/sesion/${sesionId}`;
       console.log("🔗 URL:", urlVideollamada);
 
+      // 🔥 ACTUALIZAR ESTADO DE SESIÓN A 'iniciada'
+      try {
+        console.log("🔄 Llamando PUT para actualizar sesión a 'iniciada':", {
+          sesionId,
+          headers,
+        });
+
+        const updateResponse = await fetch("/api/telemedicina/sesiones", {
+          method: "PUT",
+          headers: headers,
+          body: JSON.stringify({
+            sesionId: sesionId,
+            estado: "iniciada",
+          }),
+        });
+
+        console.log("📡 PUT Response status:", updateResponse.status);
+
+        if (updateResponse.ok) {
+          const updateData = await updateResponse.json();
+          console.log("✅ Sesión marcada como iniciada:", updateData);
+        } else {
+          const errorText = await updateResponse.text();
+          console.error("❌ Error en PUT:", updateResponse.status, errorText);
+        }
+      } catch (updateError) {
+        console.error("⚠️ Error al actualizar estado de sesión:", updateError);
+        // No fallar por esto, continuar abriendo la ventana
+      }
+
       const nuevaVentana = window.open(urlVideollamada, "_blank");
 
       if (!nuevaVentana) {
@@ -942,16 +972,22 @@ export default function DashboardMedicoPage() {
                                         {cita.hora_cita?.slice(0, 5) || "--:--"}
                                       </div>
                                       <Badge
-                                        variant={
-                                          cita.estado === "completada"
-                                            ? "default"
-                                            : cita.estado === "confirmada"
-                                            ? "secondary"
-                                            : cita.estado === "iniciada"
-                                            ? "default"
-                                            : "outline"
-                                        }
-                                        className="capitalize text-xs mt-1 w-full justify-center"
+                                        variant="outline"
+                                        className={`capitalize text-xs mt-1 w-full justify-center ${
+                                          cita.estado === "confirmada"
+                                            ? "bg-blue-100 text-blue-800 border-blue-200"
+                                            : cita.estado === "programada"
+                                            ? "bg-amber-100 text-amber-800 border-amber-200"
+                                            : cita.estado === "en_curso" || cita.estado === "iniciada"
+                                            ? "bg-green-100 text-green-800 border-green-200"
+                                            : cita.estado === "completada"
+                                            ? "bg-indigo-100 text-indigo-800 border-indigo-200"
+                                            : cita.estado === "cancelada"
+                                            ? "bg-red-100 text-red-800 border-red-200"
+                                            : cita.estado === "no_asistio"
+                                            ? "bg-orange-100 text-orange-800 border-orange-200"
+                                            : "bg-gray-100 text-gray-800 border-gray-200"
+                                        }`}
                                       >
                                         {cita.estado}
                                       </Badge>

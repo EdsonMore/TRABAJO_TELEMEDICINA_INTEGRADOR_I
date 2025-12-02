@@ -241,6 +241,38 @@ export function CalendarioCitas({
       .slice(0, 6);
   }, [citasFiltradas]);
 
+  // 📋 Historial de citas (completadas, canceladas, no asistió, en progreso)
+  const citasHistorial = useMemo(() => {
+    const idsUnicos = new Set();
+    const citasSinDuplicados = citasFiltradas.filter((cita) => {
+      if (idsUnicos.has(cita.id)) {
+        return false;
+      }
+      idsUnicos.add(cita.id);
+      return true;
+    });
+
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+
+    return citasSinDuplicados
+      .filter((c) => {
+        const fechaCita = parsearFechaLocal(c.fecha_cita);
+        // Mostrar citas completadas, canceladas, no asistió o en progreso
+        return (
+          (c.estado === "completada" || 
+           c.estado === "cancelada" || 
+           c.estado === "no_asistio" ||
+           c.estado === "en_curso")
+        );
+      })
+      .sort(
+        (a, b) =>
+          parsearFechaLocal(b.fecha_cita).getTime() -
+          parsearFechaLocal(a.fecha_cita).getTime()
+      );
+  }, [citasFiltradas]);
+
   // Obtener color de estado
   const getColorEstado = (estado: string) => {
     switch (estado) {
@@ -248,12 +280,15 @@ export function CalendarioCitas({
         return "bg-blue-100 text-blue-800 border-blue-200";
       case "programada":
         return "bg-amber-100 text-amber-800 border-amber-200";
+      case "en_curso":
       case "iniciada":
         return "bg-green-100 text-green-800 border-green-200";
       case "completada":
-        return "bg-gray-100 text-gray-800 border-gray-200";
+        return "bg-indigo-100 text-indigo-800 border-indigo-200";
       case "cancelada":
         return "bg-red-100 text-red-800 border-red-200";
+      case "no_asistio":
+        return "bg-orange-100 text-orange-800 border-orange-200";
       default:
         return "bg-gray-100 text-gray-800 border-gray-200";
     }
@@ -706,6 +741,118 @@ export function CalendarioCitas({
                       No hay citas confirmadas o programadas para los próximos
                       días
                     </p>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* 📋 Historial de Citas */}
+          <Card className="shadow-sm border border-gray-200 rounded-2xl">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-xl flex items-center gap-2">
+                <CheckCircle2 className="w-6 h-6 text-purple-600" />
+                Historial de Citas
+                <Badge
+                  variant="secondary"
+                  className="ml-2 bg-purple-100 text-purple-700"
+                >
+                  {citasHistorial.length}
+                </Badge>
+              </CardTitle>
+              <CardDescription>
+                Citas completadas, en progreso, canceladas o no asistidas
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {citasHistorial.length > 0 ? (
+                  citasHistorial.slice(0, 6).map((cita) => (
+                    <div
+                      key={cita.id}
+                      className="p-4 border border-gray-200 rounded-xl hover:shadow-md transition-all bg-white"
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-3 mb-2">
+                            <div className="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-sm font-semibold">
+                              {cita.hora_cita?.slice(0, 5)}
+                            </div>
+                            <Badge className={getColorEstado(cita.estado)}>
+                              {cita.estado}
+                            </Badge>
+                            {getIconoTipo(cita.tipo_cita)}
+                          </div>
+
+                          <h4 className="font-semibold text-gray-900 text-lg mb-1">
+                            {cita.paciente?.nombre || "Paciente"}{" "}
+                            {cita.paciente?.apellido || ""}
+                            {cita.paciente?.edad && (
+                              <span className="text-gray-600 text-sm ml-2">
+                                ({cita.paciente.edad} años)
+                              </span>
+                            )}
+                          </h4>
+
+                          <p className="text-gray-600 text-sm mb-2 line-clamp-2">
+                            {cita.motivo_consulta || "Consulta médica"}
+                          </p>
+
+                          <p className="text-gray-500 text-sm">
+                            {format(
+                              convertirFechaAPeru(cita.fecha_cita),
+                              "EEEE, d 'de' MMMM 'de' yyyy",
+                              { locale: es }
+                            )}
+                          </p>
+                        </div>
+
+                        <div className="flex gap-2 flex-wrap">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => abrirModalGestion(cita)}
+                            className="bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100"
+                          >
+                            <Stethoscope className="w-4 h-4 mr-1" />
+                            Ver Detalles
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => onVerDetalles?.(cita)}
+                          >
+                            <Eye className="w-4 h-4 mr-1" />
+                            Historial
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    <CheckCircle2 className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+                    <p className="text-lg font-medium text-gray-600">
+                      Sin historial de citas
+                    </p>
+                    <p className="text-sm text-gray-500 mt-1">
+                      No hay citas completadas, canceladas o sin asistencia aún
+                    </p>
+                  </div>
+                )}
+
+                {citasHistorial.length > 6 && (
+                  <div className="pt-4 border-t border-gray-200 text-center">
+                    <Button
+                      variant="ghost"
+                      className="text-purple-600 hover:text-purple-700"
+                      onClick={() => {
+                        // Aquí podrías implementar un modal o página con todo el historial
+                        console.log("Ver todo el historial");
+                      }}
+                    >
+                      Ver todo el historial ({citasHistorial.length})
+                    </Button>
                   </div>
                 )}
               </div>

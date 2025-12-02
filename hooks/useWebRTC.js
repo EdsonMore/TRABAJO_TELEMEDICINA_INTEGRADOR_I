@@ -17,6 +17,7 @@ export const useWebRTC = (roomId, userData) => {
     video: true,
   });
   const [errors, setErrors] = useState([]);
+  const [sessionEnded, setSessionEnded] = useState(false);
 
   const peerConnections = useRef(new Map());
   const localStreamRef = useRef(null);
@@ -328,6 +329,16 @@ export const useWebRTC = (roomId, userData) => {
               data.enabled
             );
             // Podrías actualizar el estado UI basado en esto
+            break;
+
+          case "session-ended":
+            console.log("🛑 Sesión finalizada recibida del servidor");
+            setSessionEnded(true);
+            break;
+
+          case "end-session":
+            console.log("🛑 Fin de sesión recibido del servidor");
+            setSessionEnded(true);
             break;
 
           default:
@@ -831,6 +842,7 @@ export const useWebRTC = (roomId, userData) => {
     streamInitialized,
     mediaState,
     errors,
+    sessionEnded,
     initializeLocalStream,
     sendMessage,
     toggleMedia,

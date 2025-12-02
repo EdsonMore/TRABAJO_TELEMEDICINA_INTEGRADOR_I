@@ -141,6 +141,10 @@ export default function DashboardPacientePage() {
   const [citaSeleccionada, setCitaSeleccionada] = useState<CitaPaciente | null>(
     null
   );
+  
+  // 🔥 Estado para alerta de videollamada no iniciada
+  const [videollamadaAlertaOpen, setVideollamadaAlertaOpen] = useState(false);
+  const [videollamadaAlertaMensaje, setVideollamadaAlertaMensaje] = useState("");
 
   // Estado para la navegación activa - Inicializar desde URL si es posible
   const [activeTab, setActiveTab] = useState("resumen");
@@ -440,10 +444,11 @@ export default function DashboardPacientePage() {
 
       // Buscar sesiones existentes
       const sesionesData = await safeFetchJSON(
-        `/api/telemedicina/sesiones?cita_id=${encodeURIComponent(cita.id)}`,
-        { headers }
+        `/api/telemedicina/sesiones?cita_id=${encodeURIComponent(cita.id)}&_t=${Date.now()}`,
+        { headers, cache: "no-store" }
       );
       let sesionId: string | undefined;
+      let sesionData: any = null;
 
       if (
         sesionesData &&
@@ -451,7 +456,15 @@ export default function DashboardPacientePage() {
         Array.isArray((sesionesData as any).sesiones) &&
         (sesionesData as any).sesiones.length > 0
       ) {
-        sesionId = (sesionesData as any).sesiones[0].id;
+        sesionData = (sesionesData as any).sesiones[0];
+        sesionId = sesionData.id;
+        
+        // 🔥 VALIDACIÓN CRÍTICA: Verificar si el médico ha iniciado la sesión
+        if (sesionData.estado !== 'iniciada') {
+          throw new Error(
+            `⏳ No puedes unirte a la videollamada aún.\n\nEl médico debe iniciar la sesión primero.\n\nEstado actual: ${sesionData.estado}`
+          );
+        }
       } else {
         // Crear nueva sesión
         const titulo = `Consulta Virtual - Dr. ${cita.medico_nombre || ""} ${
@@ -480,6 +493,11 @@ export default function DashboardPacientePage() {
         }
 
         sesionId = (programarData as any).sesion?.id;
+        
+        // 🔥 VALIDACIÓN: Nueva sesión está en estado 'programada', no se puede unir aún
+        throw new Error(
+          `⏳ No puedes unirte a la videollamada aún.\n\nEl médico debe iniciar la sesión primero.\n\nEstado actual: programada`
+        );
       }
 
       if (!sesionId) throw new Error("No se obtuvo id de sesión");
@@ -496,9 +514,22 @@ export default function DashboardPacientePage() {
       console.error("Error en videollamada:", error);
       const msg =
         error?.message || "Error desconocido al unirse a la videollamada";
-      try {
-        toast({ title: "Error videollamada", description: msg });
-      } catch (e) {}
+      
+      console.log("📢 Tipo de error:", typeof error);
+      console.log("📢 Mensaje:", msg);
+      console.log("📢 ¿Incluye 'No puedes unirte'?", msg.includes("No puedes unirte"));
+      
+      // 🔥 Si es error de videollamada no iniciada, mostrar alerta especial
+      if (msg.includes("No puedes unirte") || msg.includes("El médico debe iniciar")) {
+        console.log("✅ Mostrando modal de alerta de videollamada no iniciada");
+        setVideollamadaAlertaMensaje(msg);
+        setVideollamadaAlertaOpen(true);
+      } else {
+        console.log("❌ Mostrando toast de error general");
+        try {
+          toast({ title: "Error videollamada", description: msg });
+        } catch (e) {}
+      }
     }
   };
 
@@ -1340,6 +1371,53 @@ export default function DashboardPacientePage() {
         perfil={perfil}
         onPerfilActualizado={recargarDatos}
       />
+      
+      {/* 🔥 MODAL: Alerta de Videollamada no iniciada - Diseño para adultos mayores */}
+      {videollamadaAlertaOpen && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95">
+            {/* Icono */}
+            <div className="flex justify-center">
+              <div className="bg-yellow-100 p-3 rounded-full">
+                <AlertTriangle className="w-10 h-10 text-yellow-600" />
+              </div>
+            </div>
+
+            {/* Título */}
+            <div className="text-center">
+              <h2 className="text-2xl font-bold text-gray-900">
+                ⏳ Videollamada<br />no disponible
+              </h2>
+            </div>
+
+            {/* Mensaje principal */}
+            <div className="bg-yellow-50 rounded-xl p-4 border-2 border-yellow-300">
+              <p className="text-lg text-gray-800 font-semibold leading-relaxed text-center whitespace-pre-line">
+                {videollamadaAlertaMensaje}
+              </p>
+            </div>
+
+            {/* Información adicional */}
+            <div className="bg-blue-50 rounded-xl p-4 border-2 border-blue-300">
+              <p className="text-base text-gray-700 leading-relaxed">
+                <strong className="text-blue-700">💡 El médico iniciará</strong>
+                <br />
+                la videollamada en la hora programada.
+              </p>
+            </div>
+
+            {/* Botón de acción */}
+            <div className="pt-2">
+              <Button
+                className="w-full h-12 text-lg font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl"
+                onClick={() => setVideollamadaAlertaOpen(false)}
+              >
+                Entendido
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

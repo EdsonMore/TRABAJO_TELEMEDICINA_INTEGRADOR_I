@@ -76,6 +76,39 @@ export default function SesionTelemedicinaPage() {
           }
 
           setSesionData(sesion);
+
+          // 🔥 SI ES MÉDICO Y LA SESIÓN NO ESTÁ INICIADA, ACTUALIZAR AHORA
+          if (usuario?.rol === "medico" && sesion.estado !== "iniciada") {
+            console.log("🔄 Médico entrando a sesión. Actualizando estado a 'iniciada'...");
+            
+            try {
+              const updateResponse = await fetch("/api/telemedicina/sesiones", {
+                method: "PUT",
+                headers,
+                body: JSON.stringify({
+                  sesionId: sesionId,
+                  estado: "iniciada",
+                }),
+              });
+
+              if (updateResponse.ok) {
+                const updateData = await updateResponse.json();
+                console.log("✅ Sesión actualizada a 'iniciada':", updateData);
+                
+                // Actualizar el estado local también
+                setSesionData({
+                  ...sesion,
+                  estado: "iniciada",
+                  fecha_inicio_real: new Date().toISOString(),
+                });
+              } else {
+                console.error("❌ Error al actualizar sesión:", updateResponse.status);
+              }
+            } catch (updateError) {
+              console.error("⚠️ Error al actualizar estado:", updateError);
+              // No bloquear, continuar con la llamada
+            }
+          }
         } else {
           setError("Sesión no encontrada");
         }
@@ -152,9 +185,11 @@ export default function SesionTelemedicinaPage() {
 
   // Usar el código de acceso como roomId para WebRTC
   const roomId = `medilink-${sesionData.codigo_acceso}`;
+  const sessionUUID = sesionData.id; // UUID real para API
 
   console.log("🎬 Iniciando videollamada:", {
     roomId,
+    sessionUUID,
     userData,
     sesionData,
   });
@@ -162,6 +197,7 @@ export default function SesionTelemedicinaPage() {
   return (
     <VideoCallRoom
       roomId={roomId}
+      sessionUUID={sessionUUID}
       userData={userData}
       onLeave={handleLeaveCall}
       citaId={sesionData?.id_cita}

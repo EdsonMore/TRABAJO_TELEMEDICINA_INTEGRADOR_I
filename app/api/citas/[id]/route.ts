@@ -44,22 +44,19 @@ export async function PUT(
 
       const medicoId = medicoResult.rows[0].id;
 
-      // ✅ SOLUCIÓN: Buscar TODAS las citas del médico y usar la más reciente
-      // Esto resuelve el problema del ID incorrecto
-      const citasResult = await client.query(
+      // ✅ Verificar que la cita EXISTE y pertenece a este médico
+      const citaExistenteResult = await client.query(
         `SELECT id, fecha_cita, estado, motivo_consulta 
          FROM citas 
-         WHERE id_medico = $1 
-         ORDER BY fecha_creacion DESC 
-         LIMIT 1`,
-        [medicoId]
+         WHERE id = $1 AND id_medico = $2`,
+        [citaIdentifier, medicoId]
       );
 
-      if (citasResult.rows.length === 0) {
-        throw new Error("No se encontraron citas para este médico");
+      if (citaExistenteResult.rows.length === 0) {
+        throw new Error("Cita no encontrada o no pertenece a este médico");
       }
 
-      const citaReal = citasResult.rows[0];
+      const citaReal = citaExistenteResult.rows[0];
       const citaRealId = citaReal.id;
 
       console.log("✅ Usando cita real:", {

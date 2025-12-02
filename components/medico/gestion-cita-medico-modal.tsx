@@ -670,6 +670,17 @@ export default function GestionCitaMedicoModal({
       return;
     }
 
+    // ⏰ VALIDAR VENTANA DE EDICIÓN (7 DÍAS)
+    const editAccess = calculateEditAccess();
+    if (!editAccess.canEdit) {
+      toast({
+        title: "⏰ Edición Expirada",
+        description: editAccess.reason,
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsSaving(true);
     try {
       console.log("💾 Guardando datos médicos para cita:", citaData.id);
@@ -860,6 +871,79 @@ export default function GestionCitaMedicoModal({
   const historialAccess = calculateHistorialAccess();
   const canViewHistorial = historialAccess.canAccess;
 
+  // ⏰ CALCULAR ACCESO A EDICIÓN (VENTANA DE 7 DÍAS)
+  const calculateEditAccess = (): {
+    canEdit: boolean;
+    reason: string;
+    daysRemaining: number | null;
+    expiryDate: Date | null;
+  } => {
+    try {
+      if (!citaData?.fecha_cita) {
+        return {
+          canEdit: false,
+          reason: "Datos de cita no disponibles",
+          daysRemaining: null,
+          expiryDate: null,
+        };
+      }
+
+      const fechaCita = new Date(citaData.fecha_cita);
+      fechaCita.setHours(0, 0, 0, 0);
+      const ahora = new Date();
+      ahora.setHours(0, 0, 0, 0);
+
+      // Si la cita es en el futuro, sí se puede editar (aún no ha ocurrido)
+      if (fechaCita > ahora) {
+        return {
+          canEdit: true,
+          reason: "Cita futura - edición permitida",
+          daysRemaining: null,
+          expiryDate: null,
+        };
+      }
+
+      // Si la cita ya pasó, calcular ventana de 7 días
+      const diffMs = ahora.getTime() - fechaCita.getTime();
+      const sieteDiasMs = 7 * 24 * 60 * 60 * 1000;
+      const daysPassedMs = diffMs;
+      const daysRemaining = Math.max(
+        0,
+        Math.ceil((sieteDiasMs - daysPassedMs) / (24 * 60 * 60 * 1000))
+      );
+
+      // Calcular fecha de expiración
+      const expiryDate = new Date(fechaCita.getTime() + sieteDiasMs);
+
+      // Si pasó la ventana de 7 días
+      if (diffMs > sieteDiasMs) {
+        return {
+          canEdit: false,
+          reason: `El plazo para editar expiró el ${expiryDate.toLocaleDateString(
+            "es-PE"
+          )}. Solo puedes editar durante 7 días después de la cita.`,
+          daysRemaining: 0,
+          expiryDate,
+        };
+      }
+
+      return {
+        canEdit: true,
+        reason: `Puedes editar hasta el ${expiryDate.toLocaleDateString("es-PE")} (${daysRemaining} ${daysRemaining === 1 ? "día" : "días"} restantes)`,
+        daysRemaining,
+        expiryDate,
+      };
+    } catch (e) {
+      console.error("Error calculando acceso a edición:", e);
+      return {
+        canEdit: false,
+        reason: "Error al validar acceso",
+        daysRemaining: null,
+        expiryDate: null,
+      };
+    }
+  };
+
   const handleClose = () => {
     setFormData({
       diagnostico: "",
@@ -973,7 +1057,8 @@ export default function GestionCitaMedicoModal({
                       const nuevoEstado = e.target.value as EstadoCita;
                       const validacion = validarTransicion(
                         citaData.estado as EstadoCita,
-                        nuevoEstado
+                        nuevoEstado,
+                        citaData.tipo_cita as any // Pasar tipo de cita
                       );
                       
                       if (validacion.esValida) {
@@ -1002,8 +1087,8 @@ export default function GestionCitaMedicoModal({
                       Estado actual: {describirEstado(formData.estado as EstadoCita)}
                     </option>
                     
-                    {/* Mostrar SOLO transiciones válidas */}
-                    {obtenerEstadosPermitidos(citaData.estado as EstadoCita).map(
+                    {/* Mostrar SOLO transiciones válidas según tipo de cita */}
+                    {obtenerEstadosPermitidos(citaData.estado as EstadoCita, citaData.tipo_cita as any).map(
                       (estado) => (
                         <option key={estado} value={estado}>
                           → {describirEstado(estado as EstadoCita)}
@@ -1244,6 +1329,48 @@ export default function GestionCitaMedicoModal({
                     Evaluación Médica
                   </h3>
                 </div>
+                
+                {/* ⏰ INDICADOR DE VENTANA DE EDICIÓN */}
+                {(() => {
+                  const editAccess = calculateEditAccess();
+                  return (
+                    <div className={`px-4 py-3 border-b ${
+                      editAccess.canEdit 
+                        ? 'bg-green-50 border-green-200' 
+                        : 'bg-red-50 border-red-200'
+                    }`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="text-sm">
+                          {editAccess.canEdit ? (
+                            <div>
+                              <p className="font-medium text-green-800">
+                                ✅ Edición Permitida
+                              </p>
+                              <p className="text-xs text-green-700 mt-1">
+                                {editAccess.reason}
+                              </p>
+                            </div>
+                          ) : (
+                            <div>
+                              <p className="font-medium text-red-800">
+                                🔒 Edición Bloqueada
+                              </p>
+                              <p className="text-xs text-red-700 mt-1">
+                                {editAccess.reason}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                        {editAccess.daysRemaining !== null && editAccess.canEdit && editAccess.daysRemaining <= 3 && (
+                          <div className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs font-medium whitespace-nowrap">
+                            ⏰ {editAccess.daysRemaining} {editAccess.daysRemaining === 1 ? "día" : "días"}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+                
                 <div className="p-4 space-y-6">
                   {/* Diagnóstico */}
                   <div>
