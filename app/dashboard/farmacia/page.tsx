@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { BotonNotificaciones } from "@/components/notificaciones/boton-notificaciones";
 import {
   Pill,
   Package,
@@ -152,15 +153,18 @@ export default function DashboardFarmacia() {
               </div>
             </div>
 
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleLogout}
-              className="border-red-200 text-red-600 hover:bg-red-50"
-            >
-              <LogOut className="w-4 h-4 mr-1" />
-              <span className="hidden md:inline">Salir</span>
-            </Button>
+            <div className="flex items-center space-x-2">
+              <BotonNotificaciones />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleLogout}
+                className="border-red-200 text-red-600 hover:bg-red-50"
+              >
+                <LogOut className="w-4 h-4 mr-1" />
+                <span className="hidden md:inline">Salir</span>
+              </Button>
+            </div>
           </div>
         </div>
       </header>

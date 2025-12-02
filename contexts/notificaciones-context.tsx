@@ -8,7 +8,7 @@ export interface Notificacion {
   id: string;
   titulo: string;
   mensaje: string;
-  tipo: "cita" | "receta" | "resultado" | "sistema" | "farmacia" | "laboratorio";
+  tipo: "cita" | "receta" | "resultado" | "sistema" | "farmacia" | "laboratorio" | "receta_nueva";
   estado: "nueva" | "leida";
   timestamp: string;
   idRelacionado?: string;
@@ -81,6 +81,7 @@ const showNotificationToast = (titulo: string, mensaje: string, tipo: string) =>
       case "resultado": return "#f97316";
       case "farmacia": return "#8b5cf6";
       case "laboratorio": return "#ec4899";
+      case "receta_nueva": return "#06b6d4"; // Cyan para nuevas recetas en farmacia
       default: return "#6b7280";
     }
   })();

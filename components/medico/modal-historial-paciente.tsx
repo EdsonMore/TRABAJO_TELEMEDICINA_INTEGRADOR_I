@@ -24,6 +24,7 @@ import {
   ShieldAlert,
   Heart,
   BadgeCheck,
+  Download,
 } from "lucide-react";
 import { VirtualKeyboard } from "@/components/ui/virtual-keyboard";
 import { Input } from "@/components/ui/input";
@@ -54,6 +55,18 @@ interface Receta {
   fecha_emision: string;
   fecha_vencimiento: string;
   observaciones?: string;
+  medicamentos?: Array<{
+    nombre_comercial?: string;
+    nombre_generico?: string;
+    dosis?: string;
+    frecuencia?: string;
+    cantidad?: number;
+    duracion_dias?: number;
+    via_administracion?: string;
+    instrucciones_especiales?: string;
+    concentracion?: string;
+    laboratorio?: string;
+  }>;
   medico: {
     nombre: string;
     apellido: string;
@@ -79,16 +92,34 @@ interface PacienteData {
     nombre: string;
     apellido: string;
     email: string;
+    telefono?: string;
+    avatar_url?: string;
   };
   informacion_personal?: {
     dni?: string;
     edad?: number;
+    sexo?: string;
     fecha_nacimiento?: string;
+    tipo_sangre?: string;
+    direccion?: string;
+    ubicacion?: {
+      departamento?: string;
+      provincia?: string;
+      distrito?: string;
+    };
   };
   informacion_medica?: {
+    peso_kg?: number;
+    altura_cm?: number;
     alergias?: string;
     enfermedades_cronicas?: string;
     tipo_sangre?: string;
+    seguro_medico?: string;
+    numero_seguro?: string;
+    contacto_emergencia?: {
+      nombre?: string;
+      telefono?: string;
+    };
   };
 }
 
@@ -165,6 +196,12 @@ function formatDate(value: string) {
   }
 }
 
+function calcularIMC(peso: number | undefined, altura: number | undefined): string {
+  if (!peso || !altura) return "-";
+  const imc = peso / ((altura / 100) ** 2);
+  return imc.toFixed(1);
+}
+
 // ============= COMPONENTE PRINCIPAL =============
 export function ModalHistorialPaciente({
   isOpen,
@@ -195,6 +232,7 @@ export function ModalHistorialPaciente({
   const [activeTab, setActiveTab] = useState<"citas" | "recetas" | "examenes">(
     "citas"
   );
+  const [isExportingPDF, setIsExportingPDF] = useState(false);
 
   // ============= HELPER FUNCTIONS =============
   const getPacienteNombre = (): string => {
@@ -375,6 +413,68 @@ export function ModalHistorialPaciente({
     setAccessGranted(false);
     setShowPasswordSetup(false);
     onClose();
+  };
+
+  const handleExportarPDF = async () => {
+    try {
+      setIsExportingPDF(true);
+
+      if (!historial || !pacienteId) {
+        toast({
+          title: "❌ Error",
+          description: "No hay datos para exportar",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Llamar al endpoint de exportación
+      const response = await fetch(
+        `/api/medico/pacientes/${pacienteId}/exportar-historial`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("No se pudo generar el PDF");
+      }
+
+      // Obtener el blob del PDF
+      const blob = await response.blob();
+
+      // Crear un URL objeto para descargar
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      
+      const nombrePaciente = (historial.paciente?.usuario?.nombre || "Paciente") + " " + 
+                           (historial.paciente?.usuario?.apellido || "");
+      const fecha = new Date().toISOString().split("T")[0];
+      link.download = `Historial_${nombrePaciente}_${fecha}.pdf`;
+      
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      toast({
+        title: "✅ Éxito",
+        description: "El PDF se ha descargado correctamente",
+      });
+    } catch (error) {
+      console.error("Error exportando PDF:", error);
+      toast({
+        title: "❌ Error",
+        description: "No se pudo generar el PDF",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExportingPDF(false);
+    }
   };
 
   // ============= RENDERIZADO CONDICIONAL =============
@@ -720,29 +820,40 @@ export function ModalHistorialPaciente({
                                   <p className="font-medium text-gray-700">
                                     Motivo:
                                   </p>
-                                  <p className="text-gray-800">
+                                  <p className="text-gray-800 break-words overflow-x-hidden">
                                     {cita.motivo_consulta}
                                   </p>
                                 </div>
 
                                 {cita.diagnostico && (
-                                  <div className="bg-green-50 p-3 rounded border-l-4 border-green-500">
+                                  <div className="bg-green-50 p-3 rounded border-l-4 border-green-500 break-words">
                                     <p className="font-medium text-green-700 text-xs">
                                       DIAGNÓSTICO:
                                     </p>
-                                    <p className="text-green-800 text-sm">
+                                    <p className="text-green-800 text-sm break-words overflow-x-hidden">
                                       {cita.diagnostico}
                                     </p>
                                   </div>
                                 )}
 
                                 {cita.tratamiento && (
-                                  <div className="bg-blue-50 p-3 rounded border-l-4 border-blue-500">
+                                  <div className="bg-blue-50 p-3 rounded border-l-4 border-blue-500 break-words">
                                     <p className="font-medium text-blue-700 text-xs">
                                       TRATAMIENTO:
                                     </p>
-                                    <p className="text-blue-800 text-sm">
+                                    <p className="text-blue-800 text-sm break-words overflow-x-hidden">
                                       {cita.tratamiento}
+                                    </p>
+                                  </div>
+                                )}
+
+                                {cita.observaciones_medico && (
+                                  <div className="bg-purple-50 p-3 rounded border-l-4 border-purple-500 break-words">
+                                    <p className="font-medium text-purple-700 text-xs">
+                                      OBSERVACIONES:
+                                    </p>
+                                    <p className="text-purple-800 text-sm break-words overflow-x-hidden">
+                                      {cita.observaciones_medico}
                                     </p>
                                   </div>
                                 )}
@@ -806,16 +917,34 @@ export function ModalHistorialPaciente({
                                 </div>
                               </div>
 
-                              {receta.observaciones && (
-                                <div className="bg-yellow-50 p-3 rounded-lg border-l-4 border-yellow-500">
+                              {receta.medicamentos && receta.medicamentos.length > 0 ? (
+                                <div className="bg-blue-50 p-3 rounded-lg border-l-4 border-blue-500 space-y-2">
                                   <p className="text-sm">
-                                    <strong className="text-yellow-700">
-                                      Medicamentos:
+                                    <strong className="text-blue-700">
+                                      Medicamentos Prescritos:
                                     </strong>
                                   </p>
-                                  <p className="text-sm text-gray-700 mt-1">
-                                    {receta.observaciones}
-                                  </p>
+                                  {receta.medicamentos.map((med: any, idx: number) => (
+                                    <div key={idx} className="text-xs bg-white p-2 rounded border border-gray-200">
+                                      <p className="font-semibold text-gray-800">
+                                        {med.nombre_comercial || med.nombre_generico}
+                                      </p>
+                                      {med.concentracion && <p className="text-gray-600">Concentración: {med.concentracion}</p>}
+                                      {med.laboratorio && <p className="text-gray-600">Lab: {med.laboratorio}</p>}
+                                      <div className="grid grid-cols-2 gap-2 mt-1 text-gray-700">
+                                        {med.dosis && <p><span className="font-medium">Dosis:</span> {med.dosis}</p>}
+                                        {med.frecuencia && <p><span className="font-medium">Frecuencia:</span> {med.frecuencia}</p>}
+                                        {med.cantidad && <p><span className="font-medium">Cantidad:</span> {med.cantidad}</p>}
+                                        {med.duracion_dias && <p><span className="font-medium">Duración:</span> {med.duracion_dias} días</p>}
+                                        {med.via_administracion && <p><span className="font-medium">Vía:</span> {med.via_administracion}</p>}
+                                      </div>
+                                      {med.instrucciones_especiales && <p className="text-gray-600 italic mt-1">📝 {med.instrucciones_especiales}</p>}
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="bg-gray-50 p-3 rounded-lg border-l-4 border-gray-300">
+                                  <p className="text-sm text-gray-600">No hay medicamentos registrados</p>
                                 </div>
                               )}
                             </div>
@@ -884,21 +1013,42 @@ export function ModalHistorialPaciente({
                   <div className="space-y-3 text-sm">
                     <div>
                       <p className="text-gray-600">Tipo de Sangre</p>
-                      <p className="font-medium">
-                        {historial.paciente?.informacion_medica?.tipo_sangre ||
+                      <p className="font-medium text-lg">
+                        {historial.paciente?.informacion_personal?.tipo_sangre ||
                           "No especificado"}
                       </p>
                     </div>
                     <div>
-                      <p className="text-gray-600">Alergias</p>
+                      <p className="text-gray-600">Peso / Altura</p>
                       <p className="font-medium">
+                        {historial.paciente?.informacion_medica?.peso_kg
+                          ? `${historial.paciente.informacion_medica.peso_kg} kg`
+                          : "No especificado"}
+                        {" / "}
+                        {historial.paciente?.informacion_medica?.altura_cm
+                          ? `${historial.paciente.informacion_medica.altura_cm} cm`
+                          : "No especificado"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-gray-600">IMC</p>
+                      <p className="font-medium">
+                        {calcularIMC(
+                          historial.paciente?.informacion_medica?.peso_kg,
+                          historial.paciente?.informacion_medica?.altura_cm
+                        )}
+                      </p>
+                    </div>
+                    <div className="border-t pt-3">
+                      <p className="text-gray-600 text-xs">Alergias</p>
+                      <p className="font-medium text-sm">
                         {historial.paciente?.informacion_medica?.alergias ||
                           "No reportadas"}
                       </p>
                     </div>
                     <div>
-                      <p className="text-gray-600">Enfermedades Crónicas</p>
-                      <p className="font-medium">
+                      <p className="text-gray-600 text-xs">Enfermedades Crónicas</p>
+                      <p className="font-medium text-sm">
                         {historial.paciente?.informacion_medica
                           ?.enfermedades_cronicas || "Ninguna"}
                       </p>
@@ -906,28 +1056,82 @@ export function ModalHistorialPaciente({
                   </div>
                 </div>
 
+                {/* Información de contacto de emergencia */}
+                {(historial.paciente?.informacion_medica?.contacto_emergencia?.nombre ||
+                  historial.paciente?.informacion_medica?.contacto_emergencia?.telefono) && (
+                  <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                    <h3 className="font-semibold text-orange-800 mb-3 flex items-center text-sm">
+                      <AlertCircle className="w-4 h-4 mr-2" />
+                      Contacto de Emergencia
+                    </h3>
+                    <div className="space-y-2 text-sm">
+                      <p className="text-gray-700">
+                        <span className="font-medium">Nombre:</span>{" "}
+                        {historial.paciente?.informacion_medica?.contacto_emergencia?.nombre ||
+                          "-"}
+                      </p>
+                      <p className="text-gray-700">
+                        <span className="font-medium">Teléfono:</span>{" "}
+                        {historial.paciente?.informacion_medica?.contacto_emergencia?.telefono ||
+                          "-"}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Seguro Médico */}
+                {historial.paciente?.informacion_medica?.seguro_medico && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <h3 className="font-semibold text-blue-800 mb-2 text-sm flex items-center">
+                      <Shield className="w-4 h-4 mr-2" />
+                      Seguro Médico
+                    </h3>
+                    <div className="space-y-1 text-sm">
+                      <p className="text-gray-700">
+                        <span className="font-medium">Plan:</span>{" "}
+                        {historial.paciente.informacion_medica.seguro_medico}
+                      </p>
+                      {historial.paciente.informacion_medica.numero_seguro && (
+                        <p className="text-gray-700">
+                          <span className="font-medium">Nº:</span>{" "}
+                          {historial.paciente.informacion_medica.numero_seguro}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Estadísticas */}
                 <div className="bg-white border border-gray-200 rounded-lg p-4">
-                  <h3 className="font-semibold text-gray-800 mb-3">
-                    📊 Estadísticas
+                  <h3 className="font-semibold text-gray-800 mb-3 flex items-center">
+                    <BadgeCheck className="w-5 h-5 mr-2 text-blue-600" />
+                    Estadísticas
                   </h3>
                   <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
+                    <div className="flex justify-between bg-blue-50 p-2 rounded">
                       <span>Citas Totales</span>
-                      <span className="font-medium">
+                      <span className="font-bold text-blue-600">
                         {historial.historial_citas?.length || 0}
                       </span>
                     </div>
-                    <div className="flex justify-between">
+                    <div className="flex justify-between bg-green-50 p-2 rounded">
+                      <span>Citas Completadas</span>
+                      <span className="font-bold text-green-600">
+                        {historial.historial_citas?.filter(
+                          (c) => c.estado === "completada"
+                        ).length || 0}
+                      </span>
+                    </div>
+                    <div className="flex justify-between bg-purple-50 p-2 rounded">
                       <span>Recetas Activas</span>
-                      <span className="font-medium">
+                      <span className="font-bold text-purple-600">
                         {historial.recetas?.filter((r) => r.estado === "activa")
                           .length || 0}
                       </span>
                     </div>
-                    <div className="flex justify-between">
+                    <div className="flex justify-between bg-orange-50 p-2 rounded">
                       <span>Exámenes Realizados</span>
-                      <span className="font-medium">
+                      <span className="font-bold text-orange-600">
                         {historial.examenes_laboratorio?.length || 0}
                       </span>
                     </div>
@@ -938,13 +1142,26 @@ export function ModalHistorialPaciente({
                 <div className="bg-white border border-gray-200 rounded-lg p-4">
                   <h3 className="font-semibold text-gray-800 mb-3">Acciones</h3>
                   <div className="space-y-2">
-                    <button className="w-full bg-green-600 text-white py-2 px-4 rounded text-sm font-medium hover:bg-green-700 flex items-center justify-center">
-                      <FileText className="w-4 h-4 mr-2" />
-                      Exportar Historial
+                    <button
+                      onClick={handleExportarPDF}
+                      disabled={isExportingPDF}
+                      className="w-full bg-green-600 text-white py-2 px-4 rounded text-sm font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
+                    >
+                      {isExportingPDF ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Generando PDF...
+                        </>
+                      ) : (
+                        <>
+                          <Download className="w-4 h-4 mr-2" />
+                          Exportar PDF
+                        </>
+                      )}
                     </button>
                     <button
                       onClick={handleClose}
-                      className="w-full border border-gray-300 text-gray-700 py-2 px-4 rounded text-sm font-medium hover:bg-gray-50 flex items-center justify-center"
+                      className="w-full border border-gray-300 text-gray-700 py-2 px-4 rounded text-sm font-medium hover:bg-gray-50 flex items-center justify-center transition-colors"
                     >
                       <X className="w-4 h-4 mr-2" />
                       Cerrar Historial

@@ -1,14 +1,15 @@
-// app/api/medico/pacientes/[id]/historial/route.ts
+// app/api/medico/pacientes/[id]/exportar-historial/route.ts
 import { type NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/database";
 import { verificarToken } from "@/lib/auth";
+import { generarPDFHistorial } from "@/lib/pdf-generator";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    console.log("🔍 Iniciando obtención de historial médico...");
+    console.log("🔍 Iniciando exportación de historial médico a PDF...");
 
     const authHeader = request.headers.get("authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -28,7 +29,6 @@ export async function GET(
       );
     }
 
-    // ✅ CORREGIDO: Usar await y validar el ID
     const { id } = await params;
     const pacienteId = id;
 
@@ -62,64 +62,6 @@ export async function GET(
     const medicoId = medicoResult.rows[0].id;
     console.log("👨‍⚕️ Médico ID:", medicoId);
 
-    // Requerir el parámetro de consulta `cita_id` para validar acceso temporal
-    const url = new URL(request.url);
-    const citaId = url.searchParams.get("cita_id");
-
-    if (!citaId) {
-      return NextResponse.json(
-        { error: "Se requiere cita_id para acceder al historial" },
-        { status: 400 }
-      );
-    }
-
-    // ✅ Si es cita temporal (comienza con "temp-"), permitir acceso directo
-    // Sin validar en BD
-    const esTemportal = citaId.startsWith("temp-");
-    
-    if (!esTemportal) {
-      // Verificar que la cita pertenece al médico y al paciente (solo si es real en BD)
-      const citaResult = await query(
-        "SELECT id, fecha_cita FROM citas WHERE id = $1 AND id_medico = $2 AND id_paciente = $3",
-        [citaId, medicoId, pacienteId]
-      );
-
-      if (citaResult.rows.length === 0) {
-        return NextResponse.json(
-          { error: "Cita no encontrada o no autorizada" },
-          { status: 403 }
-        );
-      }
-
-      // Parsear fecha de forma segura (formato "YYYY-MM-DD" de BD)
-      const fechaCitaRaw = citaResult.rows[0].fecha_cita;
-      const fechaCitaStr = typeof fechaCitaRaw === 'string' 
-        ? fechaCitaRaw 
-        : new Date(fechaCitaRaw).toISOString().split('T')[0];
-      
-      const [año, mes, día] = fechaCitaStr.split("-").map(Number);
-      const fechaCita = new Date(año, mes - 1, día);
-      
-      const ahora = new Date();
-      ahora.setHours(0, 0, 0, 0);
-      fechaCita.setHours(0, 0, 0, 0);
-
-      // Acceso permitido:
-      // 1. ANTES de la cita (para revisar antecedentes del paciente)
-      // 2. DESPUÉS de la cita durante 7 días
-      const diffMs = ahora.getTime() - fechaCita.getTime();
-      const sieteDiasMs = 7 * 24 * 60 * 60 * 1000;
-
-      // Si la cita ya pasó más de 7 días, rechazar
-      if (diffMs > sieteDiasMs) {
-        return NextResponse.json(
-          { error: "El acceso al historial de este paciente expiró para esta cita" },
-          { status: 403 }
-        );
-      }
-      // Si no, permitir (cita futura o dentro de 7 días después)
-    }
-
     // Obtener información básica del paciente
     const pacienteResult = await query(
       `
@@ -145,7 +87,7 @@ export async function GET(
     const paciente = pacienteResult.rows[0];
     console.log("✅ Paciente encontrado:", paciente.nombre, paciente.apellido);
 
-    // Obtener historial de citas con todos los médicos
+    // Obtener historial de citas
     const citasResult = await query(
       `
       SELECT 
@@ -162,7 +104,7 @@ export async function GET(
       [pacienteId]
     );
 
-    // Obtener recetas del paciente CON MEDICAMENTOS DESGLOSADOS
+    // Obtener recetas con TODOS los detalles de medicamentos
     const recetasResult = await query(
       `
       SELECT 
@@ -179,29 +121,41 @@ export async function GET(
       [pacienteId]
     );
 
-    // Obtener medicamentos detallados para cada receta
+    // Para cada receta, obtener los medicamentos con TODOS sus detalles
     let recetasConMedicamentos = [];
     for (const receta of recetasResult.rows) {
       const medicamentosResult = await query(
         `
         SELECT 
-          rd.id, rd.medicamento_id, rd.cantidad, rd.dosis, rd.frecuencia, 
-          rd.duracion_dias, rd.via_administracion, rd.instrucciones_especiales,
-          m.nombre_comercial, m.nombre_generico, m.forma_farmaceutica, 
-          m.concentracion, m.laboratorio, m.principio_activo
+          rd.id,
+          rd.medicamento_id,
+          rd.cantidad,
+          rd.dosis,
+          rd.frecuencia,
+          rd.duracion_dias,
+          rd.via_administracion,
+          rd.instrucciones_especiales,
+          m.nombre_comercial,
+          m.nombre_generico,
+          m.forma_farmaceutica,
+          m.concentracion,
+          m.laboratorio,
+          m.principio_activo
         FROM receta_detalle rd
         JOIN medicamentos m ON rd.medicamento_id = m.id
         WHERE rd.id_receta = $1
+        ORDER BY m.nombre_comercial
         `,
         [receta.id]
       );
+
       recetasConMedicamentos.push({
         ...receta,
-        medicamentos: medicamentosResult.rows,
+        medicamentos_detalle: medicamentosResult.rows,
       });
     }
 
-    // Obtener resultados de laboratorio
+    // Obtener exámenes
     const resultadosResult = await query(
       `
       SELECT 
@@ -227,13 +181,11 @@ export async function GET(
 
     const historial = {
       paciente: {
-        id: paciente.id,
         usuario: {
           nombre: paciente.nombre,
           apellido: paciente.apellido,
           email: paciente.email,
           telefono: paciente.telefono,
-          avatar_url: paciente.avatar_url,
         },
         informacion_personal: {
           dni: paciente.dni,
@@ -254,13 +206,9 @@ export async function GET(
           enfermedades_cronicas: paciente.enfermedades_cronicas,
           seguro_medico: paciente.seguro_medico,
           numero_seguro: paciente.numero_seguro,
-          contacto_emergencia: {
-            nombre: paciente.contacto_emergencia_nombre,
-            telefono: paciente.contacto_emergencia_telefono,
-          },
         },
       },
-      historial_citas: citasResult.rows.map((cita) => ({
+      historial_citas: citasResult.rows.map((cita: any) => ({
         id: cita.id,
         fecha_cita: cita.fecha_cita,
         hora_cita: cita.hora_cita,
@@ -277,25 +225,38 @@ export async function GET(
           especialidad: cita.especialidad_nombre,
         },
       })),
-      recetas: recetasConMedicamentos.map((receta) => ({
+      recetas: recetasConMedicamentos.map((receta: any) => ({
         id: receta.id,
         codigo_receta: receta.codigo_receta,
         fecha_emision: receta.fecha_emision,
         fecha_vencimiento: receta.fecha_vencimiento,
         estado: receta.estado,
-        medicamentos: receta.medicamentos,
-        fecha_cita: receta.fecha_cita,
+        observaciones: receta.observaciones,
         medico: {
           nombre: receta.medico_nombre,
           apellido: receta.medico_apellido,
         },
+        medicamentos: receta.medicamentos_detalle.map((med: any) => ({
+          id: med.id,
+          nombre_comercial: med.nombre_comercial,
+          nombre_generico: med.nombre_generico,
+          concentracion: med.concentracion,
+          forma_farmaceutica: med.forma_farmaceutica,
+          laboratorio: med.laboratorio,
+          principio_activo: med.principio_activo,
+          dosis: med.dosis,
+          frecuencia: med.frecuencia,
+          cantidad: med.cantidad,
+          duracion_dias: med.duracion_dias,
+          via_administracion: med.via_administracion,
+          instrucciones_especiales: med.instrucciones_especiales,
+        })),
       })),
-      examenes_laboratorio: resultadosResult.rows.map((examen) => ({
+      examenes_laboratorio: resultadosResult.rows.map((examen: any) => ({
         id: examen.id,
         codigo_solicitud: examen.codigo_solicitud,
         fecha_solicitud: examen.fecha_solicitud,
         estado: examen.estado,
-        fecha_cita: examen.fecha_cita,
         laboratorio: examen.laboratorio_nombre,
         medico: {
           nombre: examen.medico_nombre,
@@ -304,10 +265,22 @@ export async function GET(
       })),
     };
 
-    console.log("✅ Historial generado exitosamente");
-    return NextResponse.json(historial);
+    // Generar PDF
+    const pdfBuffer = generarPDFHistorial(historial);
+
+    // Retornar PDF como respuesta
+    const nombrePaciente = paciente.nombre + " " + paciente.apellido;
+    const fecha = new Date().toISOString().split("T")[0];
+    const filename = `Historial_${nombrePaciente}_${fecha}.pdf`;
+
+    return new NextResponse(pdfBuffer as any, {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="${filename}"`,
+      },
+    });
   } catch (error) {
-    console.error("❌ Error obteniendo historial del paciente:", error);
+    console.error("❌ Error exportando historial del paciente:", error);
     return NextResponse.json(
       { error: "Error interno del servidor" },
       { status: 500 }

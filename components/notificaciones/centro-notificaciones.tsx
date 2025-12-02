@@ -21,6 +21,7 @@ import {
   Pill,
   TestTube,
   AlertCircle,
+  FileText,
 } from "lucide-react";
 
 interface CentroNotificacionesProps {
@@ -48,6 +49,8 @@ export function CentroNotificaciones({
         return <Calendar className="w-5 h-5 text-blue-600" />;
       case "receta":
         return <Pill className="w-5 h-5 text-green-600" />;
+      case "receta_nueva":
+        return <FileText className="w-5 h-5 text-cyan-600" />;
       case "resultado":
         return <TestTube className="w-5 h-5 text-orange-600" />;
       default:
@@ -61,6 +64,8 @@ export function CentroNotificaciones({
         return "bg-blue-50 border-blue-200";
       case "receta":
         return "bg-green-50 border-green-200";
+      case "receta_nueva":
+        return "bg-cyan-50 border-cyan-200";
       case "resultado":
         return "bg-orange-50 border-orange-200";
       default:

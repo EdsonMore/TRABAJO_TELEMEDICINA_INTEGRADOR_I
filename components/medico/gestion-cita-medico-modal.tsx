@@ -1301,7 +1301,7 @@ export default function GestionCitaMedicoModal({
                         <h4 className="text-sm font-semibold text-gray-700 mb-2">
                           Motivo de Consulta
                         </h4>
-                        <p className="text-sm text-gray-900 bg-gray-50 rounded-lg p-3">
+                        <p className="text-sm text-gray-900 bg-gray-50 rounded-lg p-3 break-words overflow-x-hidden">
                           {citaData.motivo_consulta || "No especificado"}
                         </p>
                       </div>
@@ -1311,7 +1311,7 @@ export default function GestionCitaMedicoModal({
                           <h4 className="text-sm font-semibold text-gray-700 mb-2">
                             Observaciones del Paciente
                           </h4>
-                          <p className="text-sm text-gray-900 bg-blue-50 rounded-lg p-3">
+                          <p className="text-sm text-gray-900 bg-blue-50 rounded-lg p-3 break-words overflow-x-hidden">
                             {citaData.observaciones_paciente}
                           </p>
                         </div>
