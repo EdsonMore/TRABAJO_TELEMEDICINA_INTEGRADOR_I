@@ -113,11 +113,13 @@ export default function SeleccionFarmaciasPage() {
     "recojo" | "domicilio"
   >("recojo");
   const [direccionEntrega, setDireccionEntrega] = useState("");
+  const [direccionPacientePorDefecto, setDireccionPacientePorDefecto] = useState("");
   const [costoEntrega, setCostoEntrega] = useState(0);
   const [farmaciaSeleccionadaPago, setFarmaciaSeleccionadaPago] = useState<{
     farmacia_id: string;
     nombre: string;
     monto: number;
+    subtotal: number;
   } | null>(null);
   const { token: authToken } = useAuth();
 
@@ -135,6 +137,13 @@ export default function SeleccionFarmaciasPage() {
   useEffect(() => {
     aplicarFiltrosYBusqueda();
   }, [farmacias, busqueda, filtros]);
+
+  useEffect(() => {
+    // Cargar perfil del paciente cuando se abre el modal de entrega
+    if (mostrarModalEntrega && !direccionPacientePorDefecto) {
+      cargarDireccionPaciente();
+    }
+  }, [mostrarModalEntrega]);
 
   const cargarFarmaciasDisponibles = async () => {
     if (!recetaId) {
@@ -183,6 +192,31 @@ export default function SeleccionFarmaciasPage() {
       setError(err instanceof Error ? err.message : "Error desconocido");
     } finally {
       setCargando(false);
+    }
+  };
+
+  const cargarDireccionPaciente = async () => {
+    try {
+      const token =
+        authToken ||
+        localStorage.getItem("medilink_token") ||
+        localStorage.getItem("token");
+
+      const response = await fetch("/api/paciente/perfil", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const direccion = data.informacion_personal?.direccion || "";
+        setDireccionPacientePorDefecto(direccion);
+        // Pre-llenar la dirección de entrega si está en modo domicilio
+        if (tipoEntregaSeleccionado === "domicilio" && !direccionEntrega) {
+          setDireccionEntrega(direccion);
+        }
+      }
+    } catch (err) {
+      console.error("Error cargando dirección del paciente:", err);
     }
   };
 
@@ -350,7 +384,7 @@ export default function SeleccionFarmaciasPage() {
         localStorage.getItem("token");
 
       // POST a /api/recetas/pagar para registrar el pago y enviar la receta
-      // AHORA INCLUYE: tipo_entrega, direccion_entrega, costo_entrega
+      // AHORA INCLUYE: tipo_entrega, direccion_entrega, costo_entrega, subtotal, igv
       const response = await fetch("/api/recetas/pagar", {
         method: "POST",
         headers: {
@@ -362,6 +396,8 @@ export default function SeleccionFarmaciasPage() {
           farmacia_id: farmaciaSeleccionadaPago.farmacia_id,
           metodo_pago: metodo,
           monto: farmaciaSeleccionadaPago.monto,
+          subtotal: farmaciaSeleccionadaPago.subtotal,
+          igv: farmaciaSeleccionadaPago.monto - farmaciaSeleccionadaPago.subtotal,
           referencia_pago: numeroReferencia,
           tipo_entrega: tipoEntregaSeleccionado,
           direccion_entrega: tipoEntregaSeleccionado === "domicilio" ? direccionEntrega : null,
@@ -419,10 +455,13 @@ export default function SeleccionFarmaciasPage() {
     // Si hay un solo item en el carrito, mostrar modal de PAGO
     if (carrito.length === 1) {
       const item = carrito[0];
+      const subtotalItem = item.total; // Sin IGV
+      const totalConIGV = subtotalItem * 1.18; // Con IGV 18%
       setFarmaciaSeleccionadaPago({
         farmacia_id: item.farmacia_id,
         nombre: item.nombre_farmacia,
-        monto: item.total,
+        subtotal: subtotalItem,
+        monto: totalConIGV,
       });
       setMostrarModalPago(true);
     } else {
@@ -525,7 +564,9 @@ export default function SeleccionFarmaciasPage() {
     }
   };
 
-  const totalCarrito = carrito.reduce((total, item) => total + item.total, 0);
+  const subtotalCarrito = carrito.reduce((total, item) => total + item.total, 0);
+  const igvCarrito = subtotalCarrito * 0.18; // IGV 18%
+  const totalCarrito = subtotalCarrito + igvCarrito; // Total con IGV
   const totalMedicamentosCarrito = carrito.reduce(
     (total, item) => total + item.medicamentos.length,
     0
@@ -1012,38 +1053,32 @@ export default function SeleccionFarmaciasPage() {
                                   )}
                                 </>
                               ) : (
-                                <Button
-                                  onClick={() =>
-                                    enviarRecetaAFarmacia(
-                                      farmacia.farmacia_id,
-                                      farmacia.nombre_farmacia
-                                    )
-                                  }
-                                  disabled={
-                                    enviando || medicamentosSeleccionados === 0
-                                  }
-                                  className="bg-blue-600 hover:bg-blue-700 text-xs h-9"
-                                  size="sm"
-                                >
-                                  {enviando ? (
-                                    <>
-                                      <LoaderCircle
-                                        size={14}
-                                        className="animate-spin mr-1"
-                                      />
+                                <>
+                                  {!enCarrito ? (
+                                    <Button
+                                      onClick={() => agregarAlCarrito(farmacia)}
+                                      disabled={medicamentosSeleccionados === 0}
+                                      className="bg-green-600 hover:bg-green-700 text-xs h-9"
+                                      size="sm"
+                                    >
+                                      <ShoppingCart className="w-3 h-3 mr-1" />
                                       <span className="hidden xs:inline">
-                                        Enviando...
+                                        Agregar
                                       </span>
-                                    </>
+                                    </Button>
                                   ) : (
-                                    <>
-                                      <CheckCircle size={14} className="mr-1" />
-                                      <span className="hidden xs:inline">
-                                        Enviar
-                                      </span>
-                                    </>
+                                    <Button
+                                      variant="outline"
+                                      onClick={() =>
+                                        removerDelCarrito(farmacia.farmacia_id)
+                                      }
+                                      className="text-xs h-9"
+                                      size="sm"
+                                    >
+                                      Quitar
+                                    </Button>
                                   )}
-                                </Button>
+                                </>
                               )}
                             </div>
                           </div>
@@ -1138,6 +1173,14 @@ export default function SeleccionFarmaciasPage() {
                           <span>Farmacias:</span>
                           <span>{carrito.length}</span>
                         </div>
+                        <div className="flex justify-between text-xs text-gray-600 pt-1">
+                          <span>Subtotal:</span>
+                          <span>S/. {subtotalCarrito.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between text-xs text-gray-600">
+                          <span>IGV (18%):</span>
+                          <span>S/. {igvCarrito.toFixed(2)}</span>
+                        </div>
                         <div className="flex justify-between text-sm font-bold pt-1 border-t">
                           <span>Total:</span>
                           <span className="text-green-600">
@@ -1181,8 +1224,11 @@ export default function SeleccionFarmaciasPage() {
                         Carrito ({carrito.length} farmacia
                         {carrito.length !== 1 ? "s" : ""})
                       </p>
+                      <p className="text-xs text-gray-600">
+                        Subtotal: S/. {subtotalCarrito.toFixed(2)} + IGV: S/. {igvCarrito.toFixed(2)}
+                      </p>
                       <p className="text-green-600 font-bold text-sm">
-                        S/. {totalCarrito.toFixed(2)}
+                        Total: S/. {totalCarrito.toFixed(2)}
                       </p>
                     </div>
                     <Button
@@ -1299,15 +1345,31 @@ export default function SeleccionFarmaciasPage() {
               {/* Input de dirección (solo si selecciona domicilio) */}
               {tipoEntregaSeleccionado === "domicilio" && (
                 <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-700">
-                    Dirección de Entrega
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Dirección de Entrega
+                    </label>
+                    {direccionPacientePorDefecto && (
+                      <button
+                        type="button"
+                        onClick={() => setDireccionEntrega(direccionPacientePorDefecto)}
+                        className="text-xs text-blue-600 hover:text-blue-700 underline"
+                      >
+                        Usar dirección guardada
+                      </button>
+                    )}
+                  </div>
                   <Input
-                    placeholder="Ej: Calle Principal 123, Apto 4B"
+                    placeholder={direccionPacientePorDefecto || "Ej: Calle Principal 123, Apto 4B"}
                     value={direccionEntrega}
                     onChange={(e) => setDireccionEntrega(e.target.value)}
                     className="w-full"
                   />
+                  {direccionPacientePorDefecto && !direccionEntrega && (
+                    <p className="text-xs text-gray-500">
+                      💾 Tu dirección guardada: {direccionPacientePorDefecto}
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -1352,6 +1414,7 @@ export default function SeleccionFarmaciasPage() {
             setFarmaciaSeleccionadaPago(null);
           }}
           monto={farmaciaSeleccionadaPago.monto}
+          subtotal={farmaciaSeleccionadaPago.subtotal}
           recetaId={recetaId}
           farmaciaId={farmaciaSeleccionadaPago.farmacia_id}
           onPagoExitoso={procesarPagoExitoso}

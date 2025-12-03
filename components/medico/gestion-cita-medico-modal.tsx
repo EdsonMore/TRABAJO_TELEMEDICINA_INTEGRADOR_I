@@ -265,6 +265,74 @@ export default function GestionCitaMedicoModal({
     }
   }, [cita, isOpen, token]);
 
+  // 🔄 VERIFICAR AUTOMÁTICAMENTE EL ESTADO CADA 5 MINUTOS
+  useEffect(() => {
+    if (!isOpen || !token || !citaData.id || citaData.id.startsWith("temp-")) {
+      return;
+    }
+
+    // Función para verificar y actualizar automáticamente
+    const verificarEstadoAutomatico = async () => {
+      try {
+        console.log("🔍 [AUTO-CHECK] Verificando estado automático de cita:", citaData.id);
+        
+        const response = await fetch("/api/citas/verificar-estado-automatico", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          
+          if (data.citasActualizadas && data.citasActualizadas.length > 0) {
+            // Buscar si nuestra cita fue actualizada
+            const citaActualizada = data.citasActualizadas.find(
+              (c: any) => c.id === citaData.id
+            );
+
+            if (citaActualizada) {
+              console.log("✅ [AUTO-CHECK] Cita actualizada a en_curso:", citaData.id);
+              
+              // Actualizar estado local
+              setFormData((prev) => ({
+                ...prev,
+                estado: "en_curso",
+              }));
+              
+              setCitaData((prev) => ({
+                ...prev,
+                estado: "en_curso",
+              }));
+
+              // Notificar al usuario
+              toast?.({
+                title: "✅ Consulta Iniciada",
+                description: "La cita ha pasado automáticamente a 'En Curso'",
+              });
+
+              // Notificar cambio
+              onCitaActualizada?.();
+            }
+          }
+        }
+      } catch (error) {
+        console.error("❌ [AUTO-CHECK] Error verificando estado:", error);
+        // No mostrar error al usuario, es una verificación silenciosa
+      }
+    };
+
+    // Verificar inmediatamente al abrir el modal
+    verificarEstadoAutomatico();
+
+    // Luego verificar cada 5 minutos
+    const intervalo = setInterval(verificarEstadoAutomatico, 5 * 60 * 1000);
+
+    return () => clearInterval(intervalo);
+  }, [isOpen, token, citaData.id, onCitaActualizada]);
+
   const cargarDatosPacienteCompletos = async (pacienteId: string) => {
     if (!pacienteId || pacienteId.startsWith("temp-")) {
       console.log("⏭️ Saltando carga de paciente temporal:", pacienteId);

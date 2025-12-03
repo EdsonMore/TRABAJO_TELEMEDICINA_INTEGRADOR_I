@@ -39,7 +39,7 @@ export async function PATCH(
     // Obtener ID de la farmacia
     const farmaciaResult = await client.query(
       "SELECT id FROM farmacias WHERE id_usuario = $1",
-      [usuario.id]
+      [usuario.userId]
     );
 
     if (farmaciaResult.rows.length === 0) {
@@ -262,6 +262,51 @@ export async function PATCH(
          WHERE r.id = $1`,
         [recetaId]
       );
+
+      // 🎯 Si se completó el despacho, generar boleta en background
+      if (accion === "dispensada" && medicamentos_procesados) {
+        // Generar boleta sin bloquear la respuesta
+        (async () => {
+          try {
+            console.log("📋 Generando boleta para receta:", recetaId);
+            console.log("🔑 Token:", token ? "✅ Presente" : "❌ Ausente");
+            console.log("💊 Medicamentos procesados:", medicamentos_procesados.length);
+            
+            const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+            const boletaUrl = `${baseUrl}/api/farmacia/recetas/${recetaId}/generar-boleta`;
+            console.log("🌐 URL:", boletaUrl);
+            
+            // Llamar al endpoint de generación de boleta
+            const boletaResponse = await fetch(
+              boletaUrl,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "Authorization": `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                  medicamentos_procesados,
+                  observaciones,
+                }),
+              }
+            );
+
+            console.log("📊 Respuesta boleta:", boletaResponse.status, boletaResponse.statusText);
+
+            if (boletaResponse.ok) {
+              const boletaData = await boletaResponse.json();
+              console.log("✅ Boleta generada exitosamente:", boletaData.boleta?.numero_boleta);
+            } else {
+              const errorText = await boletaResponse.text();
+              console.error("⚠️ Error generando boleta:", boletaResponse.status, errorText);
+            }
+          } catch (boletaError: any) {
+            console.error("⚠️ Error generando boleta:", boletaError.message);
+            console.error("Stack:", boletaError.stack);
+          }
+        })();
+      }
 
       return NextResponse.json({
         success: true,

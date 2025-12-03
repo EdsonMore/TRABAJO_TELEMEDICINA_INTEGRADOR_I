@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import {
   Card,
@@ -108,8 +107,6 @@ export default function DespachoRecetas({
   onVolver,
   recetaPreseleccionada,
 }: DespachoRecetasProps) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
   const { token } = useAuth();
   const [recetas, setRecetas] = useState<Receta[]>([]);
   const [recetasFiltradas, setRecetasFiltradas] = useState<Receta[]>([]);
@@ -154,8 +151,8 @@ export default function DespachoRecetas({
     Record<string, number>
   >({});
 
-  // Obtener ID de receta desde parámetro (prioritario) o query params
-  const recetaParamId = recetaPreseleccionada || searchParams?.get("receta");
+  // Obtener ID de receta desde parámetro
+  const recetaParamId = recetaPreseleccionada;
 
   useEffect(() => {
     if (token) {
@@ -392,6 +389,51 @@ export default function DespachoRecetas({
         throw new Error(
           error.error || error.message || `Error ${response.status}`
         );
+      }
+
+      const data = await response.json();
+
+      // 🎯 Si se despachó exitosamente, generar boleta automáticamente
+      if (accionAPI === "dispensada" && medicamentosA.length > 0) {
+        try {
+          console.log("📋 Generando boleta para receta:", recetaSeleccionada.id);
+          await fetch(
+            `/api/farmacia/recetas/${recetaSeleccionada.id}/generar-boleta`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                medicamentos_procesados: medicamentosA.map((m) => ({
+                  ...m,
+                  nombre_comercial:
+                    recetaSeleccionada.medicamentos.find(
+                      (med) => med.medicamento_id === m.medicamento_id
+                    )?.nombre_comercial || "Medicamento",
+                  nombre_generico:
+                    recetaSeleccionada.medicamentos.find(
+                      (med) => med.medicamento_id === m.medicamento_id
+                    )?.nombre_generico || "",
+                  dosis:
+                    recetaSeleccionada.medicamentos.find(
+                      (med) => med.medicamento_id === m.medicamento_id
+                    )?.dosis || "",
+                  frecuencia:
+                    recetaSeleccionada.medicamentos.find(
+                      (med) => med.medicamento_id === m.medicamento_id
+                    )?.frecuencia || "",
+                })),
+                observaciones: motivoRechazo,
+              }),
+            }
+          );
+          console.log("✅ Boleta generada correctamente");
+        } catch (boletaError) {
+          console.error("⚠️ Error generando boleta:", boletaError);
+          // No interrumpir el flujo si falla la generación de boleta
+        }
       }
 
       // Cerrar modal PRIMERO

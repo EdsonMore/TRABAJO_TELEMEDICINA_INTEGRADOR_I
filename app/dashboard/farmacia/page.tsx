@@ -25,6 +25,7 @@ import {
   Plus,
   Warehouse,
   ClipboardList,
+  Receipt,
 } from "lucide-react";
 
 // Componentes modulares
@@ -33,6 +34,7 @@ import AlertasSistema from "@/components/farmacia/alertas-sistema";
 import ReportesFarmacia from "@/components/farmacia/reportes-farmacia";
 import RecetasRecibidas from "@/components/farmacia/recetas-recibidas";
 import DespachoRecetas from "@/components/farmacia/despacho-recetas";
+import { GestionBoletas } from "@/components/farmacia/gestion-boletas";
 
 interface DashboardStats {
   recetas: {
@@ -61,6 +63,8 @@ export default function DashboardFarmacia() {
   const [moduloActivo, setModuloActivo] = useState<string>("dashboard");
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [generandoBoletas, setGenerandoBoletas] = useState(false);
+  const [limpiandoDuplicadas, setLimpiandoDuplicadas] = useState(false);
 
   useEffect(() => {
     // Detectar si viene de RecetasRecibidas con una receta específica
@@ -115,8 +119,81 @@ export default function DashboardFarmacia() {
     window.location.href = "/auth/login";
   };
 
+  const generarBoletasFaltantes = async () => {
+    if (!token) return;
+    setGenerandoBoletas(true);
+    try {
+      const response = await fetch("/api/farmacia/boletas/generar-faltantes", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log("✅ Boletas generadas:", data);
+        alert(
+          `✅ Proceso completado\n\nTotal procesadas: ${data.total_procesadas}\nExitosas: ${data.exitosas}\nFallidas: ${data.fallidas}`
+        );
+        // Recargar estadísticas
+        cargarDashboardStats();
+      } else {
+        alert("❌ Error al generar boletas");
+      }
+    } catch (error) {
+      console.error("Error:", error);
+      alert("❌ Error al generar boletas");
+    } finally {
+      setGenerandoBoletas(false);
+    }
+  };
+
+  const limpiarBoletasDuplicadas = async () => {
+    if (!token) return;
+    if (
+      !confirm(
+        "⚠️ Esto eliminará las boletas duplicadas (mantiene solo la más antigua). ¿Continuar?"
+      )
+    ) {
+      return;
+    }
+
+    setLimpiandoDuplicadas(true);
+    try {
+      const response = await fetch("/api/farmacia/boletas/limpiar-duplicadas", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log("✅ Duplicadas limpiadas:", data);
+        alert(
+          `✅ Proceso completado\n\nDuplicadas encontradas: ${data.duplicadas_encontradas}\nEliminadas: ${data.eliminadas}`
+        );
+        // Recargar estadísticas
+        cargarDashboardStats();
+      } else {
+        alert("❌ Error al limpiar duplicadas");
+      }
+    } catch (error) {
+      console.error("Error:", error);
+      alert("❌ Error al limpiar duplicadas");
+    } finally {
+      setLimpiandoDuplicadas(false);
+    }
+  };
+
   // Renderizar módulos específicos
-  if (moduloActivo === "recetas-recibidas") return <RecetasRecibidas />;
+  if (moduloActivo === "recetas-recibidas")
+    return (
+      <RecetasRecibidas
+        onAceptarReceta={() => setModuloActivo("despacho")}
+      />
+    );
   if (moduloActivo === "despacho") {
     const recetaParam = searchParams?.get("receta");
     return (
@@ -132,6 +209,30 @@ export default function DashboardFarmacia() {
     return <AlertasSistema onVolver={() => setModuloActivo("dashboard")} />;
   if (moduloActivo === "reportes")
     return <ReportesFarmacia onVolver={() => setModuloActivo("dashboard")} />;
+  if (moduloActivo === "boletas")
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
+          <div className="px-4 sm:px-6 lg:px-8">
+            <div className="flex items-center justify-between h-16">
+              <h1 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-amber-600" />
+                Gestión de Boletas
+              </h1>
+              <Button
+                variant="outline"
+                onClick={() => setModuloActivo("dashboard")}
+              >
+                Volver al Dashboard
+              </Button>
+            </div>
+          </div>
+        </header>
+        <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <GestionBoletas />
+        </main>
+      </div>
+    );
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -183,9 +284,25 @@ export default function DashboardFarmacia() {
               </p>
             </div>
             <div className="flex items-center space-x-2">
-              <Button variant="outline" size="sm" className="hidden sm:flex">
-                <Search className="w-4 h-4 mr-2" />
-                Buscar
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="hidden sm:flex"
+                onClick={generarBoletasFaltantes}
+                disabled={generandoBoletas}
+              >
+                <FileText className="w-4 h-4 mr-2" />
+                {generandoBoletas ? "Generando..." : "Generar Boletas"}
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={limpiarBoletasDuplicadas}
+                disabled={limpiandoDuplicadas}
+                className="text-amber-600 border-amber-200 hover:bg-amber-50"
+              >
+                <AlertCircle className="w-4 h-4 mr-2" />
+                {limpiandoDuplicadas ? "Limpiando..." : "Limpiar Duplicadas"}
               </Button>
               <Button
                 size="sm"
@@ -390,6 +507,33 @@ export default function DashboardFarmacia() {
 
               {/* Módulos Secundarios */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <Card className="border border-gray-200 rounded-lg shadow-sm cursor-pointer hover:shadow-lg transition-shadow"
+                  onClick={() => setModuloActivo("boletas")}>
+                  <CardHeader className="p-6 pb-4">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Receipt className="w-5 h-5 text-amber-600" />
+                      Gestión de Boletas
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="px-6 pb-6">
+                    <div className="space-y-2 text-sm">
+                      <p className="text-gray-600">
+                        Ver y descargar todas las boletas generadas
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        Filtra por estado, fecha y descarga en PDF
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      className="w-full mt-4 h-10"
+                      onClick={() => setModuloActivo("boletas")}
+                    >
+                      Gestionar Boletas
+                    </Button>
+                  </CardContent>
+                </Card>
+
                 <Card className="border border-gray-200 rounded-lg shadow-sm">
                   <CardHeader className="p-6 pb-4">
                     <CardTitle className="flex items-center gap-2 text-base">
@@ -504,10 +648,10 @@ export default function DashboardFarmacia() {
                       <Button
                         variant="outline"
                         className="h-14 flex flex-col bg-white hover:bg-gray-50 border-2"
-                        onClick={() => setModuloActivo("reportes")}
+                        onClick={() => setModuloActivo("boletas")}
                       >
-                        <BarChart3 className="w-5 h-5 mb-1 text-purple-600" />
-                        <span className="text-xs">Reportes</span>
+                        <Receipt className="w-5 h-5 mb-1 text-amber-600" />
+                        <span className="text-xs">Boletas</span>
                       </Button>
                     </div>
                   </CardContent>

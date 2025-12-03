@@ -28,6 +28,7 @@ interface ModalPagoProps {
   isOpen: boolean;
   onClose: () => void;
   monto: number;
+  subtotal?: number; // Opcional: si no se proporciona, calcular desde monto / 1.18
   recetaId: string;
   onPagoExitoso: (metodo: MetodoPago, referencia: string) => void;
   farmaciaId: string;
@@ -37,10 +38,14 @@ export default function ModalPago({
   isOpen,
   onClose,
   monto,
+  subtotal,
   recetaId,
   onPagoExitoso,
   farmaciaId,
 }: ModalPagoProps) {
+  // Calcular subtotal e IGV
+  const montoSubtotal = subtotal || Math.round(monto / 1.18 * 100) / 100;
+  const igv = monto - montoSubtotal;
   const [metodoPago, setMetodoPago] = useState<MetodoPago | null>(null);
   const [procesando, setProcesando] = useState(false);
   const [pagoExitoso, setPagoExitoso] = useState(false);
@@ -230,13 +235,23 @@ export default function ModalPago({
                   <span className="text-gray-700">Receta #</span>
                   <span className="font-mono text-sm">{recetaId}</span>
                 </div>
-                <div className="border-t border-blue-200 pt-2 flex justify-between items-center">
-                  <span className="text-lg font-semibold text-gray-900">
-                    Monto a Pagar:
-                  </span>
-                  <span className="text-3xl font-bold text-blue-600">
-                    S/ {monto.toFixed(2)}
-                  </span>
+                <div className="border-t border-blue-200 pt-2 space-y-2">
+                  <div className="flex justify-between text-sm text-gray-600">
+                    <span>Subtotal:</span>
+                    <span>S/ {montoSubtotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm text-gray-600">
+                    <span>IGV (18%):</span>
+                    <span>S/ {igv.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between items-center pt-2 border-t border-blue-100">
+                    <span className="text-lg font-semibold text-gray-900">
+                      Monto a Pagar:
+                    </span>
+                    <span className="text-3xl font-bold text-blue-600">
+                      S/ {monto.toFixed(2)}
+                    </span>
+                  </div>
                 </div>
               </div>
             </CardContent>
