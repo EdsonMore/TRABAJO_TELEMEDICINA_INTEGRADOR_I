@@ -126,8 +126,21 @@ export function GestionBoletas() {
 
   const descargarPDF = async (rutaPDF: string, nombreArchivo: string) => {
     try {
+      // Validar que la ruta no sea nula o vacía
+      if (!rutaPDF) {
+        throw new Error("Ruta de archivo no disponible");
+      }
+
       setDescargando(nombreArchivo);
-      const response = await fetch(rutaPDF);
+      
+      // Construir URL completa si es una ruta relativa
+      let urlCompleta = rutaPDF;
+      if (!rutaPDF.startsWith('http')) {
+        const origin = typeof window !== 'undefined' ? window.location.origin : '';
+        urlCompleta = `${origin}${rutaPDF}`;
+      }
+      
+      const response = await fetch(urlCompleta);
       if (!response.ok) throw new Error("No se pudo descargar el archivo");
 
       const blob = await response.blob();
@@ -382,9 +395,9 @@ export function GestionBoletas() {
                               `boleta-${boleta.numero_boleta}.pdf`
                             )
                           }
-                          disabled={descargando === boleta.id}
-                          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-amber-700 bg-amber-50 rounded hover:bg-amber-100 disabled:opacity-50"
-                          title="Descargar boleta formal"
+                          disabled={descargando === boleta.id || !boleta.boleta_pdf_path}
+                          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-amber-700 bg-amber-50 rounded hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                          title={!boleta.boleta_pdf_path ? "PDF no disponible aún" : "Descargar boleta formal"}
                         >
                           {descargando === boleta.id ? (
                             <Loader2 className="w-3 h-3 animate-spin" />
@@ -401,9 +414,9 @@ export function GestionBoletas() {
                               `nota-${boleta.numero_boleta}.pdf`
                             )
                           }
-                          disabled={descargando === boleta.id + "-nota"}
-                          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-emerald-700 bg-emerald-50 rounded hover:bg-emerald-100 disabled:opacity-50"
-                          title="Descargar nota de venta"
+                          disabled={descargando === boleta.id + "-nota" || !boleta.nota_venta_pdf_path}
+                          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-emerald-700 bg-emerald-50 rounded hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                          title={!boleta.nota_venta_pdf_path ? "PDF no disponible aún" : "Descargar nota de venta"}
                         >
                           {descargando === boleta.id + "-nota" ? (
                             <Loader2 className="w-3 h-3 animate-spin" />

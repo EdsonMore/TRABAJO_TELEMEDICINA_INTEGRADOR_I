@@ -399,8 +399,8 @@ export default function SeguimientoRecetasPaciente() {
                   <p className="text-sm text-gray-600 mt-1">
                     {receta.medico_nombre} {receta.medico_apellido}
                   </p>
-                  {receta.farmacia_nombre && (
-                    <p className="text-xs text-gray-500 mt-1">
+                  {receta.estado_envio !== "no_enviada" && receta.farmacia_nombre && (
+                    <p className="text-xs text-purple-600 mt-1 font-medium">
                       📍 {receta.farmacia_nombre}
                     </p>
                   )}
@@ -611,6 +611,18 @@ export default function SeguimientoRecetasPaciente() {
 
           {recetaSeleccionada && (
             <div className="space-y-4 max-h-96 overflow-y-auto">
+              {/* Información de Farmacia - Solo si fue enviada */}
+              {recetaSeleccionada.estado_envio !== "no_enviada" && recetaSeleccionada.farmacia_nombre && (
+                <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
+                  <h4 className="font-semibold text-gray-900 mb-2">
+                    📍 Farmacia
+                  </h4>
+                  <p className="text-sm text-purple-900 font-medium">
+                    {recetaSeleccionada.farmacia_nombre}
+                  </p>
+                </div>
+              )}
+
               {/* Información de Entrega */}
               <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
                 <h4 className="font-semibold text-gray-900 mb-3">

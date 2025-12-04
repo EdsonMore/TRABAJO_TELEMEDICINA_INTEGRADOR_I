@@ -7,6 +7,7 @@ import { verificarToken } from "@/lib/auth";
 import { generarBoletaDespacho } from "@/lib/pdf-boleta-despacho";
 import fs from "fs/promises";
 import path from "path";
+import crypto from "crypto";
 
 export async function POST(
   request: NextRequest,
@@ -18,12 +19,24 @@ export async function POST(
     const token = request.headers.get("authorization")?.replace("Bearer ", "");
 
     if (!token) {
+      console.error(`❌ TOKEN REQUERIDO pero no fue proporcionado`);
       return NextResponse.json({ error: "Token requerido" }, { status: 401 });
     }
 
+    console.log(`\n================== GENERAR BOLETA ==================`);
+    console.log(`🔐 Token recibido: ${token.substring(0, 20)}...`);
+
     const usuario = await verificarToken(token);
 
-    if (!usuario || usuario.rol !== "farmacia") {
+    if (!usuario) {
+      console.error(`❌ TOKEN INVÁLIDO o no se pudo verificar`);
+      return NextResponse.json({ error: "Token inválido" }, { status: 401 });
+    }
+
+    console.log(`✅ Token verificado para usuario: ${usuario.userId} (rol: ${usuario.rol})`);
+
+    if (usuario.rol !== "farmacia") {
+      console.error(`❌ Acceso denegado - Usuario no es farmacia, es: ${usuario.rol}`);
       return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
     }
 
@@ -31,14 +44,21 @@ export async function POST(
     const recetaId = id;
     const { medicamentos_procesados, observaciones } = await request.json();
 
+    console.log(`📋 Generando boleta para receta: ${recetaId}`);
+    console.log(`💊 Medicamentos recibidos: ${medicamentos_procesados?.length || 0}`);
+
     if (!medicamentos_procesados || medicamentos_procesados.length === 0) {
+      console.error(`❌ VALIDACIÓN: Medicamentos requeridos pero recibió: ${medicamentos_procesados?.length || "ninguno"}`);
       return NextResponse.json(
         { error: "Medicamentos procesados requeridos" },
         { status: 400 }
       );
     }
 
+    console.log(`✅ VALIDACIÓN: Medicamentos recibidos correctamente (${medicamentos_procesados.length})`);
+
     client = await pool.connect();
+    console.log(`✅ CONEXIÓN: Pool conectado`);
 
     // Obtener ID de la farmacia del usuario
     const farmaciaResult = await client.query(
@@ -47,6 +67,7 @@ export async function POST(
     );
 
     if (farmaciaResult.rows.length === 0) {
+      console.error(`❌ FARMACIA: No encontrada para usuario ${usuario.userId}`);
       return NextResponse.json(
         { error: "Farmacia no encontrada" },
         { status: 404 }
@@ -54,19 +75,39 @@ export async function POST(
     }
 
     const farmaciaId = farmaciaResult.rows[0].id;
+    console.log(`✅ FARMACIA: Encontrada - ${farmaciaId}`);
 
     // Verificar si la receta ya tiene boleta (evitar duplicadas)
     const boletaExistenteResult = await client.query(
-      "SELECT id FROM recetas WHERE id = $1 AND boleta_despacho_id IS NOT NULL",
+      "SELECT id, boleta_despacho_id FROM recetas WHERE id = $1",
       [recetaId]
     );
 
-    if (boletaExistenteResult.rows.length > 0) {
-      return NextResponse.json({
-        success: true,
-        message: "Esta receta ya tiene una boleta generada",
-        boleta_existente: true,
-      });
+    if (boletaExistenteResult.rows.length === 0) {
+      console.error(`❌ Receta no encontrada: ${recetaId}`);
+      return NextResponse.json(
+        { error: "Receta no encontrada" },
+        { status: 404 }
+      );
+    }
+
+    const recetaData = boletaExistenteResult.rows[0];
+    if (recetaData.boleta_despacho_id) {
+      console.log(`⚠️ Receta ya tiene boleta asociada: ${recetaData.boleta_despacho_id}`);
+      // Obtener la boleta existente
+      const boletaExistenteDb = await client.query(
+        "SELECT id, numero_boleta, boleta_pdf_path, nota_venta_pdf_path FROM boletas_despacho WHERE id = $1",
+        [recetaData.boleta_despacho_id]
+      );
+      
+      if (boletaExistenteDb.rows.length > 0) {
+        return NextResponse.json({
+          success: true,
+          message: "Esta receta ya tiene una boleta generada",
+          boleta_existente: true,
+          boleta: boletaExistenteDb.rows[0],
+        });
+      }
     }
 
     // Obtener detalles de la receta
@@ -131,9 +172,12 @@ export async function POST(
     });
 
     // Generar número único para la boleta
+    // Usar timestamp + random hash para garantizar unicidad sin race conditions
     const fecha = new Date();
-    const timestamp = fecha.getTime();
-    const numeroBoleta = `BOL-${farmaciaId.substring(0, 8)}-${timestamp.toString().slice(-8)}`;
+    const fechaStr = fecha.toISOString().split('T')[0].replace(/-/g, ''); // YYYYMMDD
+    const timestamp = Date.now(); // Milisegundos desde epoch
+    const randomPart = crypto.randomBytes(4).toString('hex').substring(0, 4);
+    const numeroBoleta = `B${fechaStr}${String(timestamp % 1000000).padStart(6, '0')}${randomPart}`;
 
     // Preparar datos para la boleta
     const dataBoleta = {
@@ -163,8 +207,34 @@ export async function POST(
     };
 
     // Generar PDFs
-    const boletaPdf = generarBoletaDespacho(dataBoleta, "farmacia");
-    const notaVentaPdf = generarBoletaDespacho(dataBoleta, "paciente");
+    console.log(`📄 Generando PDFs para boleta ${numeroBoleta}`);
+    let boletaPdf: any;
+    let notaVentaPdf: any;
+    
+    try {
+      boletaPdf = generarBoletaDespacho(dataBoleta, "farmacia");
+      console.log(`✅ PDF farmacia generado`);
+    } catch (err) {
+      console.error(`❌ Error generando PDF farmacia:`, err);
+      return NextResponse.json(
+        { error: "Error al generar PDF de boleta", details: String(err) },
+        { status: 500 }
+      );
+    }
+
+    try {
+      notaVentaPdf = generarBoletaDespacho(dataBoleta, "paciente");
+      console.log(`✅ PDF nota de venta generado`);
+    } catch (err) {
+      console.error(`❌ Error generando PDF nota:`, err);
+      return NextResponse.json(
+        { error: "Error al generar PDF de nota de venta", details: String(err) },
+        { status: 500 }
+      );
+    }
+
+    console.log(`📊 Tamaño boleta PDF: ${boletaPdf?.length || 0} bytes`);
+    console.log(`📊 Tamaño nota PDF: ${notaVentaPdf?.length || 0} bytes`);
 
     // Crear directorios si no existen
     const boletasDir = path.join(process.cwd(), "public", "boletas");
@@ -184,52 +254,99 @@ export async function POST(
     const boletaPath = path.join(boletasDir, boletaFilename);
     const notaPath = path.join(notasDir, notaFilename);
 
+    console.log(`💾 Guardando boleta en: ${boletaPath}`);
+    console.log(`💾 Guardando nota en: ${notaPath}`);
+    
     try {
       await fs.writeFile(boletaPath, boletaPdf);
+      console.log(`✅ Boleta guardada exitosamente`);
+    } catch (writeErr) {
+      console.error(`❌ Error guardando boleta:`, writeErr);
+      return NextResponse.json(
+        { error: "No se pudo guardar el archivo de boleta en el sistema de archivos", details: String(writeErr) },
+        { status: 500 }
+      );
+    }
+    
+    try {
       await fs.writeFile(notaPath, notaVentaPdf);
-    } catch (err) {
-      console.error("Error guardando PDFs:", err);
-      // No interrumpir el flujo si falla el guardado de archivos
+      console.log(`✅ Nota de venta guardada exitosamente`);
+    } catch (writeErr) {
+      console.error(`❌ Error guardando nota:`, writeErr);
+      return NextResponse.json(
+        { error: "No se pudo guardar el archivo de nota de venta en el sistema de archivos", details: String(writeErr) },
+        { status: 500 }
+      );
     }
 
-    // Registrar boleta en la BD
-    const boletaDbResult = await client.query(
-      `INSERT INTO boletas_despacho (
-        id_receta,
-        id_farmacia,
-        numero_boleta,
-        fecha_despacho,
-        subtotal,
-        igv,
-        total,
-        tipo_entrega,
-        direccion_entrega,
-        medicamentos_despachados,
-        boleta_pdf_path,
-        nota_venta_pdf_path,
-        estado,
-        observaciones
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-      RETURNING id`,
-      [
-        recetaId,
-        farmaciaId,
-        numeroBoleta,
-        new Date(),
-        subtotal,
-        igv,
-        total,
-        dataBoleta.tipo_entrega,
-        dataBoleta.direccion_entrega || null,
-        JSON.stringify(medicamentosConDetalles),
-        `/boletas/${boletaFilename}`,
-        `/notas-venta/${notaFilename}`,
-        "generada",
-        observaciones || null,
-      ]
-    );
+    // Registrar boleta en la BD con manejo de conflicto
+    console.log(`🛢️ Preparando inserción en BD con rutas:`);
+    console.log(`   - Número boleta: ${numeroBoleta}`);
+    console.log(`   - boletaFilename: ${boletaFilename}`);
+    console.log(`   - notaFilename: ${notaFilename}`);
+    
+    let boletaDbResult;
+    try {
+      boletaDbResult = await client.query(
+        `INSERT INTO boletas_despacho (
+          id_receta,
+          id_farmacia,
+          numero_boleta,
+          fecha_despacho,
+          subtotal,
+          igv,
+          total,
+          tipo_entrega,
+          direccion_entrega,
+          medicamentos_despachados,
+          boleta_pdf_path,
+          nota_venta_pdf_path,
+          estado,
+          observaciones
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        ON CONFLICT (numero_boleta) DO UPDATE SET
+          boleta_pdf_path = EXCLUDED.boleta_pdf_path,
+          nota_venta_pdf_path = EXCLUDED.nota_venta_pdf_path,
+          fecha_despacho = EXCLUDED.fecha_despacho
+        RETURNING id`,
+        [
+          recetaId,
+          farmaciaId,
+          numeroBoleta,
+          new Date(),
+          subtotal,
+          igv,
+          total,
+          dataBoleta.tipo_entrega,
+          dataBoleta.direccion_entrega || null,
+          JSON.stringify(medicamentosConDetalles),
+          `/boletas/${boletaFilename}`,
+          `/notas-venta/${notaFilename}`,
+          "generada",
+          observaciones || null,
+        ]
+      );
+      console.log(`✅ Boleta insertada/actualizada en BD`);
+    } catch (insertError: any) {
+      console.error(`❌ Error en INSERT boleta:`, insertError.message);
+      // Si aún falla, intenta buscar si ya existe
+      const existenteBoleta = await client.query(
+        "SELECT id FROM boletas_despacho WHERE numero_boleta = $1",
+        [numeroBoleta]
+      );
+      if (existenteBoleta.rows.length > 0) {
+        boletaDbResult = existenteBoleta;
+      } else {
+        throw insertError;
+      }
+    }
 
     const boletaId = boletaDbResult.rows[0]?.id;
+    
+    console.log(`🗄️ Boleta insertada en BD:`);
+    console.log(`   - ID: ${boletaId}`);
+    console.log(`   - Ruta boleta: /boletas/${boletaFilename}`);
+    console.log(`   - Ruta nota: /notas-venta/${notaFilename}`);
 
     // Actualizar receta con la referencia a la boleta
     await client.query(
@@ -250,9 +367,10 @@ export async function POST(
       },
     });
   } catch (error: any) {
-    console.error("Error generando boleta:", error);
+    console.error("Error generando boleta:", error.message || error);
+    console.error("Stack:", error.stack);
     return NextResponse.json(
-      { error: "Error interno del servidor" },
+      { error: "Error interno del servidor", details: error.message },
       { status: 500 }
     );
   } finally {

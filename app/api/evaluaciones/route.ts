@@ -19,9 +19,7 @@ export async function POST(request: NextRequest) {
 
     const {
       cita_id,
-      calificacion_general,
-      calificacion_atencion,
-      calificacion_puntualidad,
+      calificacion,
       comentarios,
       recomendaria,
     } = await request.json();
@@ -31,8 +29,8 @@ export async function POST(request: NextRequest) {
       `
       SELECT c.*, p.id as paciente_id
       FROM citas c
-      JOIN pacientes p ON c.paciente_id = p.id
-      WHERE c.id = $1 AND p.usuario_id = $2 AND c.estado = 'completada'
+      JOIN pacientes p ON c.id_paciente = p.id
+      WHERE c.id = $1 AND p.id_usuario = $2 AND c.estado = 'completada'
     `,
       [cita_id, usuario.id]
     );
@@ -50,7 +48,7 @@ export async function POST(request: NextRequest) {
 
     // Verificar si ya existe una evaluación
     const evaluacionExistente = await pool.query(
-      "SELECT id FROM evaluaciones_consulta WHERE cita_id = $1",
+      "SELECT id FROM evaluaciones WHERE cita_id = $1",
       [cita_id]
     );
 
@@ -66,19 +64,16 @@ export async function POST(request: NextRequest) {
     // Crear la evaluación
     const result = await pool.query(
       `
-      INSERT INTO evaluaciones_consulta 
-      (cita_id, paciente_id, medico_id, calificacion_general, calificacion_atencion, 
-       calificacion_puntualidad, comentarios, recomendaria)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      INSERT INTO evaluaciones 
+      (cita_id, paciente_id, medico_id, calificacion, comentarios, recomendaria)
+      VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING *
     `,
       [
         cita_id,
         cita.paciente_id,
-        cita.medico_id,
-        calificacion_general,
-        calificacion_atencion,
-        calificacion_puntualidad,
+        cita.id_medico,
+        calificacion,
         comentarios,
         recomendaria,
       ]
@@ -112,14 +107,36 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const medico_id = searchParams.get("medico_id");
+    const cita_id = searchParams.get("cita_id");
+
+    // Si se especifica una cita_id, obtener evaluación de esa cita específica
+    if (cita_id) {
+      const evaluacionResult = await pool.query(
+        `
+        SELECT e.* FROM evaluaciones e
+        WHERE e.cita_id = $1
+        `,
+        [cita_id]
+      );
+
+      if (evaluacionResult.rows.length === 0) {
+        return NextResponse.json({
+          evaluacion: null,
+        });
+      }
+
+      return NextResponse.json({
+        evaluacion: evaluacionResult.rows[0],
+      });
+    }
 
     let query = `
       SELECT e.*, 
-             p.nombres as paciente_nombres, p.apellidos as paciente_apellidos,
+             u.nombre as paciente_nombre, u.apellido as paciente_apellido,
              c.fecha_cita
-      FROM evaluaciones_consulta e
+      FROM evaluaciones e
       JOIN pacientes pac ON e.paciente_id = pac.id
-      JOIN usuarios p ON pac.usuario_id = p.id
+      JOIN usuarios u ON pac.id_usuario = u.id
       JOIN citas c ON e.cita_id = c.id
     `;
     let params = [];
@@ -127,7 +144,7 @@ export async function GET(request: NextRequest) {
     if (usuario.rol === "medico") {
       // Médico ve sus propias evaluaciones
       const medicoResult = await pool.query(
-        "SELECT id FROM medicos WHERE usuario_id = $1",
+        "SELECT id FROM medicos WHERE id_usuario = $1",
         [usuario.id]
       );
       if (medicoResult.rows.length === 0) {
@@ -164,13 +181,7 @@ export async function GET(request: NextRequest) {
     }
 
     const promedioGeneral =
-      evaluaciones.reduce((sum, e) => sum + e.calificacion_general, 0) /
-      totalEvaluaciones;
-    const promedioAtencion =
-      evaluaciones.reduce((sum, e) => sum + e.calificacion_atencion, 0) /
-      totalEvaluaciones;
-    const promedioPuntualidad =
-      evaluaciones.reduce((sum, e) => sum + e.calificacion_puntualidad, 0) /
+      evaluaciones.reduce((sum, e) => sum + e.calificacion, 0) /
       totalEvaluaciones;
     const porcentajeRecomendacion =
       (evaluaciones.filter((e) => e.recomendaria).length / totalEvaluaciones) *
@@ -180,9 +191,7 @@ export async function GET(request: NextRequest) {
       evaluaciones,
       estadisticas: {
         total_evaluaciones: totalEvaluaciones,
-        promedio_general: Math.round(promedioGeneral * 100) / 100,
-        promedio_atencion: Math.round(promedioAtencion * 100) / 100,
-        promedio_puntualidad: Math.round(promedioPuntualidad * 100) / 100,
+        promedio_calificacion: Math.round(promedioGeneral * 100) / 100,
         porcentaje_recomendacion: Math.round(porcentajeRecomendacion),
       },
     });

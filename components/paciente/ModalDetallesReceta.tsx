@@ -60,6 +60,15 @@ export default function ModalDetallesReceta({
     if (isOpen && receta?.id && token) {
       cargarRecetaCompleta();
       cargarInfoBoleta();
+      
+      // Recargar boleta cada 5 segundos mientras sea dispensada pero sin boleta
+      const interval = setInterval(() => {
+        if (receta?.estado_envio === "dispensada" && !boletaInfo?.boleta_pdf_path) {
+          cargarInfoBoleta();
+        }
+      }, 5000);
+      
+      return () => clearInterval(interval);
     }
   }, [isOpen, receta?.id, token]);
 
@@ -328,11 +337,11 @@ export default function ModalDetallesReceta({
       id: recetaCompleta.id || recetaCompleta.receta_id || recetaCompleta.codigo_receta || null,
       codigo_receta: recetaCompleta.codigo_receta || recetaCompleta.codigo || recetaCompleta.id || "-",
       paciente_nombre_completo: pacienteCompleto,
-      paciente_dni: recetaCompleta.paciente?.dni || recetaCompleta.paciente_dni || recetaCompleta.paciente_documento || "-",
-      paciente_edad: recetaCompleta.paciente?.edad || recetaCompleta.paciente_edad || recetaCompleta.edad || "-",
+      paciente_dni: recetaCompleta.dni || recetaCompleta.paciente_dni || recetaCompleta.paciente?.dni || recetaCompleta.paciente_documento || "-",
+      paciente_edad: recetaCompleta.paciente_edad || recetaCompleta.paciente?.edad || recetaCompleta.edad || "-",
       medico_nombre: medicoNombre,
       medico_apellido: medicoApellido,
-      medico_colegiatura: recetaCompleta.medico?.numero_colegiatura || recetaCompleta.medico?.colegiatura || recetaCompleta.medico_colegiatura || recetaCompleta.medico_cmp || "-",
+      medico_colegiatura: recetaCompleta.numero_colegiatura || recetaCompleta.medico?.numero_colegiatura || recetaCompleta.medico?.colegiatura || recetaCompleta.medico_colegiatura || recetaCompleta.medico_cmp || "-",
       especialidad: recetaCompleta.especialidad || recetaCompleta.medico_especialidad || recetaCompleta.medico?.especialidad || "-",
       diagnostico: recetaCompleta.diagnostico_principal_texto || recetaCompleta.diagnostico || recetaCompleta.descripcion || "-",
       nombre_enfermedad: recetaCompleta.nombre_enfermedad || recetaCompleta.enfermedad_nombre || null,
@@ -345,7 +354,7 @@ export default function ModalDetallesReceta({
       fecha_vencimiento: recetaCompleta.fecha_vencimiento || recetaCompleta.vencimiento || null,
       fecha_dispensacion: recetaCompleta.fecha_dispensacion || recetaCompleta.dispensacion_fecha || null,
       fecha_dispensacion_raw: recetaCompleta.fecha_dispensacion,
-      farmacia_nombre: recetaCompleta.farmacia_nombre || null,
+      farmacia_nombre: recetaCompleta.farmacia_nombre || recetaCompleta.nombre_farmacia || null,
       pdf_path: recetaCompleta.pdf_path || recetaCompleta.pdfUrl || recetaCompleta.pdf || null,
       codigo_qr: qrData,
     };
@@ -379,7 +388,7 @@ export default function ModalDetallesReceta({
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Información principal */}
+              {/* Información principal */}
             <div className="lg:col-span-2 space-y-6">
               {/* Datos del paciente y médico */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -398,7 +407,73 @@ export default function ModalDetallesReceta({
                 </div>
               </div>
 
-              {/* Diagnóstico y observaciones */}
+              {/* Información de envío y destino de la receta */}
+              <div className="bg-indigo-50 p-4 rounded-lg border-2 border-indigo-300">
+                <h3 className="font-semibold text-indigo-800 mb-3">📤 Envío y Destino</h3>
+                
+                {/* Estado del envío */}
+                <div className="mb-3">
+                  <span className="text-xs text-indigo-700 font-semibold">Estado del Envío</span>
+                  <div className="flex items-center gap-2 mt-1">
+                    <div className={`w-3 h-3 rounded-full ${
+                      datosReceta.estado_envio === "dispensada" ? "bg-green-500" :
+                      datosReceta.estado_envio === "enviada" ? "bg-blue-500" :
+                      datosReceta.estado_envio === "recibida" ? "bg-cyan-500" :
+                      "bg-gray-400"
+                    }`}></div>
+                    <span className="text-sm font-medium text-indigo-900 capitalize">
+                      {datosReceta.estado_envio === "no_enviada" ? "❌ No enviada" :
+                       datosReceta.estado_envio === "enviada" ? "📮 Enviada" :
+                       datosReceta.estado_envio === "recibida" ? "📦 Recibida" :
+                       datosReceta.estado_envio === "dispensada" ? "✅ Dispensada" :
+                       datosReceta.estado_envio}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Farmacia destino */}
+                {datosReceta.estado_envio !== "no_enviada" && (datosReceta.farmacia_nombre || recetaCompleta?.farmacia_nombre) && (
+                  <div className="mb-2 p-3 bg-white rounded border border-indigo-200 shadow-sm">
+                    <span className="text-xs text-indigo-700 font-semibold block mb-1">Enviada a</span>
+                    <p className="text-sm font-bold text-indigo-900">🏥 {datosReceta.farmacia_nombre || recetaCompleta?.farmacia_nombre || "Farmacia"}</p>
+                  </div>
+                )}
+
+                {/* Donde fue dispensada */}
+                {datosReceta.estado_envio === "dispensada" && (datosReceta.farmacia_nombre || recetaCompleta?.farmacia_nombre) && (
+                  <div className="p-3 bg-green-100 rounded border-2 border-green-400 shadow-sm">
+                    <span className="text-xs text-green-700 font-semibold block mb-1">Dispensada en</span>
+                    <p className="text-sm font-bold text-green-900">✅ {datosReceta.farmacia_nombre || recetaCompleta?.farmacia_nombre || "Farmacia"}</p>
+                  </div>
+                )}
+
+                {datosReceta.estado_envio === "no_enviada" && (
+                  <div className="text-xs text-indigo-700 p-2">
+                    ℹ️ La receta aún no ha sido enviada a ninguna farmacia
+                  </div>
+                )}
+              </div>
+
+              {/* Medicamentos enviados */}
+              {datosReceta.medicamentos.length > 0 && datosReceta.estado_envio !== "no_enviada" && (
+                <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
+                  <h3 className="font-semibold text-amber-800 mb-2">💊 Medicamentos Enviados</h3>
+                  <div className="space-y-1 max-h-40 overflow-y-auto">
+                    {datosReceta.medicamentos.map((med: any, idx: number) => (
+                      <div key={med.id || idx} className="flex items-start justify-between text-xs">
+                        <span className="text-amber-900">{med.nombre_comercial}</span>
+                        <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
+                          med.dispensado 
+                            ? "bg-green-200 text-green-800" 
+                            : "bg-yellow-200 text-yellow-800"
+                        }`}>
+                          {med.dispensado ? "✅ Dispensado" : "⏳ Pendiente"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}              {/* Diagnóstico y observaciones */}
               <div className="bg-gray-50 p-4 rounded-lg">
                 <h3 className="font-semibold text-gray-800 mb-2">Diagnóstico</h3>
                 <p className="text-sm">{datosReceta.diagnostico}</p>
@@ -513,6 +588,18 @@ export default function ModalDetallesReceta({
               <div className="bg-white border border-gray-200 rounded-lg p-4">
                 <h3 className="font-semibold text-gray-800 mb-3">Acciones</h3>
 
+                {/* Status de boleta */}
+                {boletaInfo && (
+                  <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
+                    <p className="text-blue-700">
+                      📦 Estado boleta: <strong>{boletaInfo.estado}</strong>
+                    </p>
+                    <p className="text-blue-600 text-xs mt-1">
+                      Número: {boletaInfo.numero_boleta}
+                    </p>
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   <button
                     onClick={descargarPDF}
@@ -532,26 +619,32 @@ export default function ModalDetallesReceta({
                   </button>
 
                   {/* Botones de boleta si está disponible */}
-                  {boletaInfo && boletaInfo.nota_venta_pdf_path && (
+                  {boletaInfo ? (
                     <>
-                      <button
-                        onClick={() => descargarBoleta("nota")}
-                        disabled={descargandoBoleta === "nota"}
-                        className="w-full bg-emerald-600 text-white py-2 px-4 rounded-md text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                      >
-                        {descargandoBoleta === "nota" ? (
-                          <>
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            Descargando...
-                          </>
-                        ) : (
-                          <>
-                            🧾 Nota de Venta
-                          </>
-                        )}
-                      </button>
+                      {boletaInfo.nota_venta_pdf_path ? (
+                        <button
+                          onClick={() => descargarBoleta("nota")}
+                          disabled={descargandoBoleta === "nota"}
+                          className="w-full bg-emerald-600 text-white py-2 px-4 rounded-md text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                        >
+                          {descargandoBoleta === "nota" ? (
+                            <>
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              Descargando...
+                            </>
+                          ) : (
+                            <>
+                              🧾 Nota de Venta
+                            </>
+                          )}
+                        </button>
+                      ) : (
+                        <div className="w-full bg-yellow-100 text-yellow-700 py-2 px-4 rounded-md text-xs text-center">
+                          ⏳ Nota de venta en generación...
+                        </div>
+                      )}
 
-                      {boletaInfo.boleta_pdf_path && (
+                      {boletaInfo.boleta_pdf_path ? (
                         <button
                           onClick={() => descargarBoleta("boleta")}
                           disabled={descargandoBoleta === "boleta"}
@@ -568,13 +661,15 @@ export default function ModalDetallesReceta({
                             </>
                           )}
                         </button>
+                      ) : (
+                        <div className="w-full bg-yellow-100 text-yellow-700 py-2 px-4 rounded-md text-xs text-center">
+                          ⏳ Boleta en generación...
+                        </div>
                       )}
                     </>
-                  )}
-
-                  {boletaInfo === null && !cargando && (
+                  ) : (
                     <div className="w-full bg-gray-100 text-gray-600 py-2 px-4 rounded-md text-xs text-center">
-                      La boleta será disponible después del despacho
+                      📋 Boleta será disponible después del despacho
                     </div>
                   )}
 

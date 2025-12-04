@@ -118,7 +118,7 @@ export default function VideoCallRoom({ roomId, sessionUUID, userData, onLeave, 
         console.log("🛑 Cerrando modal y desconectando paciente...");
         leaveRoom();
         window.close();
-      }, 3000);
+      }, 10000);
     }
   }, [sessionEnded, leaveRoom]);
 

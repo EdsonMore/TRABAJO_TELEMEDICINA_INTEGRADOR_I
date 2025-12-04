@@ -10,6 +10,7 @@ import { NavbarUniversal } from "@/components/layout/navbar-universal";
 import { BottomNavigation } from "@/components/layout/bottom-navigation";
 import DetallesCitaModal from "@/components/paciente/detalles-cita-modal";
 import { EditarPerfilModal } from "@/components/paciente/editar-perfil-modal";
+import { EvaluacionCitaModal } from "@/components/paciente/evaluacion-cita-modal";
 import { RecetasPacienteSection } from "@/components/paciente/recetas-paciente-section";
 import { ResultadosLaboratorioSection } from "@/components/paciente/resultados-laboratorio-section";
 import SeguimientoRecetasPaciente from "@/components/paciente/SeguimientoRecetasPaciente";
@@ -141,6 +142,8 @@ export default function DashboardPacientePage() {
   const [citaSeleccionada, setCitaSeleccionada] = useState<CitaPaciente | null>(
     null
   );
+  const [evaluacionOpen, setEvaluacionOpen] = useState(false);
+  const [citaAEvaluar, setCitaAEvaluar] = useState<CitaPaciente | null>(null);
   
   // 🔥 Estado para alerta de videollamada no iniciada
   const [videollamadaAlertaOpen, setVideollamadaAlertaOpen] = useState(false);
@@ -1230,6 +1233,21 @@ export default function DashboardPacientePage() {
                                   <Eye className="w-4 h-4" />
                                 </Button>
 
+                                {cita.estado === "completada" && (
+                                  <Button
+                                    variant="default"
+                                    size="sm"
+                                    className="h-8 sm:h-9 px-2 sm:px-3 bg-yellow-600 hover:bg-yellow-700 text-white"
+                                    onClick={() => {
+                                      setCitaAEvaluar(cita);
+                                      setEvaluacionOpen(true);
+                                    }}
+                                  >
+                                    <span className="hidden sm:inline">⭐</span>
+                                    <span className="sm:hidden">Evaluar</span>
+                                  </Button>
+                                )}
+
                                 {cita.tipo_cita === "virtual" &&
                                   puedeUnirse && (
                                     <Button
@@ -1418,6 +1436,20 @@ export default function DashboardPacientePage() {
           </div>
         </div>
       )}
+
+      {/* Modal de Evaluación de Cita */}
+      <EvaluacionCitaModal
+        open={evaluacionOpen}
+        onOpenChange={setEvaluacionOpen}
+        citaId={citaAEvaluar?.id || ""}
+        medicoNombre={citaAEvaluar?.medico_nombre || "El médico"}
+        medicoApellido={citaAEvaluar?.medico_apellido || ""}
+        token={token}
+        onSuccess={() => {
+          // Recargar citas después de una evaluación exitosa
+          window.location.reload();
+        }}
+      />
     </div>
   );
 }

@@ -16,6 +16,7 @@ import GestionCitaMedicoModal from "@/components/medico/gestion-cita-medico-moda
 import ModalCrearReceta from "@/components/medico/ModalCrearReceta";
 import { ModalPerfilPaciente } from "@/components/medico/modal-perfil-paciente";
 import { ModalHistorialPaciente } from "@/components/medico/modal-historial-paciente";
+import { EvaluacionesRecibidas } from "@/components/medico/evaluaciones-recibidas";
 
 import {
   Card,
@@ -880,36 +881,43 @@ export default function DashboardMedicoPage() {
 
           {/* Tabs Responsivos Mejorados */}
           <Tabs defaultValue="agenda" className="space-y-4 sm:space-y-6">
-            <TabsList className="grid w-full grid-cols-3 sm:grid-cols-5 h-10 sm:h-12 bg-gray-100 p-1">
+            <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-1 h-auto sm:h-12 bg-gray-100 p-1">
               <TabsTrigger
                 value="agenda"
-                className="text-xs sm:text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm"
+                className="text-xs sm:text-sm py-2 sm:py-0 data-[state=active]:bg-white data-[state=active]:shadow-sm"
               >
-                <span className="hidden xs:inline">Agenda</span>
-                <span className="xs:hidden">Hoy</span>
+                <span className="hidden sm:inline">Agenda</span>
+                <span className="sm:hidden">Hoy</span>
               </TabsTrigger>
               <TabsTrigger
                 value="pacientes"
-                className="text-xs sm:text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm"
+                className="text-xs sm:text-sm py-2 sm:py-0 data-[state=active]:bg-white data-[state=active]:shadow-sm"
               >
                 Pacientes
               </TabsTrigger>
               <TabsTrigger
                 value="recetas"
-                className="text-xs sm:text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm hidden sm:flex"
+                className="text-xs sm:text-sm py-2 sm:py-0 data-[state=active]:bg-white data-[state=active]:shadow-sm hidden sm:flex"
               >
                 Recetas
               </TabsTrigger>
               <TabsTrigger
-                value="estadisticas"
-                className="text-xs sm:text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm"
+                value="evaluaciones"
+                className="text-xs sm:text-sm py-2 sm:py-0 data-[state=active]:bg-white data-[state=active]:shadow-sm"
               >
-                <span className="hidden xs:inline">Estadísticas</span>
-                <span className="xs:hidden">Stats</span>
+                <span className="hidden sm:inline">Evaluaciones</span>
+                <span className="sm:hidden">⭐</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="estadisticas"
+                className="text-xs sm:text-sm py-2 sm:py-0 data-[state=active]:bg-white data-[state=active]:shadow-sm hidden md:flex"
+              >
+                <span className="hidden lg:inline">Estadísticas</span>
+                <span className="lg:hidden">Stats</span>
               </TabsTrigger>
               <TabsTrigger
                 value="perfil"
-                className="text-xs sm:text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm"
+                className="text-xs sm:text-sm py-2 sm:py-0 data-[state=active]:bg-white data-[state=active]:shadow-sm"
               >
                 Perfil
               </TabsTrigger>
@@ -1477,6 +1485,11 @@ export default function DashboardMedicoPage() {
                   </CardContent>
                 </Card>
               </div>
+            </TabsContent>
+
+            {/* CONTENIDO DE EVALUACIONES */}
+            <TabsContent value="evaluaciones">
+              <EvaluacionesRecibidas token={token} />
             </TabsContent>
 
             {/* CONTENIDO DE PERFIL */}

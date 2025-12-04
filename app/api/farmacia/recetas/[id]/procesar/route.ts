@@ -297,6 +297,8 @@ export async function PATCH(
             if (boletaResponse.ok) {
               const boletaData = await boletaResponse.json();
               console.log("✅ Boleta generada exitosamente:", boletaData.boleta?.numero_boleta);
+            } else if (boletaResponse.status === 409 || boletaResponse.statusText === "Conflict") {
+              console.log("⚠️ Boleta ya existe para esta receta (esperado si se reintentó)");
             } else {
               const errorText = await boletaResponse.text();
               console.error("⚠️ Error generando boleta:", boletaResponse.status, errorText);

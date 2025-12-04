@@ -78,8 +78,16 @@ export async function GET(
       );
     }
 
+    console.log(`🔍 Consulta boleta para receta: ${recetaId}`);
+    console.log(`   - boleta_despacho_id: ${receta.boleta_despacho_id}`);
+    console.log(`   - boleta_id: ${receta.boleta_id}`);
+    console.log(`   - nota_venta_pdf_path: ${receta.nota_venta_pdf_path}`);
+    console.log(`   - boleta_pdf_path: ${receta.boleta_pdf_path}`);
+    console.log(`   - estado: ${receta.estado}`);
+
     // Si no hay boleta generada aún
     if (!receta.boleta_id) {
+      console.log(`⚠️ No hay boleta para esta receta (boleta_id es null)`);
       return NextResponse.json(
         { 
           message: "La boleta aún no ha sido generada",

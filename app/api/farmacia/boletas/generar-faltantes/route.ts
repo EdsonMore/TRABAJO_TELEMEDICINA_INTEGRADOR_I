@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
 
     // Obtener todas las recetas dispensadas sin boleta de esta farmacia
     const recetasResult = await client.query(
-      `SELECT r.id as receta_id
+      `SELECT r.id as receta_id, r.estado_envio, r.boleta_despacho_id
        FROM recetas r
        WHERE r.estado_envio = 'dispensada' 
          AND r.boleta_despacho_id IS NULL
@@ -48,6 +48,17 @@ export async function POST(request: NextRequest) {
        ORDER BY r.fecha_envio_farmacia DESC`,
       [farmaciaId]
     );
+
+    console.log(`\n================== INICIANDO GENERACIÓN DE BOLETAS ==================`);
+    console.log(`🔍 Búsqueda: farmaciaId=${farmaciaId}`);
+    console.log(`📋 Recetas dispensadas sin boleta: ${recetasResult.rows.length}`);
+    
+    if (recetasResult.rows.length > 0) {
+      console.log(`📄 Listado de recetas a procesar:`);
+      recetasResult.rows.forEach((r: any, idx: number) => {
+        console.log(`   [${idx+1}] ID: ${r.receta_id}, estado_envio: ${r.estado_envio}, boleta_id: ${r.boleta_despacho_id}`);
+      });
+    }
 
     const recetasParaGenerar = recetasResult.rows;
 
@@ -71,6 +82,8 @@ export async function POST(request: NextRequest) {
     // Procesar cada receta
     for (const receta of recetasParaGenerar) {
       try {
+        console.log(`🔍 Procesando receta: ${receta.receta_id}`);
+        
         // Llamar a la API de generar-boleta internamente
         const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
         const boletaUrl = `${baseUrl}/api/farmacia/recetas/${receta.receta_id}/generar-boleta`;
@@ -86,17 +99,31 @@ export async function POST(request: NextRequest) {
             rd.frecuencia,
             rd.via_administracion,
             0 as precio_unitario,
-            0 as lote
+            '' as lote
            FROM receta_detalle rd
            JOIN medicamentos m ON rd.medicamento_id = m.id
            WHERE rd.id_receta = $1`,
           [receta.receta_id]
         );
 
+        console.log(`💊 Medicamentos encontrados: ${medicamentosResult.rows.length}`);
+
+        if (medicamentosResult.rows.length === 0) {
+          console.warn(`⚠️ No hay medicamentos para receta ${receta.receta_id}`);
+          fallidas++;
+          continue;
+        }
+
         const medicamentos = medicamentosResult.rows.map((med: any) => ({
           ...med,
           cantidad_dispensada: parseInt(med.cantidad_dispensada) || 1,
           precio_unitario: 0,
+        }));
+
+        console.log(`📤 Enviando a generar-boleta: ${boletaUrl}`);
+        console.log(`📋 Cuerpo de request:`, JSON.stringify({
+          medicamentos_procesados: medicamentos.length,
+          observaciones: "Boleta generada automáticamente desde lote",
         }));
 
         // Hacer fetch interno a generar-boleta
@@ -112,17 +139,30 @@ export async function POST(request: NextRequest) {
           }),
         });
 
+        console.log(`📊 Response status: ${response.status} ${response.statusText}`);
+
         if (response.ok) {
+          const successData = await response.json();
           console.log(`✅ Boleta generada: ${receta.receta_id}`);
+          console.log(`✅ Response body:`, JSON.stringify(successData, null, 2));
           exitosas++;
         } else {
+          let errorData = {};
+          try {
+            errorData = await response.json();
+          } catch (parseErr) {
+            console.error(`⚠️ No se pudo parsear respuesta de error`);
+            errorData = { raw: await response.text() };
+          }
+          
           console.error(
-            `⚠️ Error generando boleta ${receta.receta_id}: ${response.status}`
+            `❌ Error generando boleta ${receta.receta_id}: ${response.status} ${response.statusText}`
           );
+          console.error(`📊 Error response:`, JSON.stringify(errorData, null, 2));
           fallidas++;
         }
       } catch (err: any) {
-        console.error(`❌ Error procesando receta ${receta.receta_id}:`, err);
+        console.error(`❌ Error procesando receta ${receta.receta_id}:`, err.message);
         fallidas++;
       }
     }
