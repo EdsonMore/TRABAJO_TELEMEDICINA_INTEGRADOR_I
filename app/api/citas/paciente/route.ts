@@ -425,7 +425,7 @@ export async function POST(request: Request) {
       await client.query("ROLLBACK");
       console.error("Error en la inserción:", insertError);
 
-      if (insertError.code === "23505") {
+      if ((insertError as any).code === "23505") {
         return NextResponse.json(
           { error: "Ya existe una cita en este horario" },
           { status: 400 }
@@ -433,7 +433,7 @@ export async function POST(request: Request) {
       }
 
       return NextResponse.json(
-        { error: "Error al crear la cita: " + insertError.message },
+        { error: "Error al crear la cita: " + (insertError as any).message },
         { status: 500 }
       );
     }
@@ -443,7 +443,7 @@ export async function POST(request: Request) {
       {
         error: "Error interno del servidor",
         details:
-          process.env.NODE_ENV === "development" ? error.message : undefined,
+          process.env.NODE_ENV === "development" ? (error as any).message : undefined,
       },
       { status: 500 }
     );

@@ -10,7 +10,7 @@ export default function SesionTelemedicinaPage() {
   const params = useParams();
   const router = useRouter();
   const { usuario, token } = useAuth();
-  const sesionId = params.sesionId as string;
+  const sesionId = (params?.sesionId as string) || "";
 
   const [isLoading, setIsLoading] = useState(true);
   const [sesionData, setSesionData] = useState<any>(null);
@@ -201,6 +201,7 @@ export default function SesionTelemedicinaPage() {
       userData={userData}
       onLeave={handleLeaveCall}
       citaId={sesionData?.id_cita}
+      citaData={undefined}
     />
   );
 }

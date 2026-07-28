@@ -262,20 +262,8 @@ export function AgendarCitaModal({
           fecha_hoy: new Date().toISOString().split("T")[0],
         });
 
-        // ✅ FILTRAR HORAS PASADAS SI ES HOY
-        const hoy = new Date().toISOString().split("T")[0];
-        const esHoy = formData.fecha_cita === hoy;
-        const horaActual = new Date().getHours();
-
-        let horariosFiltrados = data.data || [];
-
-        if (esHoy) {
-          horariosFiltrados = horariosFiltrados.filter(
-            (hora: any) => hora.hora > horaActual // Solo horas futuras de hoy
-          );
-        }
-
-        const horariosFormateados = horariosFiltrados.map((hora: any) => ({
+        // ✅ El filtro ya lo hace el backend - NO filtrar de nuevo aquí
+        const horariosFormateados = (data.data || []).map((hora: any) => ({
           ...hora,
           formato_12h: formatHora12h(hora.hora),
         }));

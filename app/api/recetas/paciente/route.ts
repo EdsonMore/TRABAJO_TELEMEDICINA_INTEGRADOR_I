@@ -7,7 +7,8 @@ import { verificarToken } from "@/lib/auth";
 export async function GET(request: NextRequest) {
   let client;
   try {
-    const token = request.headers.get("authorization")?.replace("Bearer ", "");
+    const authHeader = request.headers.get("authorization");
+    const token = authHeader?.replace("Bearer ", "") || "";
     const usuario = await verificarToken(token);
 
     if (!usuario || usuario.rol !== "paciente") {

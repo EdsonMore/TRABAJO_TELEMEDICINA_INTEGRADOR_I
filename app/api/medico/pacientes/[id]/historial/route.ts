@@ -260,7 +260,7 @@ export async function GET(
           },
         },
       },
-      historial_citas: citasResult.rows.map((cita) => ({
+      historial_citas: citasResult.rows.map((cita: any) => ({
         id: cita.id,
         fecha_cita: cita.fecha_cita,
         hora_cita: cita.hora_cita,
@@ -290,7 +290,7 @@ export async function GET(
           apellido: receta.medico_apellido,
         },
       })),
-      examenes_laboratorio: resultadosResult.rows.map((examen) => ({
+      examenes_laboratorio: resultadosResult.rows.map((examen: any) => ({
         id: examen.id,
         codigo_solicitud: examen.codigo_solicitud,
         fecha_solicitud: examen.fecha_solicitud,

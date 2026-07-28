@@ -65,7 +65,7 @@ interface Cita {
   fecha_cita: string;
   hora_cita: string;
   tipo_cita: "virtual" | "presencial" | "domicilio";
-  estado: "confirmada" | "programada" | "completada" | "cancelada" | "iniciada";
+  estado: "confirmada" | "programada" | "completada" | "cancelada" | "iniciada" | "no_asistio" | "en_curso";
   motivo_consulta?: string;
   paciente?: {
     id?: string;
@@ -708,7 +708,7 @@ export function CalendarioCitas({
                           Gestionar
                         </Button>
 
-                        {getAccionesCita(cita).videollamada && (
+                        {getAccionesCita(cita as any).videollamada && (
                           <Button
                             size="sm"
                             className="bg-green-600 hover:bg-green-700 text-white"

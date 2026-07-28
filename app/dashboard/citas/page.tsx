@@ -372,29 +372,11 @@ export default function AgendarCitaPage() {
 
         console.log("🕒 Horarios recibidos del API:", data.data);
 
-        const horariosFormateados = (data.data || []).map((hora: any) => {
-          const esPasado = esFechaHoraPasada(formData.fecha_cita, hora.hora);
-          const disponible = hora.disponible && !esPasado;
-
-          console.log(
-            `⏰ Hora ${hora.hora}: ${
-              disponible ? "✅ Disponible" : "❌ No disponible"
-            }`,
-            {
-              disponibleBD: hora.disponible,
-              esPasado,
-              horaActual: getFechaHoraActual().toLocaleTimeString(),
-            }
-          );
-
-          return {
-            ...hora,
-            formato_12h: formatHora12h(hora.hora),
-            formato_24h: `${hora.hora.toString().padStart(2, "0")}:00`,
-            esPasado,
-            disponible,
-          };
-        });
+        const horariosFormateados = (data.data || []).map((hora: any) => ({
+          ...hora,
+          formato_12h: formatHora12h(hora.hora),
+          formato_24h: `${hora.hora.toString().padStart(2, "0")}:00`,
+        }));
 
         setHorariosDisponibles(horariosFormateados);
 
@@ -692,7 +674,7 @@ export default function AgendarCitaPage() {
 
         // Redirigir al dashboard de citas
         setTimeout(() => {
-          router.push("/dashboard/paciente?tab=citas");
+          router.push("/dashboard/paciente/citas");
         }, 3000);
       } catch (error: any) {
         console.error("Error en pago o creación de cita:", error);
@@ -722,7 +704,7 @@ export default function AgendarCitaPage() {
 
   // Función para determinar si un horario está realmente disponible
   const estaHorarioDisponible = (hora: HorarioDisponible): boolean => {
-    return hora.disponible && !hora.esPasado;
+    return hora.disponible;
   };
 
   // ✅ Función para convertir tarifa a número de forma segura

@@ -116,7 +116,7 @@ export async function GET(request: NextRequest) {
       INSERT INTO accesos_expedientes (expediente_id, usuario_id, cita_id, tipo_acceso, ip_acceso, motivo)
       VALUES ($1, $2, $3, 'lectura', $4, 'Consulta de expediente médico')
     `,
-      [expediente.id, usuario.id, cita_id, request.ip || "0.0.0.0"]
+      [expediente.id, usuario.id, cita_id, request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "0.0.0.0"]
     );
 
     // Obtener historial de citas

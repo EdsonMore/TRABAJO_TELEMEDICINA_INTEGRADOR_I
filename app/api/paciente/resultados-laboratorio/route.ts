@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
     // Agrupar resultados por solicitud
     const solicitudesMap = new Map()
 
-    resultadosResult.rows.forEach((row) => {
+    resultadosResult.rows.forEach((row: any) => {
       if (!solicitudesMap.has(row.solicitud_id)) {
         solicitudesMap.set(row.solicitud_id, {
           id: row.solicitud_id,
@@ -127,15 +127,15 @@ export async function GET(request: NextRequest) {
     // Estadísticas de exámenes
     const totalExamenes = solicitudes.reduce((total, s) => total + s.examenes.length, 0)
     const examenesCompletados = solicitudes.reduce(
-      (total, s) => total + s.examenes.filter((e) => e.completado && e.resultado).length,
+      (total: number, s: any) => total + s.examenes.filter((e: any) => e.completado && e.resultado).length,
       0,
     )
     const examenesPendientes = solicitudes.reduce(
-      (total, s) => total + s.examenes.filter((e) => !e.completado || !e.resultado).length,
+      (total: number, s: any) => total + s.examenes.filter((e: any) => !e.completado || !e.resultado).length,
       0,
     )
     const resultadosAnormales = solicitudes.reduce(
-      (total, s) => total + s.examenes.filter((e) => e.resultado && e.resultado.anormal).length,
+      (total: number, s: any) => total + s.examenes.filter((e: any) => e.resultado && e.resultado.anormal).length,
       0,
     )
 

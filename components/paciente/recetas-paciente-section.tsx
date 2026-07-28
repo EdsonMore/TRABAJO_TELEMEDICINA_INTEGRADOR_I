@@ -514,11 +514,7 @@ export function RecetasPacienteSection() {
   };
 
   const puedeEnviarReceta = (receta: Receta): boolean => {
-    return (
-      receta.estado === "activa" &&
-      (!receta.estado || receta.estado !== "dispensada") &&
-      (!receta.estado_envio || receta.estado_envio === "no_enviada")
-    );
+    return receta.estado === "activa";
   };
 
   const enviarSolicitud = async (tipo: 'retirar' | 'enviar') => {

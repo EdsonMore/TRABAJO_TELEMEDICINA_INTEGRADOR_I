@@ -23,7 +23,8 @@ function convertirFechaUTCAPeru(fechaUTC: string): string {
 export async function GET(request: NextRequest) {
   let client;
   try {
-    const token = request.headers.get("authorization")?.replace("Bearer ", "");
+    const authHeader = request.headers.get("authorization");
+    const token = authHeader?.replace("Bearer ", "") || "";
     const usuario = await verificarToken(token);
 
     if (!usuario || usuario.rol !== "medico") {
@@ -91,7 +92,7 @@ export async function GET(request: NextRequest) {
       "📅 Citas del médico después de conversión:",
       citas.map((c) => ({
         id: c.id,
-        fecha_original: cita.fecha_cita,
+        fecha_original: c.fecha_cita,
         fecha_convertida: c.fecha_cita,
         paciente: c.paciente_nombre,
       }))

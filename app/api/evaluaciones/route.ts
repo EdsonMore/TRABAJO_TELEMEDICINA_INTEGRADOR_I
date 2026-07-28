@@ -139,7 +139,7 @@ export async function GET(request: NextRequest) {
       JOIN usuarios u ON pac.id_usuario = u.id
       JOIN citas c ON e.cita_id = c.id
     `;
-    let params = [];
+    let params: any[] = [];
 
     if (usuario.rol === "medico") {
       // Médico ve sus propias evaluaciones

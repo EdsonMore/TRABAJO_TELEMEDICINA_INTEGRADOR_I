@@ -20,8 +20,6 @@ import {
   Users,
   Clock,
   Play,
-  Plus,
-  ArrowLeft,
 } from "lucide-react";
 
 export default function TelemedicinaMedicoPage() {
@@ -76,34 +74,6 @@ export default function TelemedicinaMedicoPage() {
   return (
     <ProtectedRoute allowedRoles={["medico"]}>
       <div className="min-h-screen bg-gradient-to-br from-background via-card to-muted">
-        {/* Header */}
-        <div className="border-b border-border/50 bg-background/80 backdrop-blur-sm">
-          <div className="container mx-auto px-4 py-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-4">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => window.history.back()}
-                >
-                  <ArrowLeft className="w-4 h-4 mr-2" />
-                  Volver
-                </Button>
-                <div>
-                  <h1 className="text-2xl font-bold">Panel de Telemedicina</h1>
-                  <p className="text-muted-foreground">
-                    Gestiona tus consultas virtuales
-                  </p>
-                </div>
-              </div>
-              <Button>
-                <Plus className="w-4 h-4 mr-2" />
-                Nueva Sesión
-              </Button>
-            </div>
-          </div>
-        </div>
-
         <div className="container mx-auto px-4 py-8">
           <Tabs defaultValue="proximas">
             <TabsList className="grid w-full grid-cols-3">

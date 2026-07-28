@@ -413,7 +413,7 @@ export default function SeleccionFarmaciasPage() {
       }
 
       // Redirigir al dashboard del paciente con notificación
-      router.push("/dashboard/paciente?tab=despacho&mensaje=receta_enviada");
+      router.push("/dashboard/paciente/?mensaje=receta_enviada");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error desconocido");
       setMostrarModalPago(false);
@@ -498,7 +498,7 @@ export default function SeleccionFarmaciasPage() {
         }
 
         // Redirigir al dashboard con mensaje de éxito
-        router.push("/dashboard/paciente?tab=despacho&mensaje=receta_enviada");
+        router.push("/dashboard/paciente/?mensaje=receta_enviada");
       } catch (err) {
         setError(
           err instanceof Error ? err.message : "Error al confirmar pedido"
@@ -556,7 +556,7 @@ export default function SeleccionFarmaciasPage() {
       }
 
       // Redirigir al dashboard del paciente con notificación
-      router.push("/dashboard/paciente?tab=despacho&mensaje=receta_enviada");
+      router.push("/dashboard/paciente/?mensaje=receta_enviada");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error desconocido");
     } finally {

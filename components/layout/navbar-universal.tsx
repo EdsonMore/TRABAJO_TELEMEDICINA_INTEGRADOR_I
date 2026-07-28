@@ -94,17 +94,17 @@ const getNavbarConfig = (
         {
           label: "Mis Citas",
           icon: Calendar,
-          action: () => router.push("/dashboard/paciente?tab=citas"),
+          action: () => router.push("/dashboard/paciente/citas"),
         },
         {
           label: "Mis Recetas",
           icon: Pill,
-          action: () => router.push("/dashboard/paciente?tab=recetas"),
+          action: () => router.push("/dashboard/paciente/recetas"),
         },
         {
           label: "Resultados",
           icon: TestTube,
-          action: () => router.push("/dashboard/paciente?tab=resultados"),
+          action: () => router.push("/dashboard/paciente/resultados"),
         },
       ],
     },
@@ -137,17 +137,17 @@ const getNavbarConfig = (
         {
           label: "Mi Agenda",
           icon: Calendar,
-          action: () => router.push("/dashboard/medico?tab=agenda"),
+          action: () => router.push("/dashboard/medico/agenda"),
         },
         {
           label: "Mis Pacientes",
           icon: Users,
-          action: () => router.push("/dashboard/medico?tab=pacientes"),
+          action: () => router.push("/dashboard/medico/pacientes"),
         },
         {
           label: "Mis Recetas",
           icon: FileText,
-          action: () => router.push("/dashboard/medico?tab=recetas"),
+          action: () => router.push("/dashboard/medico/recetas"),
         },
       ],
     },
@@ -179,17 +179,17 @@ const getNavbarConfig = (
         {
           label: "Recetas Pendientes",
           icon: FileText,
-          action: () => router.push("/dashboard/farmacia?tab=recetas"),
+          action: () => router.push("/dashboard/farmacia/recetas"),
         },
         {
           label: "Inventario",
           icon: Package,
-          action: () => router.push("/dashboard/farmacia?tab=inventario"),
+          action: () => router.push("/dashboard/farmacia/inventario"),
         },
         {
           label: "Despachos",
           icon: Activity,
-          action: () => router.push("/dashboard/farmacia?tab=despachos"),
+          action: () => router.push("/dashboard/farmacia/despacho"),
         },
       ],
     },
@@ -213,12 +213,12 @@ const getNavbarConfig = (
         {
           label: "Resultados",
           icon: FileText,
-          action: () => router.push("/dashboard/laboratorio?tab=resultados"),
+          action: () => router.push("/dashboard/laboratorio/examenes"),
         },
         {
           label: "Solicitudes",
           icon: Calendar,
-          action: () => router.push("/dashboard/laboratorio?tab=solicitudes"),
+          action: () => router.push("/dashboard/laboratorio/examenes"),
         },
       ],
     },
@@ -240,7 +240,7 @@ const getNavbarConfig = (
         {
           label: "Configuración",
           icon: Settings,
-          action: () => router.push("/dashboard/admin?tab=configuracion"),
+          action: () => router.push("/dashboard/admin/general"),
           showOnMobile: false,
         },
       ],
@@ -248,17 +248,17 @@ const getNavbarConfig = (
         {
           label: "Usuarios",
           icon: Users,
-          action: () => router.push("/dashboard/admin?tab=usuarios"),
+          action: () => router.push("/dashboard/admin/usuarios"),
         },
         {
           label: "Sistema",
           icon: Settings,
-          action: () => router.push("/dashboard/admin?tab=sistema"),
+          action: () => router.push("/dashboard/admin/general"),
         },
         {
           label: "Reportes",
           icon: FileText,
-          action: () => router.push("/dashboard/admin?tab=reportes"),
+          action: () => router.push("/dashboard/admin/detalles"),
         },
       ],
     },
@@ -475,7 +475,7 @@ export function NavbarUniversal({
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() =>
-                    router.push(`/dashboard/${usuario.rol}?tab=perfil`)
+                    router.push(`/dashboard/${usuario.rol}/perfil`)
                   }
                 >
                   <Settings className="w-4 h-4 mr-2" />
@@ -589,7 +589,7 @@ export function NavbarUniversal({
               variant="outline"
               className="w-full justify-start text-sm h-10"
               onClick={() => {
-                router.push(`/dashboard/${usuario.rol}?tab=perfil`);
+                router.push(`/dashboard/${usuario.rol}/perfil`);
                 setMobileMenuOpen(false);
               }}
             >

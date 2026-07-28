@@ -137,7 +137,7 @@ export function PagosSandbox() {
             )
             .map((cita: any) => ({
               id: `cita_${cita.id}`,
-              tipo: "cita" as const,
+              tipo: "cita" as "cita" | "examen",
               descripcion: cita.motivo_consulta || "Consulta médica",
               fecha: cita.fecha_cita,
               medico_nombre: cita.medico_nombre,
@@ -179,28 +179,28 @@ export function PagosSandbox() {
           ...[
             {
               id: "cita_001",
-              tipo: "cita",
+              tipo: "cita" as "cita" | "examen",
               descripcion: "Consulta Medicina General",
               fecha: new Date().toISOString().split("T")[0],
               medico_nombre: "Juan",
               medico_apellido: "Pérez",
               especialidad: "Medicina General",
               monto: 80.0,
-              estado: "pendiente",
+              estado: "pendiente" as "pendiente" | "pagado" | "confirmado",
               referencia_id: "1",
-            },
+            } as ServicioPendiente,
             {
               id: "examen_001",
-              tipo: "examen",
+              tipo: "examen" as "cita" | "examen",
               descripcion: "Análisis de Sangre Completo",
               fecha: new Date(Date.now() + 86400000)
                 .toISOString()
                 .split("T")[0],
               laboratorio: "Lab Central",
               monto: 120.0,
-              estado: "pendiente",
+              estado: "pendiente" as "pendiente" | "pagado" | "confirmado",
               referencia_id: "1",
-            },
+            } as ServicioPendiente,
           ]
         );
       }
@@ -212,26 +212,26 @@ export function PagosSandbox() {
       setServiciosPendientes([
         {
           id: "cita_001",
-          tipo: "cita",
+          tipo: "cita" as "cita" | "examen",
           descripcion: "Consulta Medicina General",
           fecha: new Date().toISOString().split("T")[0],
           medico_nombre: "Juan",
           medico_apellido: "Pérez",
           especialidad: "Medicina General",
           monto: 80.0,
-          estado: "pendiente",
+          estado: "pendiente" as "pendiente" | "pagado" | "confirmado",
           referencia_id: "1",
-        },
+        } as ServicioPendiente,
         {
           id: "examen_001",
-          tipo: "examen",
+          tipo: "examen" as "cita" | "examen",
           descripcion: "Análisis de Sangre Completo",
           fecha: new Date(Date.now() + 86400000).toISOString().split("T")[0],
           laboratorio: "Lab Central",
           monto: 120.0,
-          estado: "pendiente",
+          estado: "pendiente" as "pendiente" | "pagado" | "confirmado",
           referencia_id: "1",
-        },
+        } as ServicioPendiente,
       ]);
     } finally {
       setCargandoServicios(false);
@@ -325,6 +325,7 @@ export function PagosSandbox() {
         setMostrarComprobante(true);
 
         // Actualizar estado del servicio en el estado local
+        if (!servicioSeleccionado) return;
         setServiciosPendientes((prev) =>
           prev.map((servicio) =>
             servicio.id === servicioSeleccionado.id
