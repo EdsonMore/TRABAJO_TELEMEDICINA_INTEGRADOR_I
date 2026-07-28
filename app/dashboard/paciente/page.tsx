@@ -770,51 +770,41 @@ export default function DashboardPacientePage() {
           </Card>
         </div>
 
-        {/* Navegación a secciones */}
+        {/* Navegación a secciones — Ley de Semejanza: misma estructura, mismo gap */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 mb-6 lg:mb-8">
-          <Card
-            className="bg-white shadow-sm border-0 sm:border transition-all duration-200 hover:shadow-md cursor-pointer"
-            onClick={() => router.push("/dashboard/paciente/perfil")}
-          >
+          <Card className="cursor-pointer hover:shadow-lg transition-all duration-200 border-0 sm:border bg-gradient-to-br from-blue-50 to-blue-100"
+            onClick={() => router.push("/dashboard/paciente/perfil")}>
             <CardContent className="flex flex-col items-center justify-center py-4 sm:py-6">
               <User className="w-8 h-8 sm:w-10 sm:h-10 text-blue-600 mb-2" />
-              <span className="text-sm font-medium">Mi Perfil</span>
+              <span className="text-sm font-medium text-gray-800">Mi Perfil</span>
             </CardContent>
           </Card>
-          <Card
-            className="bg-white shadow-sm border-0 sm:border transition-all duration-200 hover:shadow-md cursor-pointer"
-            onClick={() => router.push("/dashboard/paciente/citas")}
-          >
+          <Card className="cursor-pointer hover:shadow-lg transition-all duration-200 border-0 sm:border bg-gradient-to-br from-green-50 to-green-100"
+            onClick={() => router.push("/dashboard/paciente/citas")}>
             <CardContent className="flex flex-col items-center justify-center py-4 sm:py-6">
-              <Calendar className="w-8 h-8 sm:w-10 sm:h-10 text-blue-600 mb-2" />
-              <span className="text-sm font-medium">Mis Citas</span>
+              <Calendar className="w-8 h-8 sm:w-10 sm:h-10 text-green-600 mb-2" />
+              <span className="text-sm font-medium text-gray-800">Mis Citas</span>
             </CardContent>
           </Card>
-          <Card
-            className="bg-white shadow-sm border-0 sm:border transition-all duration-200 hover:shadow-md cursor-pointer"
-            onClick={() => router.push("/dashboard/paciente/recetas")}
-          >
+          <Card className="cursor-pointer hover:shadow-lg transition-all duration-200 border-0 sm:border bg-gradient-to-br from-purple-50 to-purple-100"
+            onClick={() => router.push("/dashboard/paciente/recetas")}>
             <CardContent className="flex flex-col items-center justify-center py-4 sm:py-6">
-              <Pill className="w-8 h-8 sm:w-10 sm:h-10 text-green-600 mb-2" />
-              <span className="text-sm font-medium">Recetas</span>
+              <Pill className="w-8 h-8 sm:w-10 sm:h-10 text-purple-600 mb-2" />
+              <span className="text-sm font-medium text-gray-800">Recetas</span>
             </CardContent>
           </Card>
-          <Card
-            className="bg-white shadow-sm border-0 sm:border transition-all duration-200 hover:shadow-md cursor-pointer"
-            onClick={() => router.push("/dashboard/paciente/seguimiento")}
-          >
+          <Card className="cursor-pointer hover:shadow-lg transition-all duration-200 border-0 sm:border bg-gradient-to-br from-orange-50 to-orange-100"
+            onClick={() => router.push("/dashboard/paciente/seguimiento")}>
             <CardContent className="flex flex-col items-center justify-center py-4 sm:py-6">
               <Package className="w-8 h-8 sm:w-10 sm:h-10 text-orange-600 mb-2" />
-              <span className="text-sm font-medium">Seguimiento</span>
+              <span className="text-sm font-medium text-gray-800">Seguimiento</span>
             </CardContent>
           </Card>
-          <Card
-            className="bg-white shadow-sm border-0 sm:border transition-all duration-200 hover:shadow-md cursor-pointer"
-            onClick={() => router.push("/dashboard/paciente/resultados")}
-          >
+          <Card className="cursor-pointer hover:shadow-lg transition-all duration-200 border-0 sm:border bg-gradient-to-br from-pink-50 to-pink-100"
+            onClick={() => router.push("/dashboard/paciente/resultados")}>
             <CardContent className="flex flex-col items-center justify-center py-4 sm:py-6">
-              <TestTube className="w-8 h-8 sm:w-10 sm:h-10 text-purple-600 mb-2" />
-              <span className="text-sm font-medium">Resultados</span>
+              <TestTube className="w-8 h-8 sm:w-10 sm:h-10 text-pink-600 mb-2" />
+              <span className="text-sm font-medium text-gray-800">Resultados</span>
             </CardContent>
           </Card>
         </div>

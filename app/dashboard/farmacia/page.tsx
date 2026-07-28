@@ -431,7 +431,8 @@ export default function DashboardFarmacia() {
                   </CardContent>
                 </Card>
 
-                <Card className="border border-gray-200 rounded-lg shadow-sm">
+                <Card className="border border-gray-200 rounded-lg shadow-sm cursor-pointer hover:shadow-lg transition-shadow"
+                  onClick={() => router.push('/dashboard/farmacia/reportes')}>
                   <CardHeader className="p-6 pb-4">
                     <CardTitle className="flex items-center gap-2 text-base">
                       <BarChart3 className="w-5 h-5 text-purple-600" />
@@ -462,14 +463,14 @@ export default function DashboardFarmacia() {
                     <Button
                       variant="outline"
                       className="w-full mt-4 h-10"
-                      onClick={() => router.push('/dashboard/farmacia/reportes')}
                     >
                       Ver Reportes Detallados
                     </Button>
                   </CardContent>
                 </Card>
 
-                <Card className="border border-gray-200 rounded-lg shadow-sm">
+                <Card className="border border-gray-200 rounded-lg shadow-sm cursor-pointer hover:shadow-lg transition-shadow"
+                  onClick={() => router.push('/dashboard/farmacia/alertas')}>
                   <CardHeader className="p-6 pb-4">
                     <CardTitle className="flex items-center gap-2 text-base">
                       <AlertCircle className="w-5 h-5 text-orange-600" />
@@ -500,7 +501,6 @@ export default function DashboardFarmacia() {
                     <Button
                       variant="outline"
                       className="w-full mt-4 h-10"
-                      onClick={() => router.push('/dashboard/farmacia/alertas')}
                     >
                       Ver Alertas Completas
                     </Button>

@@ -597,53 +597,15 @@ export default function SeleccionFarmaciasPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header Responsive */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
-        <div className="container mx-auto px-3 sm:px-4 lg:px-6 py-3 sm:py-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-3 sm:space-y-0">
-            <div className="flex items-center space-x-3">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => router.push("/dashboard/paciente")}
-                className="flex items-center space-x-2"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                <span className="hidden xs:inline">Volver</span>
-              </Button>
-              <div className="min-w-0 flex-1">
-                <h1 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900 truncate">
-                  Seleccionar Farmacias
-                </h1>
-                <p className="text-xs sm:text-sm text-gray-600 truncate">
-                  Receta #{recetaId}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center space-x-2 self-end sm:self-auto">
-              <div className="hidden sm:flex items-center space-x-2">
-                <Button
-                  variant={modoCompra === "simple" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setModoCompra("simple")}
-                  className="text-xs"
-                >
-                  Una Farmacia
-                </Button>
-                <Button
-                  variant={modoCompra === "avanzado" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setModoCompra("avanzado")}
-                  className="text-xs"
-                >
-                  Múltiples
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
+      {/* Page Title */}
+      <div className="container mx-auto px-3 sm:px-4 lg:px-6 pt-6 pb-2">
+        <h1 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900">
+          Seleccionar Farmacias
+        </h1>
+        <p className="text-xs sm:text-sm text-gray-600">
+          Receta #{recetaId}
+        </p>
+      </div>
 
       {/* Barra de búsqueda y filtros - Responsive */}
       <div className="bg-white border-b border-gray-200">

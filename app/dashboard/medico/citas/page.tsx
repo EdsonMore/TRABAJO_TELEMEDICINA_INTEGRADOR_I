@@ -4,7 +4,6 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/auth-context";
 import { ProtectedRoute } from "@/components/auth/protected-route";
-import { NavbarUniversal } from "@/components/layout/navbar-universal";
 import { CalendarioCitas } from "@/components/medico/calendario-citas";
 import { DetallesCitaModalMedico } from "@/components/medico/detalles-cita-modal";
 import ModalCrearReceta from "@/components/medico/ModalCrearReceta";
@@ -198,7 +197,6 @@ export default function GestionCitasPage() {
   if (isLoading) {
     return (
       <ProtectedRoute allowedRoles={["medico"]}>
-        <NavbarUniversal showNotifications notificationCount={5} />
         <main className="container mx-auto px-4 py-8">
           <div className="flex items-center justify-center min-h-96">
             <Loader2 className="w-8 h-8 animate-spin text-blue-600 mr-3" />
@@ -212,7 +210,6 @@ export default function GestionCitasPage() {
   if (error) {
     return (
       <ProtectedRoute allowedRoles={["medico"]}>
-        <NavbarUniversal showNotifications notificationCount={5} />
         <main className="container mx-auto px-4 py-8">
           <Card className="border-red-200 bg-red-50">
             <CardContent className="pt-6 flex items-start gap-3">
@@ -233,7 +230,6 @@ export default function GestionCitasPage() {
   return (
     <ProtectedRoute allowedRoles={["medico"]}>
       <div className="min-h-screen bg-gray-50">
-        <NavbarUniversal showNotifications notificationCount={5} />
 
         <main className="container mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8">
           {/* Header */}

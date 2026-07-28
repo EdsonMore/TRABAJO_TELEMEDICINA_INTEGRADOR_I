@@ -474,52 +474,41 @@ export default function SeleccionFarmaciasView({
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onClose} // ✅ ESTE ES EL BOTÓN DE VOLVER
-                className="flex items-center space-x-2"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                <span>Volver a Recetas</span>
-              </Button>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">
-                  Seleccionar Farmacias
-                </h1>
-                <p className="text-gray-600">
-                  Envía tu receta {recetaId ? `#${recetaId}` : ""} a una o
-                  múltiples farmacias
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center space-x-4">
-              <div className="hidden md:flex items-center space-x-2">
-                <Button
-                  variant={modoCompra === "simple" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setModoCompra("simple")}
-                >
-                  Una Farmacia
-                </Button>
-                <Button
-                  variant={modoCompra === "avanzado" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setModoCompra("avanzado")}
-                >
-                  Múltiples Farmacias
-                </Button>
-              </div>
+      {/* Page Title */}
+      <div className="container mx-auto px-4 pt-6 pb-2">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center space-x-4">
+            <Button variant="outline" size="sm" onClick={onClose}>
+              <ArrowLeft className="w-4 h-4 mr-1" />
+              Volver
+            </Button>
+            <div>
+              <h1 className="text-xl font-bold text-gray-900">
+                Seleccionar Farmacias
+              </h1>
+              <p className="text-sm text-gray-600">
+                Envía tu receta {recetaId ? `#${recetaId}` : ""} a una o múltiples farmacias
+              </p>
             </div>
           </div>
+          <div className="hidden md:flex items-center space-x-2 mt-2 sm:mt-0">
+            <Button
+              variant={modoCompra === "simple" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setModoCompra("simple")}
+            >
+              Una Farmacia
+            </Button>
+            <Button
+              variant={modoCompra === "avanzado" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setModoCompra("avanzado")}
+            >
+              Múltiples
+            </Button>
+          </div>
         </div>
-      </header>
+      </div>
 
       {/* Barra de búsqueda y filtros */}
       <div className="bg-white border-b border-gray-200">
