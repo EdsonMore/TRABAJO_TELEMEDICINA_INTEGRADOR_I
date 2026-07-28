@@ -912,8 +912,8 @@ export function RecetasMedicoSection() {
                         Nombre Completo
                       </label>
                       <p className="font-semibold text-blue-900">
-                        {recetaSeleccionada.paciente_nombre || "N/A"}{" "}
-                        {recetaSeleccionada.paciente_apellido || ""}
+                        {(detallesCompletos?.paciente_nombre || recetaSeleccionada.paciente_nombre || "N/A")}{" "}
+                        {detallesCompletos?.paciente_apellido || recetaSeleccionada.paciente_apellido || ""}
                       </p>
                     </div>
                     <div>
@@ -921,7 +921,7 @@ export function RecetasMedicoSection() {
                         DNI
                       </label>
                       <p className="font-semibold text-blue-900">
-                        {recetaSeleccionada.paciente_dni || "No disponible"}
+                        {detallesCompletos?.dni || detallesCompletos?.paciente_dni || recetaSeleccionada.paciente_dni || "No disponible"}
                       </p>
                     </div>
                     <div>
@@ -929,7 +929,7 @@ export function RecetasMedicoSection() {
                         Edad
                       </label>
                       <p className="font-semibold text-blue-900">
-                        {recetaSeleccionada.paciente_edad || 0} años
+                        {detallesCompletos?.paciente_edad || recetaSeleccionada.paciente_edad || 0} años
                       </p>
                     </div>
                   </div>

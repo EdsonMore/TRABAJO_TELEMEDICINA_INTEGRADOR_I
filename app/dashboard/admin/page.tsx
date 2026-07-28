@@ -1,481 +1,333 @@
-// MediLink+ - Dashboard de Administrador
-// Panel de control para gestionar médicos, farmacias y laboratorios
+'use client'
 
-"use client"
-
-import { useState, useEffect } from "react"
-import { useAuth } from "@/contexts/auth-context"
-import { ProtectedRoute } from "@/components/auth/protected-route"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useEffect, useState, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import {
-  UserPlus,
-  Stethoscope,
-  Building2,
-  FlaskConical,
-  Edit,
-  Eye,
-  CheckCircle,
-  XCircle,
-  Clock,
-  LogOut,
   Users,
+  Calendar,
+  FileText,
+  ShoppingCart,
+  Star,
   Activity,
-  Database,
-  BarChart3,
-} from "lucide-react"
+  AlertCircle,
+  Zap,
+} from 'lucide-react'
+import { ReportGenerator } from '@/components/admin/report-generator'
+import { MetricCard } from '@/components/admin/metric-card'
 
-interface Usuario {
-  id: number
-  nombre: string
-  apellido: string
-  email: string
-  telefono: string
-  rol: string
-  estado: string
-  fechaRegistro: string
-  especialidad?: string
-  numeroLicencia?: string
-  nombreEstablecimiento?: string
-  direccion?: string
-}
-
-interface EstadisticasGenerales {
-  total_usuarios: number
-  total_pacientes: number
-  total_citas: number
-  citas_completadas: number
-  citas_pendientes: number
-  ingresos_totales: number
+interface Estadisticas {
+  usuarios: {
+    total: number
+    pacientes: number
+    medicos: number
+    farmacias: number
+    laboratorios: number
+  }
+  citas: {
+    total: number
+    completadas: number
+    pendientes: number
+    canceladas: number
+    no_show: number
+    hoy: number
+    hoy_pendientes: number
+    tasa_completacion: number
+  }
+  recetas: {
+    total: number
+    no_enviadas: number
+    enviadas: number
+    recibidas: number
+    en_proceso: number
+    dispensadas: number
+    rechazada: number
+    tasa_dispensacion: number
+  }
+  transacciones: {
+    total: number
+    ingresos_totales: number
+    transacciones_entregadas: number
+    transacciones_pendientes: number
+    ingresos_hoy: number
+    ticket_promedio: number
+    tasa_entrega: number
+  }
+  satisfaccion: {
+    evaluaciones_totales: number
+    promedio: number
+    positivas: number
+    negativas: number
+    tasa_respuesta: number
+  }
+  laboratorio: {
+    solicitudes_totales: number
+    completadas: number
+    pendientes: number
+    hoy: number
+    tasa_completacion: number
+  }
+  timestamp: string
+  periodo: string
 }
 
 export default function AdminDashboard() {
-  const { logout } = useAuth()
-  const [usuarios, setUsuarios] = useState<Usuario[]>([])
-  const [estadisticas, setEstadisticas] = useState<EstadisticasGenerales | null>(null)
-  const [filtroRol, setFiltroRol] = useState<string>("todos")
-  const [isLoading, setIsLoading] = useState(true)
-  const [showRegistroModal, setShowRegistroModal] = useState(false)
-  const [tipoRegistro, setTipoRegistro] = useState<string>("")
+  const router = useRouter()
+  const dashboardRef = useRef<HTMLDivElement>(null)
+  const [estadisticas, setEstadisticas] = useState<Estadisticas | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [mounted, setMounted] = useState(false)
+  const [token, setToken] = useState<string>('')
 
-  // Cargar usuarios desde la API
   useEffect(() => {
-    cargarUsuarios()
-    cargarEstadisticas()
+    setMounted(true)
+    const storedToken = localStorage.getItem('medilink_token')
+    if (storedToken) {
+      setToken(storedToken)
+    }
   }, [])
 
-  const cargarUsuarios = async () => {
+  useEffect(() => {
+    if (!mounted) return
+    
+    fetchEstadisticas()
+    const interval = setInterval(fetchEstadisticas, 30000)
+    return () => clearInterval(interval)
+  }, [mounted])
+
+  const fetchEstadisticas = async () => {
     try {
-      const response = await fetch("/api/admin/usuarios")
-      const data = await response.json()
-      setUsuarios(data.usuarios || [])
-    } catch (error) {
-      console.error("Error cargando usuarios:", error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
+      const token = localStorage.getItem('medilink_token')
+      console.log('🔑 Token encontrado:', token ? 'SÍ' : 'NO')
+      
+      if (!token) {
+        console.log('❌ No hay token, redirigiendo a login')
+        setError('No autorizado - por favor inicia sesión')
+        router.push('/auth/login')
+        return
+      }
 
-  const cargarEstadisticas = async () => {
-    try {
-      const response = await fetch("/api/admin/estadisticas")
-      const data = await response.json()
-      setEstadisticas(data.estadisticas)
-    } catch (error) {
-      console.error("Error cargando estadísticas:", error)
-    }
-  }
-
-  const usuariosFiltrados = usuarios.filter((usuario) => filtroRol === "todos" || usuario.rol === filtroRol)
-
-  const estadisticasUsuarios = {
-    medicos: usuarios.filter((u) => u.rol === "medico").length,
-    farmacias: usuarios.filter((u) => u.rol === "farmacia").length,
-    laboratorios: usuarios.filter((u) => u.rol === "laboratorio").length,
-    pendientes: usuarios.filter((u) => u.estado === "pendiente").length,
-  }
-
-  const cambiarEstadoUsuario = async (id: number, nuevoEstado: string) => {
-    try {
-      const response = await fetch(`/api/admin/usuarios/${id}/estado`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ estado: nuevoEstado }),
+      console.log('📡 Llamando API /api/admin/estadisticas...')
+      const response = await fetch('/api/admin/estadisticas', {
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
       })
 
-      if (response.ok) {
-        cargarUsuarios()
+      console.log('✅ Respuesta API:', response.status, response.statusText)
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || 'Error al obtener estadísticas')
       }
-    } catch (error) {
-      console.error("Error actualizando estado:", error)
+
+      const data = await response.json()
+      console.log('📊 Datos recibidos:', data)
+      setEstadisticas(data.estadisticas || data)
+      setError(null)
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Error desconocido'
+      console.error('❌ Error:', errorMsg)
+      setError(errorMsg)
+    } finally {
+      setLoading(false)
     }
   }
 
-  const handleLogout = () => {
-    logout()
-    window.location.href = "/auth/login"
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+      </div>
+    )
+  }
+
+  if (error || !estadisticas) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Card className="w-96 border-red-200 bg-red-50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-red-600">
+              <AlertCircle /> Error
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-red-700">{error || 'No se pudieron cargar las estadísticas'}</p>
+            <Button onClick={fetchEstadisticas} className="mt-4 w-full">
+              Reintentar
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   return (
-    <ProtectedRoute allowedRoles={["administrador"]}>
-      <div className="min-h-screen bg-gradient-to-br from-background via-card to-muted">
-        <div className="border-b border-border/50 bg-background/80 backdrop-blur-sm">
-          <div className="container mx-auto px-4 py-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-3xl font-bold text-foreground">Panel de Administración</h1>
-                <p className="text-muted-foreground">Control total del sistema MediLink+</p>
-              </div>
-              <div className="flex items-center space-x-3">
-                <Dialog open={showRegistroModal} onOpenChange={setShowRegistroModal}>
-                  <DialogTrigger asChild>
-                    <Button className="gap-2">
-                      <UserPlus className="w-4 h-4" />
-                      Registrar Usuario
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-2xl">
-                    <DialogHeader>
-                      <DialogTitle>Registrar Nuevo Usuario</DialogTitle>
-                      <DialogDescription>Selecciona el tipo de usuario que deseas registrar</DialogDescription>
-                    </DialogHeader>
-
-                    <div className="grid grid-cols-3 gap-4 py-4">
-                      <Button
-                        variant="outline"
-                        className="h-24 flex-col gap-2 bg-transparent"
-                        onClick={() => {
-                          setTipoRegistro("medico")
-                          setShowRegistroModal(false)
-                        }}
-                      >
-                        <Stethoscope className="w-8 h-8" />
-                        Médico
-                      </Button>
-
-                      <Button
-                        variant="outline"
-                        className="h-24 flex-col gap-2 bg-transparent"
-                        onClick={() => {
-                          setTipoRegistro("farmacia")
-                          setShowRegistroModal(false)
-                        }}
-                      >
-                        <Building2 className="w-8 h-8" />
-                        Farmacia
-                      </Button>
-
-                      <Button
-                        variant="outline"
-                        className="h-24 flex-col gap-2 bg-transparent"
-                        onClick={() => {
-                          setTipoRegistro("laboratorio")
-                          setShowRegistroModal(false)
-                        }}
-                      >
-                        <FlaskConical className="w-8 h-8" />
-                        Laboratorio
-                      </Button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-                <Button variant="destructive" size="sm" onClick={handleLogout}>
-                  <LogOut className="w-4 h-4 mr-2" />
-                  Cerrar Sesión
-                </Button>
-              </div>
-            </div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-4 md:p-8" ref={dashboardRef}>
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl md:text-4xl font-bold text-gray-900">Panel de Control Admin</h1>
+            <p className="text-sm md:text-base text-gray-600 mt-2">MediLink+ - Sistema de Telemedicina</p>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
+            <Button variant="outline" onClick={fetchEstadisticas} className="w-full sm:w-auto">
+              <Zap className="h-4 w-4 mr-2" /> Actualizar
+            </Button>
+            {token && <ReportGenerator token={token} dashboardRef={dashboardRef} />}
           </div>
         </div>
 
-        <div className="container mx-auto px-4 py-8">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            <Card className="medical-shadow">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Usuarios</CardTitle>
-                <Users className="h-4 w-4 text-primary" />
+        {/* KPI Summary */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4 mb-8">
+          <MetricCard
+            icon={Users}
+            title="Usuarios Activos"
+            value={estadisticas.usuarios.total}
+            subtitle={`${estadisticas.usuarios.pacientes} pacientes`}
+            color="bg-blue-50"
+            borderColor="border-blue-200"
+          />
+          <MetricCard
+            icon={Calendar}
+            title="Citas Hoy"
+            value={estadisticas.citas.hoy}
+            subtitle={`${estadisticas.citas.hoy_pendientes} pendientes`}
+            color="bg-green-50"
+            borderColor="border-green-200"
+          />
+          <MetricCard
+            icon={FileText}
+            title="Recetas Emitidas"
+            value={estadisticas.recetas.total}
+            subtitle={`${estadisticas.recetas.tasa_dispensacion}% dispensadas`}
+            color="bg-purple-50"
+            borderColor="border-purple-200"
+          />
+          <MetricCard
+            icon={ShoppingCart}
+            title="Ingresos Hoy"
+            value={`S/.${estadisticas.transacciones.ingresos_hoy.toFixed(2)}`}
+            subtitle={`${estadisticas.transacciones.total} transacciones`}
+            color="bg-amber-50"
+            borderColor="border-amber-200"
+          />
+          <MetricCard
+            icon={Star}
+            title="Satisfacción"
+            value={estadisticas.satisfaccion.promedio.toFixed(1)}
+            subtitle={`${estadisticas.satisfaccion.evaluaciones_totales} evaluaciones`}
+            color="bg-rose-50"
+            borderColor="border-rose-200"
+          />
+        </div>
+
+        {/* Navigation Cards */}
+        <div className="mb-6">
+          <h2 className="text-xl font-semibold text-gray-800 mb-4">Módulos del Sistema</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <Card
+              className="cursor-pointer hover:shadow-lg hover:border-primary/50 transition-all border-2"
+              onClick={() => router.push('/dashboard/admin/general')}
+            >
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Activity className="h-5 w-5 text-blue-500" />
+                  General
+                </CardTitle>
+                <CardDescription>Distribución de usuarios y estado de citas</CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{estadisticas?.total_usuarios || 0}</div>
-                <p className="text-xs text-muted-foreground">
-                  {estadisticas?.total_pacientes || 0} pacientes registrados
-                </p>
-              </CardContent>
             </Card>
 
-            <Card className="medical-shadow">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Citas Totales</CardTitle>
-                <Activity className="h-4 w-4 text-primary" />
+            <Card
+              className="cursor-pointer hover:shadow-lg hover:border-primary/50 transition-all border-2"
+              onClick={() => router.push('/dashboard/admin/usuarios')}
+            >
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="h-5 w-5 text-green-500" />
+                  Usuarios
+                </CardTitle>
+                <CardDescription>Detalle de usuarios registrados por rol</CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{estadisticas?.total_citas || 0}</div>
-                <p className="text-xs text-muted-foreground">{estadisticas?.citas_completadas || 0} completadas</p>
-              </CardContent>
             </Card>
 
-            <Card className="medical-shadow">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Ingresos</CardTitle>
-                <BarChart3 className="h-4 w-4 text-primary" />
+            <Card
+              className="cursor-pointer hover:shadow-lg hover:border-primary/50 transition-all border-2"
+              onClick={() => router.push('/dashboard/admin/citas')}
+            >
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Calendar className="h-5 w-5 text-purple-500" />
+                  Citas
+                </CardTitle>
+                <CardDescription>Estado y estadísticas de citas médicas</CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">S/ {estadisticas?.ingresos_totales?.toFixed(0) || 0}</div>
-                <p className="text-xs text-muted-foreground">Ingresos totales del sistema</p>
-              </CardContent>
             </Card>
 
-            <Card className="medical-shadow">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Pendientes</CardTitle>
-                <Clock className="h-4 w-4 text-primary" />
+            <Card
+              className="cursor-pointer hover:shadow-lg hover:border-primary/50 transition-all border-2"
+              onClick={() => router.push('/dashboard/admin/recetas')}
+            >
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-amber-500" />
+                  Recetas
+                </CardTitle>
+                <CardDescription>Recetas electrónicas y su estado</CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{estadisticasUsuarios.pendientes}</div>
-                <p className="text-xs text-muted-foreground">Esperando aprobación</p>
-              </CardContent>
+            </Card>
+
+            <Card
+              className="cursor-pointer hover:shadow-lg hover:border-primary/50 transition-all border-2"
+              onClick={() => router.push('/dashboard/admin/farmacias')}
+            >
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <ShoppingCart className="h-5 w-5 text-rose-500" />
+                  Farmacias
+                </CardTitle>
+                <CardDescription>Estadísticas por farmacia</CardDescription>
+              </CardHeader>
+            </Card>
+
+            <Card
+              className="cursor-pointer hover:shadow-lg hover:border-primary/50 transition-all border-2"
+              onClick={() => router.push('/dashboard/admin/evaluaciones')}
+            >
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Star className="h-5 w-5 text-yellow-500" />
+                  Evaluaciones
+                </CardTitle>
+                <CardDescription>Análisis de evaluaciones de pacientes</CardDescription>
+              </CardHeader>
+            </Card>
+
+            <Card
+              className="cursor-pointer hover:shadow-lg hover:border-primary/50 transition-all border-2"
+              onClick={() => router.push('/dashboard/admin/detalles')}
+            >
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Zap className="h-5 w-5 text-cyan-500" />
+                  Detalles
+                </CardTitle>
+                <CardDescription>Transacciones, satisfacción y laboratorio</CardDescription>
+              </CardHeader>
             </Card>
           </div>
-
-          <Tabs defaultValue="usuarios" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-4">
-              <TabsTrigger value="usuarios">Usuarios</TabsTrigger>
-              <TabsTrigger value="estadisticas">Estadísticas</TabsTrigger>
-              <TabsTrigger value="base-datos">Base de Datos</TabsTrigger>
-              <TabsTrigger value="configuracion">Configuración</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="usuarios">
-              <Card className="medical-shadow">
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle>Gestión de Usuarios</CardTitle>
-                      <CardDescription>Administra médicos, farmacias y laboratorios</CardDescription>
-                    </div>
-
-                    <Select value={filtroRol} onValueChange={setFiltroRol}>
-                      <SelectTrigger className="w-48">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="todos">Todos los roles</SelectItem>
-                        <SelectItem value="medico">Médicos</SelectItem>
-                        <SelectItem value="farmacia">Farmacias</SelectItem>
-                        <SelectItem value="laboratorio">Laboratorios</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </CardHeader>
-
-                <CardContent>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Usuario</TableHead>
-                        <TableHead>Rol</TableHead>
-                        <TableHead>Contacto</TableHead>
-                        <TableHead>Estado</TableHead>
-                        <TableHead>Fecha Registro</TableHead>
-                        <TableHead>Acciones</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {usuariosFiltrados.map((usuario) => (
-                        <TableRow key={usuario.id}>
-                          <TableCell>
-                            <div>
-                              <div className="font-medium">
-                                {usuario.nombre} {usuario.apellido}
-                              </div>
-                              <div className="text-sm text-muted-foreground">{usuario.email}</div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline">
-                              {usuario.rol.charAt(0).toUpperCase() + usuario.rol.slice(1)}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>{usuario.telefono}</TableCell>
-                          <TableCell>
-                            <Badge
-                              variant={
-                                usuario.estado === "activo"
-                                  ? "default"
-                                  : usuario.estado === "pendiente"
-                                    ? "secondary"
-                                    : "destructive"
-                              }
-                            >
-                              {usuario.estado}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>{new Date(usuario.fechaRegistro).toLocaleDateString()}</TableCell>
-                          <TableCell>
-                            <div className="flex gap-2">
-                              {usuario.estado === "pendiente" && (
-                                <>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => cambiarEstadoUsuario(usuario.id, "activo")}
-                                  >
-                                    <CheckCircle className="w-4 h-4" />
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => cambiarEstadoUsuario(usuario.id, "rechazado")}
-                                  >
-                                    <XCircle className="w-4 h-4" />
-                                  </Button>
-                                </>
-                              )}
-                              <Button size="sm" variant="outline">
-                                <Eye className="w-4 h-4" />
-                              </Button>
-                              <Button size="sm" variant="outline">
-                                <Edit className="w-4 h-4" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="estadisticas">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <Card className="medical-shadow">
-                  <CardHeader>
-                    <CardTitle className="flex items-center">
-                      <BarChart3 className="w-5 h-5 mr-2 text-primary" />
-                      Estadísticas del Sistema
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="text-center p-4 bg-card/50 rounded-lg">
-                        <div className="text-2xl font-bold text-primary">{estadisticasUsuarios.medicos}</div>
-                        <p className="text-sm text-muted-foreground">Médicos</p>
-                      </div>
-                      <div className="text-center p-4 bg-card/50 rounded-lg">
-                        <div className="text-2xl font-bold text-primary">{estadisticasUsuarios.farmacias}</div>
-                        <p className="text-sm text-muted-foreground">Farmacias</p>
-                      </div>
-                      <div className="text-center p-4 bg-card/50 rounded-lg">
-                        <div className="text-2xl font-bold text-primary">{estadisticasUsuarios.laboratorios}</div>
-                        <p className="text-sm text-muted-foreground">Laboratorios</p>
-                      </div>
-                      <div className="text-center p-4 bg-card/50 rounded-lg">
-                        <div className="text-2xl font-bold text-primary">{estadisticas?.total_pacientes || 0}</div>
-                        <p className="text-sm text-muted-foreground">Pacientes</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="medical-shadow">
-                  <CardHeader>
-                    <CardTitle className="flex items-center">
-                      <Activity className="w-5 h-5 mr-2 text-primary" />
-                      Actividad del Sistema
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div>
-                      <div className="flex justify-between text-sm mb-2">
-                        <span>Citas Completadas</span>
-                        <span>
-                          {estadisticas?.citas_completadas || 0}/{estadisticas?.total_citas || 0}
-                        </span>
-                      </div>
-                      <div className="w-full bg-secondary rounded-full h-2">
-                        <div
-                          className="bg-primary h-2 rounded-full"
-                          style={{
-                            width: `${
-                              estadisticas?.total_citas
-                                ? (estadisticas.citas_completadas / estadisticas.total_citas) * 100
-                                : 0
-                            }%`,
-                          }}
-                        />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4 mt-4">
-                      <div className="text-center p-4 bg-card/50 rounded-lg">
-                        <div className="text-2xl font-bold text-primary">{estadisticas?.citas_pendientes || 0}</div>
-                        <p className="text-sm text-muted-foreground">Citas Pendientes</p>
-                      </div>
-                      <div className="text-center p-4 bg-card/50 rounded-lg">
-                        <div className="text-2xl font-bold text-primary">
-                          S/ {estadisticas?.ingresos_totales?.toFixed(0) || 0}
-                        </div>
-                        <p className="text-sm text-muted-foreground">Ingresos</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="base-datos">
-              <Card className="medical-shadow">
-                <CardHeader>
-                  <CardTitle className="flex items-center">
-                    <Database className="w-5 h-5 mr-2 text-primary" />
-                    Control de Base de Datos
-                  </CardTitle>
-                  <CardDescription>Gestión y monitoreo de la base de datos PostgreSQL</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-center py-8">
-                    <Database className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                    <p className="text-muted-foreground mb-4">
-                      Funcionalidad de administración de base de datos en desarrollo
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      Aquí podrás gestionar respaldos, optimizaciones y consultas directas a PostgreSQL
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="configuracion">
-              <Card className="medical-shadow">
-                <CardHeader>
-                  <CardTitle>Configuración del Sistema</CardTitle>
-                  <CardDescription>Ajustes generales de MediLink+</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-center py-8">
-                    <p className="text-muted-foreground">
-                      Panel de configuración en desarrollo. Aquí podrás ajustar parámetros del sistema.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
         </div>
       </div>
-    </ProtectedRoute>
+    </div>
   )
 }

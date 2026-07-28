@@ -28,6 +28,7 @@ import {
   RefreshCw,
   Bell,
   History,
+  ThumbsUp,
 } from "lucide-react";
 
 interface Medicamento {
@@ -67,6 +68,8 @@ interface RecetaTracking {
   medico_apellido?: string;
   ultima_actualizacion?: string;
   medicamentos?: Medicamento[];
+  fecha_confirmacion_envio?: string | null;
+  fecha_confirmacion_recepcion?: string | null;
 }
 
 interface Notificacion {
@@ -88,6 +91,7 @@ export default function SeguimientoRecetasPaciente() {
   const [recetasActualizadas, setRecetasActualizadas] = useState<Set<string>>(
     new Set()
   );
+  const [confirmandoRecetaId, setConfirmandoRecetaId] = useState<string | null>(null);
   const recetasAnterioresRef = useRef<RecetaTracking[]>([]);
 
   // 🔄 Auto-actualización cada 30 segundos
@@ -204,6 +208,43 @@ export default function SeguimientoRecetasPaciente() {
       });
     } finally {
       setCargandoHistorial(false);
+    }
+  };
+
+  const confirmarRecepcion = async (recetaId: string) => {
+    try {
+      setConfirmandoRecetaId(recetaId);
+      const authToken = token || localStorage.getItem("medilink_token") || localStorage.getItem("token");
+
+      const response = await fetch(`/api/farmacia/recetas/${recetaId}/confirmar-entrega`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ rol: "paciente" }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || `Error ${response.status}`);
+      }
+
+      setNotificacion({
+        tipo: "exito",
+        mensaje: "✅ Recepción confirmada. ¡Gracias por tu compra!",
+      });
+
+      cargarRecetas(true);
+      setTimeout(() => setNotificacion(null), 5000);
+    } catch (error) {
+      setNotificacion({
+        tipo: "error",
+        mensaje: error instanceof Error ? error.message : "Error al confirmar recepción",
+      });
+      setTimeout(() => setNotificacion(null), 5000);
+    } finally {
+      setConfirmandoRecetaId(null);
     }
   };
 
@@ -399,8 +440,8 @@ export default function SeguimientoRecetasPaciente() {
                   <p className="text-sm text-gray-600 mt-1">
                     {receta.medico_nombre} {receta.medico_apellido}
                   </p>
-                  {receta.farmacia_nombre && (
-                    <p className="text-xs text-gray-500 mt-1">
+                  {receta.estado_envio !== "no_enviada" && receta.farmacia_nombre && (
+                    <p className="text-xs text-purple-600 mt-1 font-medium">
                       📍 {receta.farmacia_nombre}
                     </p>
                   )}
@@ -591,6 +632,23 @@ export default function SeguimientoRecetasPaciente() {
                   <History className="w-4 h-4" />
                   Historial
                 </Button>
+                {receta.estado_envio === "dispensada" &&
+                  receta.tipo_entrega === "domicilio" &&
+                  receta.fecha_confirmacion_envio &&
+                  !receta.fecha_confirmacion_recepcion && (
+                    <Button
+                      onClick={() => confirmarRecepcion(receta.id)}
+                      disabled={confirmandoRecetaId === receta.id}
+                      className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2"
+                    >
+                      {confirmandoRecetaId === receta.id ? (
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <ThumbsUp className="w-4 h-4" />
+                      )}
+                      Confirmar Recepción
+                    </Button>
+                  )}
               </div>
             </CardContent>
           </Card>
@@ -611,6 +669,18 @@ export default function SeguimientoRecetasPaciente() {
 
           {recetaSeleccionada && (
             <div className="space-y-4 max-h-96 overflow-y-auto">
+              {/* Información de Farmacia - Solo si fue enviada */}
+              {recetaSeleccionada.estado_envio !== "no_enviada" && recetaSeleccionada.farmacia_nombre && (
+                <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
+                  <h4 className="font-semibold text-gray-900 mb-2">
+                    📍 Farmacia
+                  </h4>
+                  <p className="text-sm text-purple-900 font-medium">
+                    {recetaSeleccionada.farmacia_nombre}
+                  </p>
+                </div>
+              )}
+
               {/* Información de Entrega */}
               <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
                 <h4 className="font-semibold text-gray-900 mb-3">

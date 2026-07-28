@@ -298,7 +298,7 @@ export default function HomePage() {
           <div className="relative">
             <VideoPlayer
               videoSrc="/videos/demo.mp4"
-              thumbnailSrc="/images/home/thumbnail.jpg"
+              thumbnailSrc="/images/home/thumbnail.svg"
               title="Conoce MediLink+"
               description="Aprende a usar nuestra plataforma en 5 minutos"
               highContrast={highContrast}

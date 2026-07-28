@@ -51,6 +51,8 @@ export async function GET(request: NextRequest) {
         r.estado_envio,
         r.diagnostico_principal_texto,
         r.observaciones,
+        r.tipo_entrega,
+        r.direccion_entrega,
         -- Información del paciente
         p.id as paciente_id,
         up.nombre as paciente_nombre,
@@ -99,7 +101,7 @@ export async function GET(request: NextRequest) {
     }
 
     query += ` GROUP BY r.id, r.codigo_receta, r.fecha_emision, r.fecha_vencimiento, r.estado, r.estado_envio,
-                 r.diagnostico_principal_texto, r.observaciones,
+                 r.diagnostico_principal_texto, r.observaciones, r.tipo_entrega, r.direccion_entrega,
                  p.id, up.nombre, up.apellido, p.dni, p.fecha_nacimiento, p.sexo,
                  um.nombre, um.apellido, m.numero_colegiatura, e.nombre
                ORDER BY 

@@ -372,29 +372,11 @@ export default function AgendarCitaPage() {
 
         console.log("🕒 Horarios recibidos del API:", data.data);
 
-        const horariosFormateados = (data.data || []).map((hora: any) => {
-          const esPasado = esFechaHoraPasada(formData.fecha_cita, hora.hora);
-          const disponible = hora.disponible && !esPasado;
-
-          console.log(
-            `⏰ Hora ${hora.hora}: ${
-              disponible ? "✅ Disponible" : "❌ No disponible"
-            }`,
-            {
-              disponibleBD: hora.disponible,
-              esPasado,
-              horaActual: getFechaHoraActual().toLocaleTimeString(),
-            }
-          );
-
-          return {
-            ...hora,
-            formato_12h: formatHora12h(hora.hora),
-            formato_24h: `${hora.hora.toString().padStart(2, "0")}:00`,
-            esPasado,
-            disponible,
-          };
-        });
+        const horariosFormateados = (data.data || []).map((hora: any) => ({
+          ...hora,
+          formato_12h: formatHora12h(hora.hora),
+          formato_24h: `${hora.hora.toString().padStart(2, "0")}:00`,
+        }));
 
         setHorariosDisponibles(horariosFormateados);
 
@@ -692,7 +674,7 @@ export default function AgendarCitaPage() {
 
         // Redirigir al dashboard de citas
         setTimeout(() => {
-          router.push("/dashboard/paciente?tab=citas");
+          router.push("/dashboard/paciente/citas");
         }, 3000);
       } catch (error: any) {
         console.error("Error en pago o creación de cita:", error);
@@ -722,7 +704,7 @@ export default function AgendarCitaPage() {
 
   // Función para determinar si un horario está realmente disponible
   const estaHorarioDisponible = (hora: HorarioDisponible): boolean => {
-    return hora.disponible && !hora.esPasado;
+    return hora.disponible;
   };
 
   // ✅ Función para convertir tarifa a número de forma segura
@@ -760,41 +742,19 @@ export default function AgendarCitaPage() {
   return (
     <ProtectedRoute allowedRoles={["paciente"]}>
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50">
-        {/* Header */}
-        <div className="bg-white border-b border-gray-200 sticky top-0 z-50">
-          <div className="container mx-auto px-4 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-4">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => router.push("/dashboard/paciente")}
-                  className="flex items-center gap-2"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  <span className="hidden sm:inline">Volver al Dashboard</span>
-                </Button>
-                <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
-                  <Calendar className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <h1 className="text-xl font-bold text-gray-900">
-                    Agendar Cita Médica
-                  </h1>
-                  <p className="text-sm text-gray-600">
-                    Programa tu consulta médica
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                  <User className="w-4 h-4 text-green-600" />
-                </div>
-                <span className="text-sm font-medium text-gray-700 hidden sm:block">
-                  {usuario?.nombre}
-                </span>
-              </div>
+        {/* Page Header */}
+        <div className="container mx-auto px-4 pt-6 pb-2">
+          <div className="flex items-center space-x-4">
+            <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
+              <Calendar className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-gray-900">
+                Agendar Cita Médica
+              </h1>
+              <p className="text-sm text-gray-600">
+                Programa tu consulta médica
+              </p>
             </div>
           </div>
         </div>
@@ -878,7 +838,6 @@ export default function AgendarCitaPage() {
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                         {/* Búsqueda por nombre */}
                         <div className="relative">
-                          <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
                           <Input
                             placeholder="Buscar médico..."
                             value={busqueda}

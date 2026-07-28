@@ -7,7 +7,7 @@ import ModalCrearReceta from "./medico/ModalCrearReceta";
 import GestionCitaMedicoModal from "./medico/gestion-cita-medico-modal"; // Importamos el nuevo modal
 import { useAuth } from "@/contexts/auth-context";
 
-export default function VideoCallRoom({ roomId, userData, onLeave, citaData, citaId }) {
+export default function VideoCallRoom({ roomId, sessionUUID, userData, onLeave, citaData, citaId }) {
   // Agregamos citaData como prop
   const [hasPermission, setHasPermission] = useState(false);
   const [isAudioMuted, setIsAudioMuted] = useState(false);
@@ -17,6 +17,7 @@ export default function VideoCallRoom({ roomId, userData, onLeave, citaData, cit
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [showExitModal, setShowExitModal] = useState(false);
+  const [showSessionEndedModal, setShowSessionEndedModal] = useState(false);
   const [showRecetaModal, setShowRecetaModal] = useState(false);
   const [showGestionCitaModal, setShowGestionCitaModal] = useState(false); // Nuevo estado para gestión de cita
   const [citaParaModal, setCitaParaModal] = useState(null);
@@ -27,7 +28,7 @@ export default function VideoCallRoom({ roomId, userData, onLeave, citaData, cit
   const localVideoRef = useRef();
   const messagesEndRef = useRef(null);
 
-  const { token } = useAuth();
+  const { token, usuario } = useAuth();
 
   const {
     localStream,
@@ -43,6 +44,8 @@ export default function VideoCallRoom({ roomId, userData, onLeave, citaData, cit
     toggleMedia,
     cleanup,
     leaveRoom,
+    ws,
+    sessionEnded,
   } = useWebRTC(roomId, userData);
 
   useEffect(() => {
@@ -104,6 +107,21 @@ export default function VideoCallRoom({ roomId, userData, onLeave, citaData, cit
     setIsVideoOff(!mediaState.video);
   }, [mediaState]);
 
+  // 🔥 ESCUCHAR CUANDO EL MÉDICO FINALIZA LA SESIÓN (desde useWebRTC)
+  useEffect(() => {
+    if (sessionEnded) {
+      console.log("🛑 Sesión finalizada detectada");
+      setShowSessionEndedModal(true);
+      
+      // Desconectar después de mostrar el modal (3000ms para que sea visible)
+      setTimeout(() => {
+        console.log("🛑 Cerrando modal y desconectando paciente...");
+        leaveRoom();
+        window.close();
+      }, 10000);
+    }
+  }, [sessionEnded, leaveRoom]);
+
   const handleToggleAudio = () => {
     const newMutedState = !isAudioMuted;
     console.log("🎤 Toggle audio - Nuevo estado muted:", newMutedState);
@@ -138,23 +156,85 @@ export default function VideoCallRoom({ roomId, userData, onLeave, citaData, cit
     setShowExitModal(true);
   };
 
-  const confirmLeaveCall = () => {
-    console.log("👋 Saliendo de la llamada");
+  const confirmLeaveCall = async () => {
+    console.log("👋 Finalizando consulta...");
+    
+    // 🔥 SI ES MÉDICO, ACTUALIZAR ESTADO A "COMPLETADA"
+    if (esMedico && roomId) {
+      try {
+        console.log("🏥 Médico finalizando consulta. Actualizando estado a 'completada'...");
+        
+        if (!token) {
+          console.error("❌ No hay token para actualizar sesión");
+          leaveRoom();
+          setShowExitModal(false);
+          window.close();
+          return;
+        }
+
+        // 🔥 ENVIAR MENSAJE AL WEBSOCKET PARA NOTIFICAR AL PACIENTE
+        console.log("🔍 WebSocket details:", {
+          exists: !!ws,
+          readyState: ws?.readyState,
+          OPEN: WebSocket.OPEN,
+          isOpen: ws?.readyState === WebSocket.OPEN,
+        });
+        
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          console.log("📢 Enviando notificación de fin de sesión al WebSocket...");
+          const mensaje = JSON.stringify({
+            type: "end-session",
+            roomId: roomId,
+            userId: usuario?.id,
+          });
+          console.log("📤 Mensaje a enviar:", mensaje);
+          ws.send(mensaje);
+          console.log("✅ Mensaje enviado al WebSocket");
+        } else {
+          console.warn("⚠️ WebSocket NO está disponible o no está OPEN");
+          console.warn("   State:", ws?.readyState, "Expected:", WebSocket.OPEN);
+        }
+
+        const updateResponse = await fetch("/api/telemedicina/sesiones", {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            sesionId: sessionUUID,
+            estado: "completada",
+          }),
+        });
+
+        if (updateResponse.ok) {
+          const updateData = await updateResponse.json();
+          console.log("✅ Consulta finalizada en BD:", updateData);
+          console.log("📢 Sesión actualizada a completada, desconectando...");
+        } else {
+          console.error("❌ Error al finalizar consulta:", updateResponse.status);
+        }
+      } catch (error) {
+        console.error("⚠️ Error al actualizar sesión:", error);
+        // Continuar de todas formas
+      }
+    }
+
+    // Desconectar y cerrar para todos
     leaveRoom();
     setShowExitModal(false);
-    onLeave();
+    window.close();
+  };
+
+  const handleCloseWindow = async () => {
+    // 🔥 HACER QUE "CERRAR VENTANA" SEA IGUAL A "SÍ, FINALIZAR"
+    // Solo cierra, pero ahora primero intenta finalizar como médico
+    await confirmLeaveCall();
   };
 
   const cancelLeaveCall = () => {
+    console.log("❌ Cancelando salida");
     setShowExitModal(false);
-  };
-
-  const handleCloseWindow = () => {
-    if (window.opener) {
-      window.close();
-    } else {
-      window.history.back();
-    }
   };
 
   const handleRetryCamera = async () => {
@@ -730,15 +810,35 @@ export default function VideoCallRoom({ roomId, userData, onLeave, citaData, cit
                   Sí, Finalizar
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
 
-              <div className="mt-6 pt-4 border-t border-red-500">
-                <button
-                  onClick={handleCloseWindow}
-                  className="text-red-200 hover:text-white text-sm underline transition-colors"
-                >
-                  Cerrar ventana
-                </button>
-              </div>
+      {/* 🔥 Modal de sesión finalizada */}
+      {showSessionEndedModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl p-6 sm:p-8 max-w-md w-full border-4 border-orange-700 shadow-2xl">
+            <div className="text-center">
+              <div className="text-5xl mb-4">🛑</div>
+              <h3 className="text-2xl sm:text-3xl font-bold mb-3">
+                Consulta Finalizada
+              </h3>
+              <p className="text-orange-100 mb-6 text-sm sm:text-base">
+                El médico ha finalizado la videollamada. La conexión se cerrará
+                automáticamente.
+              </p>
+
+              <button
+                onClick={() => {
+                  setShowSessionEndedModal(false);
+                  leaveRoom();
+                  onLeave();
+                }}
+                className="w-full bg-white hover:bg-gray-200 text-orange-700 px-6 py-3 rounded-lg font-bold transition-colors border-2 border-orange-300"
+              >
+                Cerrar
+              </button>
             </div>
           </div>
         </div>

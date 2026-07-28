@@ -6,47 +6,27 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
-import { NavbarUniversal } from "@/components/layout/navbar-universal";
-import { BottomNavigation } from "@/components/layout/bottom-navigation";
 import DetallesCitaModal from "@/components/paciente/detalles-cita-modal";
 import { EditarPerfilModal } from "@/components/paciente/editar-perfil-modal";
-import { RecetasPacienteSection } from "@/components/paciente/recetas-paciente-section";
-import { ResultadosLaboratorioSection } from "@/components/paciente/resultados-laboratorio-section";
-import SeguimientoRecetasPaciente from "@/components/paciente/SeguimientoRecetasPaciente";
-import SeguimientoRecetas from "@/components/farmacia/seguimiento-recetas";
-import dynamic from "next/dynamic";
-
-const ListaRecetasPaciente = dynamic(
-  () => import("@/components/paciente/ListaRecetasPaciente"),
-  { ssr: false }
-);
+import { EvaluacionCitaModal } from "@/components/paciente/evaluacion-cita-modal";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Calendar,
   Heart,
   Pill,
-  MapPin,
   User,
-  Phone,
-  Mail,
   AlertTriangle,
-  Stethoscope,
   TestTube,
   Shield,
   Video,
-  Eye,
-  ChevronDown,
-  ChevronUp,
-  Plus,
+  Package,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -141,9 +121,14 @@ export default function DashboardPacientePage() {
   const [citaSeleccionada, setCitaSeleccionada] = useState<CitaPaciente | null>(
     null
   );
+  const [evaluacionOpen, setEvaluacionOpen] = useState(false);
+  const [citaAEvaluar, setCitaAEvaluar] = useState<CitaPaciente | null>(null);
+  
+  // 🔥 Estado para alerta de videollamada no iniciada
+  const [videollamadaAlertaOpen, setVideollamadaAlertaOpen] = useState(false);
+  const [videollamadaAlertaMensaje, setVideollamadaAlertaMensaje] = useState("");
 
-  // Estado para la navegación activa - Inicializar desde URL si es posible
-  const [activeTab, setActiveTab] = useState("resumen");
+
 
   useEffect(() => {
     const cargarDatosDashboard = async () => {
@@ -152,12 +137,7 @@ export default function DashboardPacientePage() {
       // Detectar parámetros de URL
       if (typeof window !== "undefined") {
         const params = new URLSearchParams(window.location.search);
-        const tabParam = params.get("tab");
         const mensajeParam = params.get("mensaje");
-        
-        if (tabParam) {
-          setActiveTab(tabParam);
-        }
         
         // Mostrar notificación si hay mensaje
         if (mensajeParam === "receta_enviada") {
@@ -440,10 +420,11 @@ export default function DashboardPacientePage() {
 
       // Buscar sesiones existentes
       const sesionesData = await safeFetchJSON(
-        `/api/telemedicina/sesiones?cita_id=${encodeURIComponent(cita.id)}`,
-        { headers }
+        `/api/telemedicina/sesiones?cita_id=${encodeURIComponent(cita.id)}&_t=${Date.now()}`,
+        { headers, cache: "no-store" }
       );
       let sesionId: string | undefined;
+      let sesionData: any = null;
 
       if (
         sesionesData &&
@@ -451,7 +432,15 @@ export default function DashboardPacientePage() {
         Array.isArray((sesionesData as any).sesiones) &&
         (sesionesData as any).sesiones.length > 0
       ) {
-        sesionId = (sesionesData as any).sesiones[0].id;
+        sesionData = (sesionesData as any).sesiones[0];
+        sesionId = sesionData.id;
+        
+        // 🔥 VALIDACIÓN CRÍTICA: Verificar si el médico ha iniciado la sesión
+        if (sesionData.estado !== 'iniciada') {
+          throw new Error(
+            `⏳ No puedes unirte a la videollamada aún.\n\nEl médico debe iniciar la sesión primero.\n\nEstado actual: ${sesionData.estado}`
+          );
+        }
       } else {
         // Crear nueva sesión
         const titulo = `Consulta Virtual - Dr. ${cita.medico_nombre || ""} ${
@@ -480,6 +469,11 @@ export default function DashboardPacientePage() {
         }
 
         sesionId = (programarData as any).sesion?.id;
+        
+        // 🔥 VALIDACIÓN: Nueva sesión está en estado 'programada', no se puede unir aún
+        throw new Error(
+          `⏳ No puedes unirte a la videollamada aún.\n\nEl médico debe iniciar la sesión primero.\n\nEstado actual: programada`
+        );
       }
 
       if (!sesionId) throw new Error("No se obtuvo id de sesión");
@@ -496,9 +490,22 @@ export default function DashboardPacientePage() {
       console.error("Error en videollamada:", error);
       const msg =
         error?.message || "Error desconocido al unirse a la videollamada";
-      try {
-        toast({ title: "Error videollamada", description: msg });
-      } catch (e) {}
+      
+      console.log("📢 Tipo de error:", typeof error);
+      console.log("📢 Mensaje:", msg);
+      console.log("📢 ¿Incluye 'No puedes unirte'?", msg.includes("No puedes unirte"));
+      
+      // 🔥 Si es error de videollamada no iniciada, mostrar alerta especial
+      if (msg.includes("No puedes unirte") || msg.includes("El médico debe iniciar")) {
+        console.log("✅ Mostrando modal de alerta de videollamada no iniciada");
+        setVideollamadaAlertaMensaje(msg);
+        setVideollamadaAlertaOpen(true);
+      } else {
+        console.log("❌ Mostrando toast de error general");
+        try {
+          toast({ title: "Error videollamada", description: msg });
+        } catch (e) {}
+      }
     }
   };
 
@@ -604,10 +611,7 @@ export default function DashboardPacientePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20 sm:pb-0">
-      {" "}
-      {/* Añadido padding-bottom para móvil */}
-      <NavbarUniversal showNotifications notificationCount={3} />
+    <div className="min-h-screen bg-gray-50">
       {/* Contenido Principal */}
       <main className="container mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8">
         {error && (
@@ -736,7 +740,7 @@ export default function DashboardPacientePage() {
                   size="sm"
                   variant="outline"
                   className="mt-3 w-full h-8 text-xs"
-                  onClick={() => setActiveTab("recetas")}
+                  onClick={() => router.push("/dashboard/paciente/recetas")}
                 >
                   <Pill className="w-3 h-3 mr-1" />
                   Ver Recetas
@@ -766,567 +770,143 @@ export default function DashboardPacientePage() {
           </Card>
         </div>
 
-        {/* Tabs Responsivos Mejorados */}
-        <Tabs
-          value={activeTab}
-          onValueChange={setActiveTab}
-          className="space-y-4 sm:space-y-6"
-        >
-          {/* Solo mostrar tabs en desktop */}
-          <div className="hidden sm:block">
-            <TabsList className="grid w-full grid-cols-3 sm:grid-cols-6 h-12 bg-gray-100 p-1 gap-1">
-              <TabsTrigger
-                value="resumen"
-                className="text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm"
-              >
-                Resumen
-              </TabsTrigger>
-              <TabsTrigger
-                value="perfil"
-                className="text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm"
-              >
-                Perfil
-              </TabsTrigger>
-              <TabsTrigger
-                value="citas"
-                className="text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm"
-              >
-                Citas
-              </TabsTrigger>
-              <TabsTrigger
-                value="recetas"
-                className="text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm"
-              >
-                Recetas
-              </TabsTrigger>
-              <TabsTrigger
-                value="seguimiento"
-                className="text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm"
-              >
-                📦 Seguimiento
-              </TabsTrigger>
-              <TabsTrigger
-                value="resultados"
-                className="text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm"
-              >
-                Resultados
-              </TabsTrigger>
-            </TabsList>
-          </div>
+        {/* Navegación a secciones — Ley de Semejanza: misma estructura, mismo gap */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 mb-6 lg:mb-8">
+          <Card className="cursor-pointer hover:shadow-lg transition-all duration-200 border-0 sm:border bg-gradient-to-br from-blue-50 to-blue-100"
+            onClick={() => router.push("/dashboard/paciente/perfil")}>
+            <CardContent className="flex flex-col items-center justify-center py-4 sm:py-6">
+              <User className="w-8 h-8 sm:w-10 sm:h-10 text-blue-600 mb-2" />
+              <span className="text-sm font-medium text-gray-800">Mi Perfil</span>
+            </CardContent>
+          </Card>
+          <Card className="cursor-pointer hover:shadow-lg transition-all duration-200 border-0 sm:border bg-gradient-to-br from-green-50 to-green-100"
+            onClick={() => router.push("/dashboard/paciente/citas")}>
+            <CardContent className="flex flex-col items-center justify-center py-4 sm:py-6">
+              <Calendar className="w-8 h-8 sm:w-10 sm:h-10 text-green-600 mb-2" />
+              <span className="text-sm font-medium text-gray-800">Mis Citas</span>
+            </CardContent>
+          </Card>
+          <Card className="cursor-pointer hover:shadow-lg transition-all duration-200 border-0 sm:border bg-gradient-to-br from-purple-50 to-purple-100"
+            onClick={() => router.push("/dashboard/paciente/recetas")}>
+            <CardContent className="flex flex-col items-center justify-center py-4 sm:py-6">
+              <Pill className="w-8 h-8 sm:w-10 sm:h-10 text-purple-600 mb-2" />
+              <span className="text-sm font-medium text-gray-800">Recetas</span>
+            </CardContent>
+          </Card>
+          <Card className="cursor-pointer hover:shadow-lg transition-all duration-200 border-0 sm:border bg-gradient-to-br from-orange-50 to-orange-100"
+            onClick={() => router.push("/dashboard/paciente/seguimiento")}>
+            <CardContent className="flex flex-col items-center justify-center py-4 sm:py-6">
+              <Package className="w-8 h-8 sm:w-10 sm:h-10 text-orange-600 mb-2" />
+              <span className="text-sm font-medium text-gray-800">Seguimiento</span>
+            </CardContent>
+          </Card>
+          <Card className="cursor-pointer hover:shadow-lg transition-all duration-200 border-0 sm:border bg-gradient-to-br from-pink-50 to-pink-100"
+            onClick={() => router.push("/dashboard/paciente/resultados")}>
+            <CardContent className="flex flex-col items-center justify-center py-4 sm:py-6">
+              <TestTube className="w-8 h-8 sm:w-10 sm:h-10 text-pink-600 mb-2" />
+              <span className="text-sm font-medium text-gray-800">Resultados</span>
+            </CardContent>
+          </Card>
+        </div>
 
-          {/* Contenido de Tabs */}
-          <TabsContent value="resumen" className="space-y-4 sm:space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-              {/* Información Personal */}
-              <Card className="bg-white shadow-sm border-0 sm:border">
-                <CardHeader className="pb-3 sm:pb-4">
-                  <CardTitle className="flex items-center text-base sm:text-lg">
-                    <User className="w-4 h-4 sm:w-5 sm:h-5 mr-2 text-blue-600" />
-                    Información Personal
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4 sm:space-y-5">
-                  <div className="grid grid-cols-2 gap-3 sm:gap-4">
-                    <div>
-                      <p className="text-xs sm:text-sm text-gray-600">Edad</p>
-                      <p className="font-medium text-sm sm:text-base">
-                        {perfil?.informacion_personal.edad} años
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs sm:text-sm text-gray-600">
-                        Tipo de Sangre
-                      </p>
-                      <p className="font-medium text-sm sm:text-base">
-                        {perfil?.informacion_personal.tipo_sangre ||
-                          "No registrado"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs sm:text-sm text-gray-600">IMC</p>
-                      <div className="flex items-center space-x-2">
-                        <p className="font-medium text-sm sm:text-base">
-                          {perfil?.informacion_medica.imc || "N/A"}
-                        </p>
-                        <Badge
-                          variant={imcStatus.color as any}
-                          className="text-xs"
-                        >
-                          {imcStatus.status}
-                        </Badge>
-                      </div>
-                    </div>
-                    <div>
-                      <p className="text-xs sm:text-sm text-gray-600">Seguro</p>
-                      <p className="font-medium text-sm sm:text-base">
-                        {perfil?.informacion_medica.seguro_medico ? "Sí" : "No"}
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Acciones Rápidas */}
-              <Card className="bg-white shadow-sm border-0 sm:border">
-                <CardHeader className="pb-3 sm:pb-4">
-                  <CardTitle className="text-base sm:text-lg">
-                    Acciones Rápidas
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-2 gap-3 sm:gap-4">
-                    <Button
-                      variant="outline"
-                      className="h-14 sm:h-16 flex flex-col bg-white hover:bg-gray-50 border-2"
-                      onClick={() => router.push("/dashboard/citas")}
-                    >
-                      <Calendar className="w-5 h-5 sm:w-6 sm:h-6 mb-1 sm:mb-2 text-blue-600" />
-                      <span className="text-xs sm:text-sm">Agendar Cita</span>
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="h-14 sm:h-16 flex flex-col bg-white hover:bg-gray-50 border-2"
-                      onClick={() => setActiveTab("recetas")}
-                    >
-                      <Pill className="w-5 h-5 sm:w-6 sm:h-6 mb-1 sm:mb-2 text-green-600" />
-                      <span className="text-xs sm:text-sm">Ver Recetas</span>
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="h-14 sm:h-16 flex flex-col bg-white hover:bg-gray-50 border-2"
-                      onClick={() => setActiveTab("resultados")}
-                    >
-                      <TestTube className="w-5 h-5 sm:w-6 sm:h-6 mb-1 sm:mb-2 text-purple-600" />
-                      <span className="text-xs sm:text-sm">Resultados</span>
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="h-14 sm:h-16 flex flex-col bg-white hover:bg-gray-50 border-2"
-                      onClick={() => setEditarPerfilOpen(true)}
-                    >
-                      <User className="w-5 h-5 sm:w-6 sm:h-6 mb-1 sm:mb-2 text-orange-600" />
-                      <span className="text-xs sm:text-sm">Editar Perfil</span>
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="perfil">
-            <Card className="bg-white shadow-sm border-0 sm:border">
-              <CardHeader>
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-3 sm:space-y-0">
-                  <div>
-                    <CardTitle className="text-base sm:text-lg">
-                      Mi Perfil Médico
-                    </CardTitle>
-                    <CardDescription className="text-sm sm:text-base">
-                      Información personal y médica
-                    </CardDescription>
-                  </div>
-                  <Button
-                    onClick={() => setEditarPerfilOpen(true)}
-                    size="sm"
-                    className="w-full sm:w-auto h-10 sm:h-9"
-                  >
-                    <User className="w-4 h-4 mr-2" />
-                    Editar Perfil
-                  </Button>
+        {/* Información Personal y Acciones Rápidas */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6 lg:mb-8">
+          {/* Información Personal */}
+          <Card className="bg-white shadow-sm border-0 sm:border">
+            <CardHeader className="pb-3 sm:pb-4">
+              <CardTitle className="flex items-center text-base sm:text-lg">
+                <User className="w-4 h-4 sm:w-5 sm:h-5 mr-2 text-blue-600" />
+                Información Personal
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4 sm:space-y-5">
+              <div className="grid grid-cols-2 gap-3 sm:gap-4">
+                <div>
+                  <p className="text-xs sm:text-sm text-gray-600">Edad</p>
+                  <p className="font-medium text-sm sm:text-base">
+                    {perfil?.informacion_personal.edad} años
+                  </p>
                 </div>
-              </CardHeader>
-              <CardContent className="space-y-6 sm:space-y-8">
-                {perfil && (
-                  <>
-                    {/* Información Personal */}
-                    <div>
-                      <h3 className="text-sm sm:text-base font-semibold mb-4 flex items-center">
-                        <User className="w-4 h-4 sm:w-5 sm:h-5 mr-2 text-blue-600" />
-                        Información Personal
-                      </h3>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
-                        <div>
-                          <p className="text-xs sm:text-sm text-gray-600">
-                            Nombre Completo
-                          </p>
-                          <p className="font-medium text-sm sm:text-base mt-1">
-                            {perfil.usuario.nombre} {perfil.usuario.apellido}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs sm:text-sm text-gray-600">
-                            DNI
-                          </p>
-                          <p className="font-medium text-sm sm:text-base mt-1">
-                            {perfil.informacion_personal.dni}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs sm:text-sm text-gray-600">
-                            Email
-                          </p>
-                          <p className="font-medium text-sm sm:text-base mt-1 flex items-center">
-                            <Mail className="w-3 h-3 sm:w-4 sm:h-4 mr-2 text-gray-500" />
-                            {perfil.usuario.email}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs sm:text-sm text-gray-600">
-                            Teléfono
-                          </p>
-                          <p className="font-medium text-sm sm:text-base mt-1 flex items-center">
-                            <Phone className="w-3 h-3 sm:w-4 sm:h-4 mr-2 text-gray-500" />
-                            {perfil.usuario.telefono || "No registrado"}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Información Médica */}
-                    <div>
-                      <h3 className="text-sm sm:text-base font-semibold mb-4 flex items-center">
-                        <Stethoscope className="w-4 h-4 sm:w-5 sm:h-5 mr-2 text-blue-600" />
-                        Información Médica
-                      </h3>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
-                        <div>
-                          <p className="text-xs sm:text-sm text-gray-600">
-                            Tipo de Sangre
-                          </p>
-                          <p className="font-medium text-sm sm:text-base mt-1">
-                            {perfil.informacion_personal.tipo_sangre ||
-                              "No registrado"}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs sm:text-sm text-gray-600">
-                            Peso
-                          </p>
-                          <p className="font-medium text-sm sm:text-base mt-1">
-                            {perfil.informacion_medica.peso_kg
-                              ? `${perfil.informacion_medica.peso_kg} kg`
-                              : "No registrado"}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs sm:text-sm text-gray-600">
-                            Altura
-                          </p>
-                          <p className="font-medium text-sm sm:text-base mt-1">
-                            {perfil.informacion_medica.altura_cm
-                              ? `${perfil.informacion_medica.altura_cm} cm`
-                              : "No registrado"}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs sm:text-sm text-gray-600">
-                            IMC
-                          </p>
-                          <div className="flex items-center space-x-2 mt-1">
-                            <p className="font-medium text-sm sm:text-base">
-                              {perfil.informacion_medica.imc || "N/A"}
-                            </p>
-                            <Badge
-                              variant={imcStatus.color as any}
-                              className="text-xs"
-                            >
-                              {imcStatus.status}
-                            </Badge>
-                          </div>
-                        </div>
-                        <div className="sm:col-span-2">
-                          <p className="text-xs sm:text-sm text-gray-600">
-                            Alergias
-                          </p>
-                          <p className="font-medium text-sm sm:text-base mt-1">
-                            {perfil.informacion_medica.alergias ||
-                              "Ninguna registrada"}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Contacto de Emergencia */}
-                    <div>
-                      <h3 className="text-sm sm:text-base font-semibold mb-4 flex items-center">
-                        <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5 mr-2 text-blue-600" />
-                        Contacto de Emergencia
-                      </h3>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
-                        <div>
-                          <p className="text-xs sm:text-sm text-gray-600">
-                            Nombre
-                          </p>
-                          <p className="font-medium text-sm sm:text-base mt-1">
-                            {perfil.contacto_emergencia.nombre ||
-                              "No registrado"}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs sm:text-sm text-gray-600">
-                            Teléfono
-                          </p>
-                          <p className="font-medium text-sm sm:text-base mt-1">
-                            {perfil.contacto_emergencia.telefono ||
-                              "No registrado"}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="citas">
-            <Card className="bg-white shadow-sm border-0 sm:border">
-              <CardHeader>
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-3 sm:space-y-0">
-                  <div>
-                    <CardTitle className="text-base sm:text-lg">
-                      Mis Citas Médicas
-                    </CardTitle>
-                    <CardDescription className="text-sm sm:text-base">
-                      {citasPaciente.length > 0
-                        ? `${citasPaciente.length} citas encontradas`
-                        : "Historial de consultas"}
-                    </CardDescription>
-                  </div>
-                  <Button
-                    onClick={() => router.push("/dashboard/citas")}
-                    size="sm"
-                    className="w-full sm:w-auto h-10 sm:h-9 bg-blue-600 hover:bg-blue-700"
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Agendar Cita
-                  </Button>
+                <div>
+                  <p className="text-xs sm:text-sm text-gray-600">
+                    Tipo de Sangre
+                  </p>
+                  <p className="font-medium text-sm sm:text-base">
+                    {perfil?.informacion_personal.tipo_sangre ||
+                      "No registrado"}
+                  </p>
                 </div>
-              </CardHeader>
-              <CardContent>
-                {citasPaciente.length > 0 ? (
-                  <div className="space-y-3 sm:space-y-4">
-                    {(mostrarTodasLasCitas
-                      ? citasPaciente
-                      : citasPaciente.slice(0, 5)
-                    ).map((cita) => {
-                      const medicoData = getMedicoData(cita);
-                      const puedeUnirse = puedeUnirseAVideollamada(cita);
-
-                      return (
-                        <div
-                          key={cita.id}
-                          className="p-3 sm:p-4 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors cursor-pointer shadow-sm"
-                          onClick={() => verDetallesCita(cita)}
-                        >
-                          <div className="flex items-start justify-between">
-                            <div className="flex items-start space-x-3 sm:space-x-4 flex-1 min-w-0">
-                              {/* Fecha y Hora */}
-                              <div className="text-center min-w-[70px] sm:min-w-[80px] flex-shrink-0">
-                                <div className="text-xs font-medium text-gray-600 uppercase">
-                                  {new Date(cita.fecha_cita).toLocaleDateString(
-                                    "es-PE",
-                                    {
-                                      month: "short",
-                                      day: "numeric",
-                                    }
-                                  )}
-                                </div>
-                                <div className="text-base sm:text-lg font-bold text-blue-600 mt-1">
-                                  {new Date(cita.fecha_cita).toLocaleDateString(
-                                    "es-PE",
-                                    {
-                                      weekday: "short",
-                                    }
-                                  )}
-                                </div>
-                                <div className="text-xs font-semibold bg-blue-100 text-blue-600 px-2 py-1 rounded mt-1">
-                                  {formatearHora(cita.hora_cita)}
-                                </div>
-                              </div>
-
-                              {/* Información del Médico y Cita */}
-                              <div className="flex-1 min-w-0">
-                                <h4 className="font-semibold text-sm sm:text-base truncate">
-                                  Dr. {medicoData.nombre} {medicoData.apellido}
-                                </h4>
-                                <div className="flex items-center space-x-2 mt-1 sm:mt-2 flex-wrap">
-                                  <Badge
-                                    variant="outline"
-                                    className="text-xs capitalize"
-                                  >
-                                    {cita.tipo_cita || "presencial"}
-                                  </Badge>
-                                  <p className="text-xs sm:text-sm text-gray-600 truncate">
-                                    {medicoData.especialidad}
-                                  </p>
-                                </div>
-                                {cita.motivo_consulta && (
-                                  <p className="text-xs sm:text-sm text-gray-500 mt-2 truncate">
-                                    {cita.motivo_consulta}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Estado y Acciones */}
-                            <div className="flex flex-col items-end space-y-2 sm:space-y-3 ml-2 sm:ml-4">
-                              <Badge
-                                variant={
-                                  cita.estado === "completada"
-                                    ? "default"
-                                    : cita.estado === "confirmada"
-                                    ? "secondary"
-                                    : cita.estado === "cancelada"
-                                    ? "destructive"
-                                    : "outline"
-                                }
-                                className="text-xs capitalize"
-                              >
-                                {cita.estado || "pendiente"}
-                              </Badge>
-
-                              <div
-                                className="flex space-x-1 sm:space-x-2"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-8 w-8 sm:h-9 sm:w-9 p-0"
-                                  onClick={() => verDetallesCita(cita)}
-                                >
-                                  <Eye className="w-4 h-4" />
-                                </Button>
-
-                                {cita.tipo_cita === "virtual" &&
-                                  puedeUnirse && (
-                                    <Button
-                                      size="sm"
-                                      className="h-8 sm:h-9 px-2 sm:px-3 bg-green-600 hover:bg-green-700 text-white"
-                                      onClick={() => unirseAVideollamada(cita)}
-                                    >
-                                      <Video className="w-4 h-4" />
-                                    </Button>
-                                  )}
-
-                                {cita.tipo_cita === "presencial" && (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-8 w-8 sm:h-9 sm:w-9 p-0"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      verUbicacionConsultorio(cita);
-                                    }}
-                                  >
-                                    <MapPin className="w-4 h-4" />
-                                  </Button>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-
-                    {/* Botón "Ver más" / "Ver menos" */}
-                    {citasPaciente.length > 5 && (
-                      <div className="flex justify-center pt-4 sm:pt-6">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() =>
-                            setMostrarTodasLasCitas(!mostrarTodasLasCitas)
-                          }
-                          className="flex items-center gap-2 h-10 sm:h-9"
-                        >
-                          {mostrarTodasLasCitas ? (
-                            <>
-                              <ChevronUp className="w-4 h-4" />
-                              Ver menos
-                            </>
-                          ) : (
-                            <>
-                              <ChevronDown className="w-4 h-4" />
-                              Ver todas ({citasPaciente.length})
-                            </>
-                          )}
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-center py-8 sm:py-12">
-                    <Calendar className="w-16 h-16 sm:w-20 sm:h-20 text-gray-400 mx-auto mb-4 sm:mb-6" />
-                    <p className="text-gray-600 mb-4 sm:mb-6 text-sm sm:text-base">
-                      No hay citas programadas
+                <div>
+                  <p className="text-xs sm:text-sm text-gray-600">IMC</p>
+                  <div className="flex items-center space-x-2">
+                    <p className="font-medium text-sm sm:text-base">
+                      {perfil?.informacion_medica.imc || "N/A"}
                     </p>
-                    <Button
-                      onClick={() => router.push("/dashboard/citas")}
-                      size="lg"
-                      className="bg-blue-600 hover:bg-blue-700"
+                    <Badge
+                      variant={imcStatus.color as any}
+                      className="text-xs"
                     >
-                      <Plus className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
-                      Agendar Primera Cita
-                    </Button>
+                      {imcStatus.status}
+                    </Badge>
                   </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
+                </div>
+                <div>
+                  <p className="text-xs sm:text-sm text-gray-600">Seguro</p>
+                  <p className="font-medium text-sm sm:text-base">
+                    {perfil?.informacion_medica.seguro_medico ? "Sí" : "No"}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
-          <TabsContent value="recetas">
-            <Card className="bg-white shadow-sm border-0 sm:border">
-              <CardHeader>
-                <CardTitle className="text-base sm:text-lg">
-                  Mis Recetas Médicas
-                </CardTitle>
-                <CardDescription className="text-sm sm:text-base">
-                  Medicamentos prescritos y envío a farmacias
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ListaRecetasPaciente />
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="seguimiento">
-            <Card className="bg-white shadow-sm border-0 sm:border">
-              <CardHeader>
-                <CardTitle className="text-base sm:text-lg">
-                  📦 Seguimiento de Recetas
-                </CardTitle>
-                <CardDescription className="text-sm sm:text-base">
-                  Estado de tus recetas en la farmacia
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <SeguimientoRecetasPaciente />
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="resultados">
-            <Card className="bg-white shadow-sm border-0 sm:border">
-              <CardHeader>
-                <CardTitle className="text-base sm:text-lg">
-                  Resultados de Laboratorio
-                </CardTitle>
-                <CardDescription className="text-sm sm:text-base">
-                  Exámenes y resultados
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ResultadosLaboratorioSection />
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+          {/* Acciones Rápidas */}
+          <Card className="bg-white shadow-sm border-0 sm:border">
+            <CardHeader className="pb-3 sm:pb-4">
+              <CardTitle className="text-base sm:text-lg">
+                Acciones Rápidas
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-3 sm:gap-4">
+                <Button
+                  variant="outline"
+                  className="h-14 sm:h-16 flex flex-col bg-white hover:bg-gray-50 border-2"
+                  onClick={() => router.push("/dashboard/citas")}
+                >
+                  <Calendar className="w-5 h-5 sm:w-6 sm:h-6 mb-1 sm:mb-2 text-blue-600" />
+                  <span className="text-xs sm:text-sm">Agendar Cita</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-14 sm:h-16 flex flex-col bg-white hover:bg-gray-50 border-2"
+                  onClick={() => router.push("/dashboard/paciente/recetas")}
+                >
+                  <Pill className="w-5 h-5 sm:w-6 sm:h-6 mb-1 sm:mb-2 text-green-600" />
+                  <span className="text-xs sm:text-sm">Ver Recetas</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-14 sm:h-16 flex flex-col bg-white hover:bg-gray-50 border-2"
+                  onClick={() => router.push("/dashboard/paciente/resultados")}
+                >
+                  <TestTube className="w-5 h-5 sm:w-6 sm:h-6 mb-1 sm:mb-2 text-purple-600" />
+                  <span className="text-xs sm:text-sm">Resultados</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-14 sm:h-16 flex flex-col bg-white hover:bg-gray-50 border-2"
+                  onClick={() => setEditarPerfilOpen(true)}
+                >
+                  <User className="w-5 h-5 sm:w-6 sm:h-6 mb-1 sm:mb-2 text-orange-600" />
+                  <span className="text-xs sm:text-sm">Editar Perfil</span>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </main>
-      {/* Navegación Inferior para Móviles */}
-      <BottomNavigation activeTab={activeTab} onTabChange={setActiveTab} />
+
       {/* Modales */}
       <DetallesCitaModal
         isOpen={detallesCitaOpen}
@@ -1339,6 +919,67 @@ export default function DashboardPacientePage() {
         onClose={() => setEditarPerfilOpen(false)}
         perfil={perfil}
         onPerfilActualizado={recargarDatos}
+      />
+      
+      {/* 🔥 MODAL: Alerta de Videollamada no iniciada - Diseño para adultos mayores */}
+      {videollamadaAlertaOpen && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95">
+            {/* Icono */}
+            <div className="flex justify-center">
+              <div className="bg-yellow-100 p-3 rounded-full">
+                <AlertTriangle className="w-10 h-10 text-yellow-600" />
+              </div>
+            </div>
+
+            {/* Título */}
+            <div className="text-center">
+              <h2 className="text-2xl font-bold text-gray-900">
+                ⏳ Videollamada<br />no disponible
+              </h2>
+            </div>
+
+            {/* Mensaje principal */}
+            <div className="bg-yellow-50 rounded-xl p-4 border-2 border-yellow-300">
+              <p className="text-lg text-gray-800 font-semibold leading-relaxed text-center whitespace-pre-line">
+                {videollamadaAlertaMensaje}
+              </p>
+            </div>
+
+            {/* Información adicional */}
+            <div className="bg-blue-50 rounded-xl p-4 border-2 border-blue-300">
+              <p className="text-base text-gray-700 leading-relaxed">
+                <strong className="text-blue-700">💡 El médico iniciará</strong>
+                <br />
+                la videollamada en la hora programada.
+              </p>
+            </div>
+
+            {/* Botón de acción */}
+            <div className="pt-2">
+              <Button
+                className="w-full h-12 text-lg font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl"
+                onClick={() => setVideollamadaAlertaOpen(false)}
+              >
+                Entendido
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Evaluación de Cita */}
+      <EvaluacionCitaModal
+        open={evaluacionOpen}
+        onOpenChange={setEvaluacionOpen}
+        citaId={citaAEvaluar?.id || ""}
+        medicoNombre={citaAEvaluar?.medico_nombre || "El médico"}
+        medicoApellido={citaAEvaluar?.medico_apellido || ""}
+        token={token || undefined}
+        onSuccess={() => {
+          // Recargar citas después de una evaluación exitosa
+          window.location.reload();
+        }}
       />
     </div>
   );

@@ -9,8 +9,12 @@ import { verificarToken } from "@/lib/auth"
 export async function GET(request: NextRequest) {
   try {
     // Verificar autenticación y rol de administrador
-    const authResult = await verificarToken(request)
-    if (!authResult.success || authResult.usuario?.rol !== "administrador") {
+    const token = request.headers.get("authorization")?.replace("Bearer ", "");
+    if (!token) {
+      return NextResponse.json({ error: "Token requerido" }, { status: 401 });
+    }
+    const authResult = await verificarToken(token)
+    if (!authResult || authResult.rol !== "administrador") {
       return NextResponse.json({ error: "Acceso no autorizado" }, { status: 401 })
     }
 
@@ -70,8 +74,12 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     // Verificar autenticación y rol de administrador
-    const authResult = await verificarToken(request)
-    if (!authResult.success || authResult.usuario?.rol !== "administrador") {
+    const token = request.headers.get("authorization")?.replace("Bearer ", "");
+    if (!token) {
+      return NextResponse.json({ error: "Token requerido" }, { status: 401 });
+    }
+    const authResult = await verificarToken(token)
+    if (!authResult || authResult.rol !== "administrador") {
       return NextResponse.json({ error: "Acceso no autorizado" }, { status: 401 })
     }
 

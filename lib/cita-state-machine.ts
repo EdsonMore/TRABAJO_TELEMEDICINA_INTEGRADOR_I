@@ -6,38 +6,56 @@
  * Estados válidos de una cita:
  * - programada  → Estado inicial después de crear cita (pago pendiente)
  * - confirmada  → Pago completado
- * - en_curso    → La cita está sucediendo ahora
+ * - en_curso    → La cita está sucediendo ahora (solo para VIRTUAL)
  * - completada  → Finalizada exitosamente
  * - cancelada   → Cancelada por paciente o médico
  * - no_asistio  → Paciente no presentó
  * 
- * DIAGRAMA DE TRANSICIONES:
+ * TIPOS DE CITA:
+ * - virtual    → Videollamada (requiere "En progreso")
+ * - domicilio  → A domicilio (sin "En progreso")
+ * - presencial → En clínica (sin "En progreso")
  * 
+ * DIAGRAMA DE TRANSICIONES POR TIPO:
+ * 
+ * VIRTUAL:
  *         ┌────────────────────┐
- *         │   PROGRAMADA       │ ← Inicial (cita creada)
+ *         │   PROGRAMADA       │
  *         └─────────┬──────────┘
  *                   │ (pago completado)
  *                   ↓
  *         ┌────────────────────┐
  *         │   CONFIRMADA       │
  *         └─────────┬──────────┘
- *                   │ (hora de cita)
+ *                   │ (inicia videollamada)
  *                   ↓
  *         ┌────────────────────┐
  *         │   EN_CURSO         │
  *         └─────────┬──────────┘
- *                   │ (cita finalizada)
+ *                   │ (termina videollamada)
  *                   ↓
  *         ┌────────────────────┐
- *         │   COMPLETADA       │ ← Estado final
+ *         │   COMPLETADA       │
  *         └────────────────────┘
  *
- * TAMBIÉN PUEDE TRANSICIONAR A:
- *   - CANCELADA     (desde: programada, confirmada)
- *   - NO_ASISTIO    (desde: programada, confirmada, en_curso)
+ * DOMICILIO / PRESENCIAL:
+ *         ┌────────────────────┐
+ *         │   PROGRAMADA       │
+ *         └─────────┬──────────┘
+ *                   │ (pago completado)
+ *                   ↓
+ *         ┌────────────────────┐
+ *         │   CONFIRMADA       │
+ *         └─────────┬──────────┘
+ *                   │ (cita realizada)
+ *                   ↓
+ *         ┌────────────────────┐
+ *         │   COMPLETADA       │
+ *         └────────────────────┘
  */
 
 export type EstadoCita = 'programada' | 'confirmada' | 'en_curso' | 'completada' | 'cancelada' | 'no_asistio';
+export type TipoCita = 'virtual' | 'domicilio' | 'presencial';
 
 export interface TransicionValidada {
   esValida: boolean;
@@ -48,6 +66,9 @@ export interface TransicionValidada {
 /**
  * MÁQUINA DE ESTADOS: Validación de transiciones
  * Define qué transiciones son permitidas desde cada estado
+ * 
+ * ⚠️ IMPORTANTE: Para VIRTUAL, "En progreso" es OBLIGATORIO
+ *                Para DOMICILIO/PRESENCIAL, se salta "En progreso"
  */
 const TRANSICIONES_PERMITIDAS: Record<EstadoCita, EstadoCita[]> = {
   programada: [
@@ -57,48 +78,49 @@ const TRANSICIONES_PERMITIDAS: Record<EstadoCita, EstadoCita[]> = {
   ],
   
   confirmada: [
-    'en_curso',        // Cita en progreso
+    'en_curso',        // Para VIRTUAL: Cita en progreso
+    'completada',      // Para DOMICILIO/PRESENCIAL: Completar directamente
     'cancelada',       // Cancelar antes de que ocurra
     'no_asistio'       // Paciente no se presentó
   ],
   
   en_curso: [
-    'completada',      // Finalizar cita
+    'completada',      // Finalizar cita (solo VIRTUAL)
     'no_asistio'       // Paciente se desconectó/no asistió
   ],
   
   completada: [
-    // Una cita completada no puede cambiar a otro estado
-    // (es terminal)
+    // Una cita completada no puede cambiar a otro estado (es terminal)
   ],
   
   cancelada: [
-    // Una cita cancelada no puede cambiar a otro estado
-    // (es terminal)
+    // Una cita cancelada no puede cambiar a otro estado (es terminal)
   ],
   
   no_asistio: [
-    // Un "no asistió" no puede cambiar a otro estado
-    // (es terminal)
+    // Un "no asistió" no puede cambiar a otro estado (es terminal)
   ]
 };
 
 /**
  * Validar si una transición de estado es permitida
+ * CONSIDERANDO EL TIPO DE CITA
  * 
  * @param estadoActual - Estado actual de la cita
  * @param nuevoEstado - Nuevo estado propuesto
+ * @param tipoCita - Tipo de cita (virtual, domicilio, presencial)
  * @returns {TransicionValidada} Objeto con validación y razón si es inválida
  * 
  * EJEMPLOS:
- * ✅ programada → confirmada (permitido)
- * ✅ confirmada → cancelada (permitido)
- * ❌ completada → cancelada (NO permitido - estado terminal)
- * ❌ programada → en_curso (NO permitido - debe pasar por confirmada primero)
+ * ✅ (virtual) confirmada → en_curso (permitido)
+ * ✅ (domicilio) confirmada → completada (permitido)
+ * ❌ (virtual) confirmada → completada (NO permitido - debe pasar por en_curso)
+ * ❌ (domicilio) confirmada → en_curso (NO permitido)
  */
 export function validarTransicion(
   estadoActual: EstadoCita,
-  nuevoEstado: EstadoCita
+  nuevoEstado: EstadoCita,
+  tipoCita?: TipoCita
 ): TransicionValidada {
   // No cambiar si es el mismo estado
   if (estadoActual === nuevoEstado) {
@@ -108,14 +130,14 @@ export function validarTransicion(
     };
   }
 
-  // Verificar si la transición existe en la máquina de estados
-  const transicionesPermitidas = TRANSICIONES_PERMITIDAS[estadoActual];
+  // Obtener estados permitidos considerando el tipo de cita
+  const estadosPermitidos = obtenerEstadosPermitidos(estadoActual, tipoCita);
   
-  if (!transicionesPermitidas || !transicionesPermitidas.includes(nuevoEstado)) {
+  if (!estadosPermitidos.includes(nuevoEstado)) {
     return {
       esValida: false,
       razon: `No se puede pasar de "${estadoActual}" a "${nuevoEstado}"`,
-      motivo_rechazo: getMotivoPorTransicionInvalida(estadoActual, nuevoEstado)
+      motivo_rechazo: getMotivoPorTransicionInvalida(estadoActual, nuevoEstado, tipoCita)
     };
   }
 
@@ -130,7 +152,8 @@ export function validarTransicion(
  */
 function getMotivoPorTransicionInvalida(
   estadoActual: EstadoCita,
-  nuevoEstado: EstadoCita
+  nuevoEstado: EstadoCita,
+  tipoCita?: TipoCita
 ): string {
   // Estados terminales
   if (estadoActual === 'completada') {
@@ -143,12 +166,23 @@ function getMotivoPorTransicionInvalida(
     return 'Un "no asistió" no puede cambiar de estado (es terminal)';
   }
 
-  // Transiciones ilógicas
+  // Transiciones ilógicas específicas por tipo de cita
+  if (tipoCita === 'virtual') {
+    if (estadoActual === 'confirmada' && nuevoEstado === 'completada') {
+      return 'Para citas VIRTUALES, debe pasar por "En progreso" antes de completar. Inicie la videollamada primero.';
+    }
+  }
+
+  if ((tipoCita === 'domicilio' || tipoCita === 'presencial') && estadoActual === 'confirmada' && nuevoEstado === 'en_curso') {
+    return `Para citas a ${tipoCita}, no se requiere pasar por "En progreso". Marque como completada directamente.`;
+  }
+
+  // Transiciones ilógicas generales
   if (estadoActual === 'programada' && nuevoEstado === 'en_curso') {
     return 'La cita debe ser confirmada antes de poder iniciarla';
   }
   if (estadoActual === 'programada' && nuevoEstado === 'completada') {
-    return 'La cita debe pasar por "en_curso" antes de poder completarla';
+    return 'La cita debe ser confirmada antes de poder completarla';
   }
 
   return 'Transición no permitida según la máquina de estados';
@@ -156,9 +190,43 @@ function getMotivoPorTransicionInvalida(
 
 /**
  * Obtener los estados permitidos desde el estado actual
+ * CONSIDERANDO EL TIPO DE CITA
+ * 
+ * @param estadoActual - Estado actual de la cita
+ * @param tipoCita - Tipo de cita (virtual, domicilio, presencial)
+ * @returns Estados permitidos para transicionar
  */
-export function obtenerEstadosPermitidos(estadoActual: EstadoCita): EstadoCita[] {
-  return TRANSICIONES_PERMITIDAS[estadoActual] || [];
+export function obtenerEstadosPermitidos(
+  estadoActual: EstadoCita,
+  tipoCita?: TipoCita
+): EstadoCita[] {
+  const estadosBasicos = TRANSICIONES_PERMITIDAS[estadoActual] || [];
+  
+  // Si no se especifica tipo de cita, retornar todos (compatibilidad hacia atrás)
+  if (!tipoCita) {
+    return estadosBasicos;
+  }
+
+  // Lógica inteligente por tipo de cita
+  if (tipoCita === 'virtual') {
+    // Para VIRTUAL: Se requiere pasar por "En progreso"
+    // No permitir ir directo a "Completada" desde "Confirmada"
+    if (estadoActual === 'confirmada') {
+      return estadosBasicos.filter(
+        estado => estado !== 'completada' // Excluir completada directa
+      );
+    }
+  } else if (tipoCita === 'domicilio' || tipoCita === 'presencial') {
+    // Para DOMICILIO/PRESENCIAL: No se puede ir a "En progreso"
+    // Permitir ir directo a "Completada" desde "Confirmada"
+    if (estadoActual === 'confirmada') {
+      return estadosBasicos.filter(
+        estado => estado !== 'en_curso' // Excluir "En progreso"
+      );
+    }
+  }
+
+  return estadosBasicos;
 }
 
 /**

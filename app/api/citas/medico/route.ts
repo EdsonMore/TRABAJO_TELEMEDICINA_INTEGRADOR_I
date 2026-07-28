@@ -5,15 +5,26 @@ import { verificarToken } from "@/lib/auth";
 
 // Función para convertir fecha de UTC a Perú
 function convertirFechaUTCAPeru(fechaUTC: string): string {
-  const fecha = new Date(fechaUTC + "T00:00:00Z"); // Tratar como UTC
-  const offsetPeru = -5 * 60 * 60 * 1000; // UTC-5 en milisegundos
-  return new Date(fecha.getTime() + offsetPeru).toISOString().split("T")[0];
+  try {
+    // Si ya es una fecha válida, convertir directamente
+    const fecha = new Date(fechaUTC);
+    if (isNaN(fecha.getTime())) {
+      // Si no es válida, intentar parsearlo como YYYY-MM-DD
+      return fechaUTC;
+    }
+    // Convertir a Perú (UTC-5)
+    const offsetPeru = -5 * 60 * 60 * 1000;
+    return new Date(fecha.getTime() + offsetPeru).toISOString().split("T")[0];
+  } catch (e) {
+    return fechaUTC;
+  }
 }
 
 export async function GET(request: NextRequest) {
   let client;
   try {
-    const token = request.headers.get("authorization")?.replace("Bearer ", "");
+    const authHeader = request.headers.get("authorization");
+    const token = authHeader?.replace("Bearer ", "") || "";
     const usuario = await verificarToken(token);
 
     if (!usuario || usuario.rol !== "medico") {
@@ -81,7 +92,7 @@ export async function GET(request: NextRequest) {
       "📅 Citas del médico después de conversión:",
       citas.map((c) => ({
         id: c.id,
-        fecha_original: cita.fecha_cita,
+        fecha_original: c.fecha_cita,
         fecha_convertida: c.fecha_cita,
         paciente: c.paciente_nombre,
       }))

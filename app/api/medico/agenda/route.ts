@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
       console.warn(`[WARN AGENDA] NO SE ENCONTRARON CITAS para médico ${medicoId} en rango ${fechaInicio.toISOString().split("T")[0]} a ${fechaFin.toISOString().split("T")[0]}`)
       console.log(`[DEBUG AGENDA] Verificando BD: SELECT COUNT(*) FROM citas WHERE id_medico = ${medicoId}`)
     } else {
-      citasResult.rows.slice(0, 3).forEach((c, idx) => {
+      citasResult.rows.slice(0, 3).forEach((c: any, idx: number) => {
         console.log(`[DEBUG CITA ${idx}] ID: ${c.id}, Fecha: ${c.fecha_cita}, Hora: ${c.hora_cita}, Paciente: ${c.paciente_nombre}`)
       })
     }
@@ -94,7 +94,7 @@ export async function GET(request: NextRequest) {
     const citasPorDia = new Map()
     const citasVistas = new Set()
 
-    citasResult.rows.forEach((cita) => {
+    citasResult.rows.forEach((cita: any) => {
       // Usar la fecha ya convertida a timezone de Perú desde PostgreSQL
       // Asegurar que es YYYY-MM-DD sin hora
       const fechaCita = cita.fecha_cita_peru 
@@ -156,12 +156,12 @@ export async function GET(request: NextRequest) {
     })
 
     // Convertir Map a array de objetos
-    const agenda = Array.from(citasPorDia.entries()).map(([fecha, citas]) => ({
+    const agenda = Array.from(citasPorDia.entries()).map(([fecha, citas]: [string, any[]]) => ({
       fecha,
       total_citas: citas.length,
-      citas_completadas: citas.filter((c) => c.estado === "completada").length,
-      citas_programadas: citas.filter((c) => c.estado === "programada" || c.estado === "confirmada").length,
-      citas_canceladas: citas.filter((c) => c.estado === "cancelada").length,
+      citas_completadas: citas.filter((c: any) => c.estado === "completada").length,
+      citas_programadas: citas.filter((c: any) => c.estado === "programada" || c.estado === "confirmada").length,
+      citas_canceladas: citas.filter((c: any) => c.estado === "cancelada").length,
       citas: citas,
     }))
 
@@ -169,7 +169,7 @@ export async function GET(request: NextRequest) {
     const totalCitas = citasVistas.size
     const hoy = new Date().toISOString().split("T")[0]
     const citasHoy = citasResult.rows.filter(
-      (c) => new Date(c.fecha_cita).toISOString().split("T")[0] === hoy,
+      (c: any) => new Date(c.fecha_cita).toISOString().split("T")[0] === hoy,
     ).length
 
     console.log(`[DEBUG AGENDA] Total de citas retornadas: ${totalCitas}, Citas hoy: ${citasHoy}`)

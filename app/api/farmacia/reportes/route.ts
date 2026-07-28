@@ -153,26 +153,44 @@ export async function GET(request: NextRequest) {
       };
     }
 
-    if (tipo === "resumen") {
-      // Calcular resumen general
-      reporteData.resumen = {
-        fecha_generacion: new Date().toISOString(),
-        recetas_dispensadas_hoy: await client.query(
-          `SELECT COUNT(*) as cantidad FROM recetas 
-           WHERE id_farmacia_dispensadora = $1 
-           AND estado = 'dispensada' 
-           AND DATE(fecha_dispensacion) = CURRENT_DATE`,
-          [farmaciaId]
-        ).then(r => r.rows[0]?.cantidad || 0),
-        items_alerta: await client.query(
-          `SELECT COUNT(*) as cantidad FROM inventario_farmacia 
-           WHERE id_farmacia = $1 
-           AND disponible = true
-           AND (stock_actual = 0 OR stock_actual <= stock_minimo OR fecha_vencimiento <= CURRENT_DATE + INTERVAL '30 days')`,
-          [farmaciaId]
-        ).then(r => r.rows[0]?.cantidad || 0),
-      };
-    }
+    // Siempre generar resumen completo
+    const recetasHoyResult = await client.query(
+      `SELECT COUNT(*) as cantidad FROM recetas 
+       WHERE id_farmacia_dispensadora = $1 
+       AND estado = 'dispensada' 
+       AND DATE(fecha_dispensacion) = CURRENT_DATE`,
+      [farmaciaId]
+    );
+
+    const ventasHoyResult = await client.query(
+      `SELECT SUM(inv.precio_venta * rd.cantidad) as ingreso
+      FROM recetas r
+      LEFT JOIN receta_detalle rd ON r.id = rd.id_receta
+      LEFT JOIN inventario_farmacia inv ON rd.medicamento_id = inv.id_medicamento 
+        AND inv.id_farmacia = $1
+      WHERE r.id_farmacia_dispensadora = $1
+      AND r.estado = 'dispensada'
+      AND DATE(r.fecha_dispensacion) = CURRENT_DATE`,
+      [farmaciaId]
+    );
+
+    const alertasResult = await client.query(
+      `SELECT COUNT(*) as cantidad FROM inventario_farmacia 
+       WHERE id_farmacia = $1 
+       AND disponible = true
+       AND (stock_actual = 0 OR stock_actual <= stock_minimo OR fecha_vencimiento <= CURRENT_DATE + INTERVAL '30 days')`,
+      [farmaciaId]
+    );
+
+    reporteData.resumen = {
+      fecha_generacion: new Date().toISOString(),
+      recetas_dispensadas_hoy: recetasHoyResult.rows[0]?.cantidad || 0,
+      ventas_hoy: ventasHoyResult.rows[0]?.ingreso || 0,
+      items_alerta: alertasResult.rows[0]?.cantidad || 0,
+      recetas_pendientes: reporteData.recetas?.resumen?.total || 0,
+      stock_bajo: reporteData.inventario?.resumen?.bajo || 0,
+      agotados: reporteData.inventario?.resumen?.agotados || 0,
+    };
 
     return NextResponse.json({
       success: true,

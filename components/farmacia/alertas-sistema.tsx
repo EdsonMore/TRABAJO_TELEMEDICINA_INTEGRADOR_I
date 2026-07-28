@@ -34,6 +34,7 @@ import {
   Info,
   Flame,
   Skull,
+  FileText,
 } from "lucide-react";
 
 interface Alerta {
@@ -61,6 +62,7 @@ export default function AlertasSistema({ onVolver }: AlertasProps) {
   const [alertasAgrupadas, setAlertasAgrupadas] = useState<any>({});
   const [estadisticas, setEstadisticas] = useState<any>({});
   const [cargando, setCargando] = useState(true);
+  const [descargandoPDF, setDescargandoPDF] = useState(false);
   const [filtroTipo, setFiltroTipo] = useState("todas");
 
   useEffect(() => {
@@ -95,6 +97,43 @@ export default function AlertasSistema({ onVolver }: AlertasProps) {
       console.error("Error cargando alertas:", error);
     } finally {
       setCargando(false);
+    }
+  };
+
+  const descargarPDFAlertas = async () => {
+    if (!token) return;
+
+    try {
+      setDescargandoPDF(true);
+      const queryParams = new URLSearchParams();
+      if (filtroTipo && filtroTipo !== "todas") {
+        queryParams.append("tipo", filtroTipo);
+      }
+
+      const response = await fetch(
+        `/api/farmacia/alertas/exportar-pdf?${queryParams}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `alertas-farmacia-${new Date().toISOString().split("T")[0]}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(link);
+      }
+    } catch (error) {
+      console.error("Error descargando PDF:", error);
+    } finally {
+      setDescargandoPDF(false);
     }
   };
 
@@ -392,19 +431,33 @@ export default function AlertasSistema({ onVolver }: AlertasProps) {
                 <div className="text-sm text-gray-600">
                   {estadisticas.total || 0} alertas encontradas
                 </div>
-                <Button
-                  variant="outline"
-                  onClick={cargarAlertas}
-                  disabled={cargando}
-                  className="gap-2"
-                >
-                  {cargando ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="w-4 h-4" />
-                  )}
-                  Actualizar
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={cargarAlertas}
+                    disabled={cargando || descargandoPDF}
+                    className="gap-2"
+                  >
+                    {cargando ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-4 h-4" />
+                    )}
+                    Actualizar
+                  </Button>
+                  <Button
+                    onClick={descargarPDFAlertas}
+                    disabled={cargando || descargandoPDF || estadisticas.total === 0}
+                    className="gap-2 bg-blue-600 hover:bg-blue-700"
+                  >
+                    {descargandoPDF ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <FileText className="w-4 h-4" />
+                    )}
+                    Descargar PDF
+                  </Button>
+                </div>
               </div>
             </div>
           </CardContent>

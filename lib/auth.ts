@@ -12,7 +12,7 @@ const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "100d";
 
 // Interfaz para el payload del JWT
 export interface JWTPayload {
-  id: string;
+  id?: string;
   userId: string;
   email: string;
   rol: string;
@@ -36,7 +36,7 @@ export async function verifyPassword(
 
 // Función para generar token JWT
 export function generateToken(payload: JWTPayload): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN as any });
 }
 
 // Función para verificar y decodificar token JWT

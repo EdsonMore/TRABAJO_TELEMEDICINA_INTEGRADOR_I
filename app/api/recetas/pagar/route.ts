@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
     // Actualizar la receta con farmacia y estado_envio = 'enviada'
     // SOLO se actualiza después de pago exitoso
     // CRÍTICO: Usar farmacia_seleccionada_id (no id_farmacia_dispensadora)
-    await client.query(
+    const updateResult = await client.query(
       `UPDATE recetas 
        SET farmacia_seleccionada_id = $1,
            fecha_envio_farmacia = NOW(),
@@ -120,7 +120,8 @@ export async function POST(request: NextRequest) {
            tipo_entrega = $3,
            direccion_entrega = $4,
            costo_entrega = $5
-       WHERE id = $2`,
+       WHERE id = $2
+       RETURNING codigo_receta`,
       [
         farmacia_id,
         receta_id,
@@ -129,6 +130,60 @@ export async function POST(request: NextRequest) {
         costo_entrega || 0,
       ]
     );
+
+    const codigoReceta = updateResult.rows[0]?.codigo_receta || "Receta";
+
+    // ===== CREAR NOTIFICACIÓN PARA LA FARMACIA =====
+    try {
+      // Obtener nombre del paciente
+      const pacienteResult = await client.query(
+        `SELECT u.nombre FROM pacientes p 
+         JOIN usuarios u ON p.id_usuario = u.id 
+         JOIN citas c ON p.id = c.id_paciente 
+         JOIN recetas r ON r.id_cita = c.id 
+         WHERE r.id = $1`,
+        [receta_id]
+      );
+
+      const nombrePaciente =
+        pacienteResult.rows[0]?.nombre || "Paciente desconocido";
+
+      // Obtener id_usuario de la farmacia
+      const farmaciaUsuarioResult = await client.query(
+        `SELECT id_usuario FROM farmacias WHERE id = $1`,
+        [farmacia_id]
+      );
+
+      if (farmaciaUsuarioResult.rows.length > 0) {
+        const farmaciaUsuarioId = farmaciaUsuarioResult.rows[0].id_usuario;
+
+        // Insertar notificación para la farmacia
+        await client.query(
+          `INSERT INTO notificaciones (id_usuario, titulo, mensaje, tipo, id_relacionado, leida, created_at)
+           VALUES ($1, $2, $3, 'receta_nueva', $4, false, NOW())
+           RETURNING id`,
+          [
+            farmaciaUsuarioId,
+            "📋 Nueva Receta Recibida",
+            `Has recibido una nueva receta (${codigoReceta}) del paciente ${nombrePaciente}`,
+            receta_id,
+          ]
+        );
+
+        console.log("✅ Notificación de receta enviada a farmacia:", {
+          farmaciaId: farmacia_id,
+          recetaId: receta_id,
+          codigoReceta,
+          paciente: nombrePaciente,
+        });
+      }
+    } catch (farmaciaNotifError: any) {
+      console.error(
+        "⚠️ Error al crear notificación para farmacia:",
+        farmaciaNotifError
+      );
+      // No romper el flujo principal si falla la notificación
+    }
 
     return NextResponse.json({
       success: true,

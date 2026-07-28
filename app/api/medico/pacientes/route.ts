@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
       [medicoId]
     );
 
-    const pacientes = pacientesResult.rows.map((paciente) => {
+    const pacientes = pacientesResult.rows.map((paciente: any) => {
       // Calcular edad
       const fechaNacimiento = new Date(paciente.fecha_nacimiento);
       const hoy = new Date();
@@ -110,7 +110,7 @@ export async function GET(request: NextRequest) {
     // Estadísticas generales
     const estadisticas = {
       total_pacientes: pacientes.length,
-      pacientes_activos: pacientes.filter((p) => {
+      pacientes_activos: pacientes.filter((p: any) => {
         const ultimaCita = p.estadisticas_atencion.ultima_cita;
         if (!ultimaCita) return false;
         const diasDesdeUltimaCita = Math.floor(
@@ -123,7 +123,7 @@ export async function GET(request: NextRequest) {
         pacientes.length > 0
           ? (
               pacientes.reduce(
-                (sum, p) => sum + p.estadisticas_atencion.total_citas,
+                (sum: number, p: any) => sum + p.estadisticas_atencion.total_citas,
                 0
               ) / pacientes.length
             ).toFixed(1)

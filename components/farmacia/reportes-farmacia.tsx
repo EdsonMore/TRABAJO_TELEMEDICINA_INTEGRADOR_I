@@ -47,6 +47,7 @@ export default function ReportesFarmacia({ onVolver }: ReporteProps) {
   const [tipoReporte, setTipoReporte] = useState("resumen");
   const [reporte, setReporte] = useState<any>(null);
   const [cargando, setCargando] = useState(false);
+  const [descargandoPDF, setDescargandoPDF] = useState(false);
   const [fechaInicio, setFechaInicio] = useState("");
   const [fechaFin, setFechaFin] = useState("");
 
@@ -67,7 +68,10 @@ export default function ReportesFarmacia({ onVolver }: ReporteProps) {
   }, [token, tipoReporte, fechaInicio, fechaFin]);
 
   const cargarReporte = async () => {
-    if (!token) return;
+    if (!token) {
+      console.warn("No hay token disponible");
+      return;
+    }
 
     try {
       setCargando(true);
@@ -76,18 +80,69 @@ export default function ReportesFarmacia({ onVolver }: ReporteProps) {
       if (fechaInicio) queryParams.append("fecha_inicio", fechaInicio);
       if (fechaFin) queryParams.append("fecha_fin", fechaFin);
 
-      const response = await fetch(`/api/farmacia/reportes?${queryParams}`, {
+      const url = `/api/farmacia/reportes?${queryParams}`;
+      console.log("Cargando reporte desde:", url);
+
+      const response = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        setReporte(data.reporte || data);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error("Error en respuesta:", response.status, errorData);
+        return;
       }
+
+      const data = await response.json();
+      console.log("Reporte cargado:", data);
+      
+      // Asegurar que siempre tenemos un objeto reporte válido
+      setReporte(data.reporte || {
+        resumen: {},
+        ventas: [],
+        recetas: { estadisticas: [], resumen: {} },
+        inventario: { items: [], resumen: {} },
+      });
     } catch (error) {
       console.error("Error cargando reporte:", error);
+      setReporte(null);
     } finally {
       setCargando(false);
+    }
+  };
+
+  const descargarPDF = async () => {
+    if (!token) return;
+
+    try {
+      setDescargandoPDF(true);
+      const queryParams = new URLSearchParams();
+      queryParams.append("tipo", tipoReporte);
+      if (fechaInicio) queryParams.append("fecha_inicio", fechaInicio);
+      if (fechaFin) queryParams.append("fecha_fin", fechaFin);
+
+      const response = await fetch(
+        `/api/farmacia/reportes/exportar-pdf?${queryParams}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `reporte-${tipoReporte}-${new Date().toISOString().split("T")[0]}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(link);
+      }
+    } catch (error) {
+      console.error("Error descargando PDF:", error);
+    } finally {
+      setDescargandoPDF(false);
     }
   };
 
@@ -294,7 +349,7 @@ export default function ReportesFarmacia({ onVolver }: ReporteProps) {
                 <div className="flex items-end gap-2">
                   <Button
                     onClick={cargarReporte}
-                    disabled={cargando}
+                    disabled={cargando || descargandoPDF}
                     className="flex-1 bg-blue-600 hover:bg-blue-700"
                   >
                     {cargando ? (
@@ -305,8 +360,21 @@ export default function ReportesFarmacia({ onVolver }: ReporteProps) {
                     Generar
                   </Button>
                   <Button
+                    onClick={() => descargarPDF()}
+                    disabled={!reporte || cargando || descargandoPDF}
+                    className="gap-2 bg-red-600 hover:bg-red-700"
+                    title="Descargar PDF"
+                  >
+                    {descargandoPDF ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <FileText className="w-4 h-4" />
+                    )}
+                    PDF
+                  </Button>
+                  <Button
                     onClick={descargarCSV}
-                    disabled={!reporte || cargando}
+                    disabled={!reporte || cargando || descargandoPDF}
                     variant="outline"
                     title="Descargar CSV"
                   >
@@ -381,7 +449,7 @@ export default function ReportesFarmacia({ onVolver }: ReporteProps) {
                           Ventas Hoy
                         </p>
                         <p className="text-2xl font-bold text-green-600">
-                          {formatearMoneda(reporte.resumen.ingreso_hoy || 0)}
+                          {formatearMoneda(reporte.resumen?.ventas_hoy || 0)}
                         </p>
                       </div>
                       <ShoppingCart className="w-6 h-6 text-green-500" />
@@ -397,7 +465,7 @@ export default function ReportesFarmacia({ onVolver }: ReporteProps) {
                           Stock Bajo
                         </p>
                         <p className="text-2xl font-bold text-yellow-600">
-                          {reporte.resumen.items_stock_bajo || 0}
+                          {reporte.resumen?.stock_bajo || 0}
                         </p>
                       </div>
                       <AlertTriangle className="w-6 h-6 text-yellow-500" />
@@ -413,7 +481,7 @@ export default function ReportesFarmacia({ onVolver }: ReporteProps) {
                           Por Vencer
                         </p>
                         <p className="text-2xl font-bold text-orange-600">
-                          {reporte.resumen.items_por_vencer || 0}
+                          {reporte.inventario?.items?.filter((i: any) => i.estado === 'por_vencer').length || 0}
                         </p>
                       </div>
                       <Clock className="w-6 h-6 text-orange-500" />
@@ -429,7 +497,7 @@ export default function ReportesFarmacia({ onVolver }: ReporteProps) {
                           Recetas Pend.
                         </p>
                         <p className="text-2xl font-bold text-purple-600">
-                          {reporte.resumen.recetas_pendientes || 0}
+                          {reporte.recetas?.resumen?.total || 0}
                         </p>
                       </div>
                       <FileText className="w-6 h-6 text-purple-500" />
@@ -445,7 +513,7 @@ export default function ReportesFarmacia({ onVolver }: ReporteProps) {
                           Agotados
                         </p>
                         <p className="text-2xl font-bold text-red-600">
-                          {reporte.resumen.items_agotados || 0}
+                          {reporte.resumen?.agotados || 0}
                         </p>
                       </div>
                       <Package className="w-6 h-6 text-red-500" />
@@ -558,7 +626,7 @@ export default function ReportesFarmacia({ onVolver }: ReporteProps) {
                           Total Recetas
                         </p>
                         <p className="text-3xl font-bold text-blue-600">
-                          {reporte.total || 0}
+                          {reporte.recetas?.resumen?.total || 0}
                         </p>
                       </div>
                     </CardContent>
@@ -572,7 +640,7 @@ export default function ReportesFarmacia({ onVolver }: ReporteProps) {
                           Dispensadas
                         </p>
                         <p className="text-3xl font-bold text-green-600">
-                          {reporte.dispensadas || 0}
+                          {reporte.recetas?.resumen?.dispensadas || 0}
                         </p>
                       </div>
                     </CardContent>
@@ -586,7 +654,7 @@ export default function ReportesFarmacia({ onVolver }: ReporteProps) {
                           Canceladas
                         </p>
                         <p className="text-3xl font-bold text-red-600">
-                          {reporte.canceladas || 0}
+                          {reporte.recetas?.resumen?.canceladas || 0}
                         </p>
                       </div>
                     </CardContent>
@@ -623,7 +691,7 @@ export default function ReportesFarmacia({ onVolver }: ReporteProps) {
                           </tr>
                         </thead>
                         <tbody>
-                          {reporte.estadisticas?.map(
+                          {reporte.recetas?.estadisticas?.map(
                             (stat: any, idx: number) => (
                               <tr
                                 key={idx}
@@ -685,7 +753,7 @@ export default function ReportesFarmacia({ onVolver }: ReporteProps) {
                         <Package className="w-6 h-6 text-blue-600 mx-auto" />
                         <p className="text-xs text-gray-600">Total Items</p>
                         <p className="text-xl font-bold text-blue-600">
-                          {reporte.total || 0}
+                          {reporte.inventario?.resumen?.total || 0}
                         </p>
                       </div>
                     </CardContent>
@@ -697,7 +765,7 @@ export default function ReportesFarmacia({ onVolver }: ReporteProps) {
                         <CheckCircle className="w-6 h-6 text-green-600 mx-auto" />
                         <p className="text-xs text-gray-600">Normal</p>
                         <p className="text-xl font-bold text-green-600">
-                          {reporte.normal || 0}
+                          {reporte.inventario?.items?.filter((i: any) => i.estado === 'normal').length || 0}
                         </p>
                       </div>
                     </CardContent>
@@ -709,7 +777,7 @@ export default function ReportesFarmacia({ onVolver }: ReporteProps) {
                         <AlertTriangle className="w-6 h-6 text-yellow-600 mx-auto" />
                         <p className="text-xs text-gray-600">Stock Bajo</p>
                         <p className="text-xl font-bold text-yellow-600">
-                          {reporte.bajo || 0}
+                          {reporte.inventario?.resumen?.bajo || 0}
                         </p>
                       </div>
                     </CardContent>
@@ -721,7 +789,7 @@ export default function ReportesFarmacia({ onVolver }: ReporteProps) {
                         <XCircle className="w-6 h-6 text-red-600 mx-auto" />
                         <p className="text-xs text-gray-600">Agotados</p>
                         <p className="text-xl font-bold text-red-600">
-                          {reporte.agotado || 0}
+                          {reporte.inventario?.resumen?.agotados || 0}
                         </p>
                       </div>
                     </CardContent>
@@ -733,7 +801,7 @@ export default function ReportesFarmacia({ onVolver }: ReporteProps) {
                         <Clock className="w-6 h-6 text-orange-600 mx-auto" />
                         <p className="text-xs text-gray-600">Por Vencer</p>
                         <p className="text-xl font-bold text-orange-600">
-                          {reporte.por_vencer || 0}
+                          {reporte.inventario?.resumen?.por_vencer || 0}
                         </p>
                       </div>
                     </CardContent>
@@ -745,7 +813,7 @@ export default function ReportesFarmacia({ onVolver }: ReporteProps) {
                         <ShoppingCart className="w-6 h-6 text-purple-600 mx-auto" />
                         <p className="text-xs text-gray-600">Valor Total</p>
                         <p className="text-sm font-bold text-purple-600">
-                          {formatearMoneda(reporte.valor_total || 0)}
+                          {formatearMoneda(reporte.inventario?.resumen?.valor_total || 0)}
                         </p>
                       </div>
                     </CardContent>
@@ -759,7 +827,7 @@ export default function ReportesFarmacia({ onVolver }: ReporteProps) {
                       Detalle del Inventario
                     </CardTitle>
                     <CardDescription>
-                      {reporte.items?.length || 0} items en inventario
+                      {reporte.inventario?.items?.length || 0} items en inventario
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="p-0">
@@ -788,7 +856,7 @@ export default function ReportesFarmacia({ onVolver }: ReporteProps) {
                           </tr>
                         </thead>
                         <tbody>
-                          {reporte.items?.map((item: any, idx: number) => (
+                          {reporte.inventario?.items?.map((item: any, idx: number) => (
                             <tr
                               key={idx}
                               className="border-b border-gray-100 hover:bg-gray-50 transition-colors"

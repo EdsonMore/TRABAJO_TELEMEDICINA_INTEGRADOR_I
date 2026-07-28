@@ -46,6 +46,12 @@ export async function GET(
 
     client = await pool.connect();
 
+    // Obtener coordenadas del paciente (desde el navegador)
+    const latStr = request.nextUrl.searchParams.get("lat");
+    const lngStr = request.nextUrl.searchParams.get("lng");
+    const latPaciente = latStr ? parseFloat(latStr) : null;
+    const lngPaciente = lngStr ? parseFloat(lngStr) : null;
+
     // 1. Verificar que la receta pertenece al paciente
     const recetaResult = await client.query(
       `SELECT r.*, p.id as paciente_id, u.id as usuario_id
@@ -196,7 +202,9 @@ export async function GET(
         // Calcular distancia usando la información de ubicación mejorada
         const distanciaKm = calcularDistanciaMejorada(
           ubicacionPaciente,
-          farmacia
+          farmacia,
+          latPaciente,
+          lngPaciente
         );
 
         return {
@@ -240,9 +248,20 @@ export async function GET(
       })
     );
 
+    // Ordenar: si hay coordenadas del paciente, ordenar por cercanía primero
+    if (latPaciente && lngPaciente) {
+      farmaciasEnriquecidas.sort((a: any, b: any) => a.distancia_km - b.distancia_km);
+    } else {
+      farmaciasEnriquecidas.sort((a: any, b: any) =>
+        b.disponibilidad.medicamentos_disponibles - a.disponibilidad.medicamentos_disponibles ||
+        (a.precio.total ?? Infinity) - (b.precio.total ?? Infinity)
+      );
+    }
+
     return NextResponse.json({
       success: true,
       opciones: farmaciasEnriquecidas,
+      ubicacion_usada: latPaciente && lngPaciente ? "geolocalizacion" : "perfil",
     });
   } catch (error: any) {
     console.error("Error obteniendo farmacias disponibles:", error);
@@ -257,36 +276,49 @@ export async function GET(
   }
 }
 
-// Función mejorada para calcular distancia
+// Función mejorada para calcular distancia (Haversine cuando hay coordenadas reales)
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 function calcularDistanciaMejorada(
   ubicacionPaciente: UbicacionPaciente,
-  farmacia: any
+  farmacia: any,
+  latPaciente?: number | null,
+  lngPaciente?: number | null
 ): number {
-  // Si tenemos información de ubicación del paciente
+  if (latPaciente && lngPaciente) {
+    const PK_LAT = -12.046374;
+    const PK_LNG = -77.042793;
+    const distHaversine = haversineKm(latPaciente, lngPaciente, PK_LAT, PK_LNG);
+    const factorDistrito =
+      ubicacionPaciente.distrito === farmacia.distrito ? 0.3 :
+      ubicacionPaciente.provincia === farmacia.provincia ? 0.7 :
+      ubicacionPaciente.departamento === farmacia.departamento ? 1.2 : 1.8;
+    return Math.round(distHaversine * factorDistrito * 10) / 10;
+  }
+
   if (
     ubicacionPaciente.departamento &&
     ubicacionPaciente.provincia &&
     ubicacionPaciente.distrito
   ) {
-    // Mismo distrito = distancia muy corta
     if (ubicacionPaciente.distrito === farmacia.distrito) {
-      return Math.random() * 3 + 0.5; // 0.5 - 3.5 km
+      return Math.random() * 3 + 0.5;
     }
-
-    // Misma provincia pero distrito diferente
     if (ubicacionPaciente.provincia === farmacia.provincia) {
-      return Math.random() * 10 + 2; // 2 - 12 km
+      return Math.random() * 10 + 2;
     }
-
-    // Mismo departamento pero provincia diferente
     if (ubicacionPaciente.departamento === farmacia.departamento) {
-      return Math.random() * 30 + 5; // 5 - 35 km
+      return Math.random() * 30 + 5;
     }
-
-    // Departamento diferente = distancia larga
-    return Math.random() * 100 + 20; // 20 - 120 km
+    return Math.random() * 100 + 20;
   }
 
-  // Fallback: distancia aleatoria genérica
-  return Math.random() * 15 + 0.5; // 0.5 - 15.5 km
+  return Math.random() * 15 + 0.5;
 }

@@ -18,6 +18,7 @@ import {
   Stethoscope,
   Loader2,
   Wifi,
+  AlertTriangle,
 } from "lucide-react";
 
 interface DetallesCitaModalProps {
@@ -59,6 +60,8 @@ export default function DetallesCitaModal({
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [unirseLoading, setUnirseLoading] = useState(false);
+  const [alertaVideollamadaOpen, setAlertaVideollamadaOpen] = useState(false);
+  const [alertaVideollamadaMensaje, setAlertaVideollamadaMensaje] = useState("");
 
   // Normalizar datos de la cita
   const citaData = {
@@ -120,22 +123,34 @@ export default function DetallesCitaModal({
         "Content-Type": "application/json",
       };
 
-      // ===== BUSCAR SESIÓN EXISTENTE (igual que el médico) =====
+      // ===== BUSCAR SESIÓN EXISTENTE =====
       console.log("🔍 Buscando sesión existente para cita:", citaData.id);
 
       const sesionesResponse = await fetch(
-        `/api/telemedicina/sesiones?cita_id=${citaData.id}`,
-        { headers }
+        `/api/telemedicina/sesiones?cita_id=${citaData.id}&_t=${Date.now()}`,
+        { headers, cache: "no-store" }
       );
 
+      console.log("📡 Response status:", sesionesResponse.status);
+
       if (!sesionesResponse.ok) {
-        throw new Error(`Error al buscar sesiones: ${sesionesResponse.status}`);
+        const errorText = await sesionesResponse.text();
+        console.error("❌ Error response:", errorText);
+        throw new Error(`Error al buscar sesiones: ${sesionesResponse.status} - ${errorText}`);
       }
 
-      const sesionesData = await sesionesResponse.json();
+      let sesionesData;
+      try {
+        sesionesData = await sesionesResponse.json();
+      } catch (parseError) {
+        console.error("❌ Error parsing JSON:", parseError);
+        throw new Error("Respuesta del servidor no válida");
+      }
+
       console.log("📋 Respuesta de sesiones:", sesionesData);
 
       let sesionId;
+      let sesionData;
 
       if (
         sesionesData.success &&
@@ -143,12 +158,23 @@ export default function DetallesCitaModal({
         sesionesData.sesiones.length > 0
       ) {
         // Usar sesión existente
-        sesionId = sesionesData.sesiones[0].id;
+        sesionData = sesionesData.sesiones[0];
+        sesionId = sesionData.id;
         console.log("✅ Sesión existente encontrada:", sesionId);
+        console.log("📊 Estado de la sesión:", sesionData.estado);
+        
+        // 🔥 VALIDACIÓN CRÍTICA: Verificar si el médico ha iniciado la sesión
+        if (sesionData.estado !== 'iniciada') {
+          console.warn("⚠️ La sesión NO está iniciada. Estado:", sesionData.estado);
+          throw new Error(
+            `⏳ No puedes unirte a la videollamada aún.\n\nEl médico debe iniciar la sesión primero.\n\nEstado actual: ${sesionData.estado}`
+          );
+        }
       } else {
         // ===== NO CREAR SESIÓN - Solo el médico puede crear sesiones =====
+        console.warn("⚠️ No hay sesión disponible");
         throw new Error(
-          "No hay sesión de videollamada disponible. El médico debe iniciar la sesión primero."
+          "⏳ No puedes unirte a la videollamada aún.\n\nEl médico debe iniciar la sesión primero.\n\nEstado actual: No disponible"
         );
       }
 
@@ -173,34 +199,39 @@ export default function DetallesCitaModal({
         onClose();
       }
     } catch (error: any) {
-      console.error("❌ Error crítico al unirse a videollamada:", {
-        mensaje: error.message,
-        stack: error.stack,
-        error: error,
+      console.warn("⏳ Validación: Usuario no puede unirse aún:", error?.message);
+      console.log("📋 Detalles:", {
+        tipo: typeof error,
+        mensaje: error?.message,
       });
 
-      // Mostrar mensaje de error amigable al usuario
+      // Obtener el mensaje de error de forma segura
       let mensajeError = "No se pudo conectar a la videollamada";
-
-      if (
-        error.message.includes("404") ||
-        error.message.includes("No hay sesión")
-      ) {
-        mensajeError =
-          "El médico aún no ha iniciado la sesión de videollamada. Por favor, espera a que el médico inicie la sesión.";
-      } else if (error.message.includes("401")) {
-        mensajeError = "Tu sesión ha expirado. Por favor recarga la página.";
-      } else if (error.message.includes("500")) {
-        mensajeError = "Error del servidor. Intenta nuevamente más tarde.";
-      } else if (error.message) {
-        mensajeError = error.message;
+      
+      // Intentar obtener el mensaje del error
+      if (error?.message) {
+        const msg = String(error.message);
+        
+        if (msg.includes("No puedes unirte") || msg.includes("El médico debe iniciar")) {
+          mensajeError = msg;
+        } else if (msg.includes("404") || msg.includes("No hay sesión")) {
+          mensajeError = "⏳ No puedes unirte a la videollamada aún.\n\nEl médico debe iniciar la sesión primero.";
+        } else if (msg.includes("401")) {
+          mensajeError = "Tu sesión ha expirado. Por favor recarga la página.";
+        } else if (msg.includes("500")) {
+          mensajeError = "Error del servidor. Intenta nuevamente más tarde.";
+        } else {
+          mensajeError = msg;
+        }
+      } else if (error instanceof Error) {
+        mensajeError = error.toString();
       }
 
-      toast({
-        title: "Error de conexión",
-        description: mensajeError,
-        variant: "destructive",
-      });
+      console.log("📢 Mensaje final a mostrar:", mensajeError);
+
+      // 🔥 Mostrar modal personalizado para adultos mayores
+      setAlertaVideollamadaMensaje(mensajeError);
+      setAlertaVideollamadaOpen(true);
     } finally {
       setUnirseLoading(false);
     }
@@ -709,6 +740,61 @@ export default function DetallesCitaModal({
           </div>
         </div>
       </div>
+
+      {/* 🔥 MODAL: Alerta para adultos mayores - Videollamada no iniciada */}
+      {alertaVideollamadaOpen && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[999] p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95">
+            {/* Icono */}
+            <div className="flex justify-center">
+              <div className="bg-yellow-100 p-3 rounded-full">
+                <AlertTriangle className="w-10 h-10 text-yellow-600" />
+              </div>
+            </div>
+
+            {/* Título */}
+            <div className="text-center">
+              <h2 className="text-2xl font-bold text-gray-900">
+                ⏳ Videollamada<br />no disponible
+              </h2>
+            </div>
+
+            {/* Mensaje principal */}
+            <div className="bg-yellow-50 rounded-xl p-4 border-2 border-yellow-300">
+              <p className="text-lg text-gray-800 font-semibold leading-relaxed text-center">
+                {alertaVideollamadaMensaje
+                  .split("\n")
+                  .map((line, idx) => (
+                    <span key={idx}>
+                      {line}
+                      <br />
+                    </span>
+                  ))}
+              </p>
+            </div>
+
+            {/* Información adicional */}
+            <div className="bg-blue-50 rounded-xl p-4 border-2 border-blue-300">
+              <p className="text-base text-gray-700 leading-relaxed">
+                <strong className="text-blue-700">💡 El médico iniciará</strong>
+                <br />
+                la videollamada en la hora programada.
+              </p>
+            </div>
+
+            {/* Botón de acción */}
+            <div className="pt-2">
+              <Button
+                onClick={() => setAlertaVideollamadaOpen(false)}
+                className="w-full h-12 text-lg font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl"
+              >
+                Entendido
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

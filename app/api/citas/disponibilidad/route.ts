@@ -33,10 +33,15 @@ export async function GET(request: NextRequest) {
 
     if (medicoId && fecha) {
       const fechaPeru = convertirFechaAPeru(fecha);
-      const hoyPeru = new Date().toLocaleString("en-US", {
+      
+      // Obtener hoy en timezone de Perú
+      const hoyPeru = new Date().toLocaleString("es-PE", {
         timeZone: "America/Lima",
       });
-      const esHoy = fechaPeru === new Date(hoyPeru).toISOString().split("T")[0];
+      const [diahoy, meshoy, añohoy] = hoyPeru.split("/");
+      const fechaHoyStr = `${añohoy}-${meshoy}-${diahoy}`;
+      
+      const esHoy = fechaPeru === fechaHoyStr;
 
       // ✅ QUERY CORREGIDO - Filtrar horas pasadas si es hoy
       query = `
@@ -48,7 +53,7 @@ export async function GET(request: NextRequest) {
             AND estado NOT IN ('cancelada', 'no_asistio')
         ),
         horarios_laborales AS (
-          SELECT generate_series(8, 17) as hora
+          SELECT generate_series(8, 20) as hora
         ),
         horarios_filtrados AS (
           SELECT 

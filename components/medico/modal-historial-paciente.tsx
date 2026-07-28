@@ -3,18 +3,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/contexts/auth-context";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { VirtualKeyboard } from "@/components/ui/virtual-keyboard";
+import { useToast } from "@/hooks/use-toast";
 import {
   FileText,
   AlertCircle,
@@ -23,7 +12,22 @@ import {
   Eye,
   EyeOff,
   CheckCircle,
+  X,
+  Loader2,
+  User,
+  Calendar,
+  Clock,
+  Pill,
+  FlaskConical,
+  Shield,
+  ShieldCheck,
+  ShieldAlert,
+  Heart,
+  BadgeCheck,
+  Download,
 } from "lucide-react";
+import { VirtualKeyboard } from "@/components/ui/virtual-keyboard";
+import { Input } from "@/components/ui/input";
 
 // ============= INTERFACES =============
 interface HistorialCita {
@@ -51,6 +55,18 @@ interface Receta {
   fecha_emision: string;
   fecha_vencimiento: string;
   observaciones?: string;
+  medicamentos?: Array<{
+    nombre_comercial?: string;
+    nombre_generico?: string;
+    dosis?: string;
+    frecuencia?: string;
+    cantidad?: number;
+    duracion_dias?: number;
+    via_administracion?: string;
+    instrucciones_especiales?: string;
+    concentracion?: string;
+    laboratorio?: string;
+  }>;
   medico: {
     nombre: string;
     apellido: string;
@@ -76,16 +92,34 @@ interface PacienteData {
     nombre: string;
     apellido: string;
     email: string;
+    telefono?: string;
+    avatar_url?: string;
   };
   informacion_personal?: {
     dni?: string;
     edad?: number;
+    sexo?: string;
     fecha_nacimiento?: string;
+    tipo_sangre?: string;
+    direccion?: string;
+    ubicacion?: {
+      departamento?: string;
+      provincia?: string;
+      distrito?: string;
+    };
   };
   informacion_medica?: {
+    peso_kg?: number;
+    altura_cm?: number;
     alergias?: string;
     enfermedades_cronicas?: string;
     tipo_sangre?: string;
+    seguro_medico?: string;
+    numero_seguro?: string;
+    contacto_emergencia?: {
+      nombre?: string;
+      telefono?: string;
+    };
   };
 }
 
@@ -107,13 +141,65 @@ interface ModalHistorialPacienteProps {
 }
 
 // ============= COMPONENTES AUXILIARES =============
-function NoData({ text }: { text: string }) {
+function NoData({
+  text,
+  icon: Icon = AlertCircle,
+}: {
+  text: string;
+  icon?: any;
+}) {
   return (
-    <div className="flex items-center justify-center py-8 text-gray-500">
-      <AlertCircle className="w-5 h-5 mr-2" />
-      <p>{text}</p>
+    <div className="flex flex-col items-center justify-center py-8 text-gray-500">
+      <Icon className="w-12 h-12 mb-3 text-gray-300" />
+      <p className="text-sm">{text}</p>
     </div>
   );
+}
+
+function BadgeEstado({ estado }: { estado: string }) {
+  const getColor = () => {
+    switch (estado.toLowerCase()) {
+      case "completada":
+      case "activa":
+      case "completado":
+        return "bg-green-100 text-green-800";
+      case "pendiente":
+        return "bg-yellow-100 text-yellow-800";
+      case "cancelada":
+        return "bg-red-100 text-red-800";
+      default:
+        return "bg-gray-100 text-gray-800";
+    }
+  };
+
+  return (
+    <span
+      className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getColor()}`}
+    >
+      {estado}
+    </span>
+  );
+}
+
+function formatDate(value: string) {
+  if (!value) return "-";
+  try {
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return "-";
+    return d.toLocaleDateString("es-PE", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+  } catch (e) {
+    return "-";
+  }
+}
+
+function calcularIMC(peso: number | undefined, altura: number | undefined): string {
+  if (!peso || !altura) return "-";
+  const imc = peso / ((altura / 100) ** 2);
+  return imc.toFixed(1);
 }
 
 // ============= COMPONENTE PRINCIPAL =============
@@ -127,6 +213,8 @@ export function ModalHistorialPaciente({
   pacienteId = "",
 }: ModalHistorialPacienteProps) {
   const { token } = useAuth();
+  const { toast } = useToast();
+
   // ============= STATE =============
   const [isPasswordProtected, setIsPasswordProtected] = useState(false);
   const [password, setPassword] = useState("");
@@ -141,6 +229,10 @@ export function ModalHistorialPaciente({
   const [passwordError, setPasswordError] = useState("");
   const [accessGranted, setAccessGranted] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<"citas" | "recetas" | "examenes">(
+    "citas"
+  );
+  const [isExportingPDF, setIsExportingPDF] = useState(false);
 
   // ============= HELPER FUNCTIONS =============
   const getPacienteNombre = (): string => {
@@ -186,17 +278,14 @@ export function ModalHistorialPaciente({
   const checkPasswordProtection = async () => {
     try {
       setLoading(true);
-      const res = await fetch(
-        `/api/medico/proteccion-historial`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ action: "check" }),
-        }
-      );
+      const res = await fetch(`/api/medico/proteccion-historial`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ action: "check" }),
+      });
 
       if (res.ok) {
         const data = await res.json();
@@ -223,27 +312,33 @@ export function ModalHistorialPaciente({
       setIsVerifying(true);
       setPasswordError("");
 
-      const res = await fetch(
-        `/api/medico/proteccion-historial`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ action: "verify", password }),
-        }
-      );
+      const res = await fetch(`/api/medico/proteccion-historial`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ action: "verify", password }),
+      });
 
       const data = await res.json();
 
       if (res.ok && data.success) {
         setAccessGranted(true);
         setPassword("");
+        toast({
+          title: "✅ Acceso concedido",
+          description: "Acceso al historial médico autorizado",
+        });
       } else {
         setPasswordError(
           data.message || "Contraseña incorrecta. Intenta de nuevo."
         );
+        toast({
+          title: "❌ Contraseña incorrecta",
+          description: "Verifica la contraseña e intenta nuevamente",
+          variant: "destructive",
+        });
       }
     } catch (error) {
       setPasswordError("Error al verificar la contraseña");
@@ -273,17 +368,14 @@ export function ModalHistorialPaciente({
       setIsSettingUp(true);
       setPasswordError("");
 
-      const res = await fetch(
-        `/api/medico/proteccion-historial`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ action: "create", password: setupPassword }),
-        }
-      );
+      const res = await fetch(`/api/medico/proteccion-historial`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ action: "create", password: setupPassword }),
+      });
 
       const data = await res.json();
 
@@ -293,8 +385,17 @@ export function ModalHistorialPaciente({
         setSetupPasswordConfirm("");
         setShowPasswordSetup(false);
         setIsPasswordProtected(true);
+        toast({
+          title: "✅ Protección activada",
+          description: "El historial ahora está protegido por contraseña",
+        });
       } else {
         setPasswordError(data.message || "Error al crear la contraseña");
+        toast({
+          title: "❌ Error",
+          description: "No se pudo crear la protección",
+          variant: "destructive",
+        });
       }
     } catch (error) {
       setPasswordError("Error al crear la contraseña");
@@ -304,641 +405,939 @@ export function ModalHistorialPaciente({
     }
   };
 
-  // ============= MEMOIZED MODAL COMPONENT =============
-  // IMPORTANTE: Este hook DEBE estar ANTES de cualquier early return
-  // para que React siempre lo cuente
-  const ModalCrearProteccion = useMemo(() => {
-    return () => (
-      <Dialog open={showPasswordSetup} onOpenChange={setShowPasswordSetup}>
-        <DialogContent className="rounded-2xl max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center text-lg font-semibold">
-              <Key className="w-5 h-5 mr-2 text-green-600" />
-              Crear Protección de Contraseña
-            </DialogTitle>
-            <DialogDescription>
-              Protege tus historiales médicos con una contraseña. Usa el teclado seguro para máxima protección.
-            </DialogDescription>
-          </DialogHeader>
+  const handleClose = () => {
+    setPassword("");
+    setSetupPassword("");
+    setSetupPasswordConfirm("");
+    setPasswordError("");
+    setAccessGranted(false);
+    setShowPasswordSetup(false);
+    onClose();
+  };
 
-          <div className="space-y-6 py-4">
-            {/* Campo: Nueva Contraseña */}
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                Nueva Contraseña
-              </label>
-              <div className="relative">
-                <Input
-                  type="password"
-                  value={setupPassword}
-                  onChange={(e) => {
-                    setSetupPassword(e.target.value);
-                    setPasswordError("");
-                  }}
-                  placeholder="Ingresa con el teclado seguro"
-                  className="pr-10 bg-gray-50"
-                  disabled={isSettingUp}
-                  readOnly
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
-                  {setupPassword.length}/6+
-                </span>
-              </div>
-            </div>
+  const handleExportarPDF = async () => {
+    try {
+      setIsExportingPDF(true);
 
-            {/* Teclado Virtual para Primera Contraseña */}
-            <div className="border-l-4 border-green-500 bg-green-50 p-4 rounded">
-              <p className="text-xs font-semibold text-green-700 mb-3">TECLADO SEGURO - NUEVA CONTRASEÑA</p>
-              <VirtualKeyboard
-                onInput={(char) => setSetupPassword(prev => prev + char)}
-                onBackspace={() => setSetupPassword(prev => prev.slice(0, -1))}
-                onClear={() => setSetupPassword("")}
-                inputLength={setupPassword.length}
-              />
-            </div>
+      if (!historial || !pacienteId) {
+        toast({
+          title: "❌ Error",
+          description: "No hay datos para exportar",
+          variant: "destructive",
+        });
+        return;
+      }
 
-            {/* Campo: Confirmar Contraseña */}
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                Confirmar Contraseña
-              </label>
-              <div className="relative">
-                <Input
-                  type="password"
-                  value={setupPasswordConfirm}
-                  onChange={(e) => {
-                    setSetupPasswordConfirm(e.target.value);
-                    setPasswordError("");
-                  }}
-                  placeholder="Confirma en el teclado seguro"
-                  className="pr-10 bg-gray-50"
-                  disabled={isSettingUp}
-                  readOnly
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
-                  {setupPasswordConfirm.length}/6+
-                </span>
-              </div>
-            </div>
+      // Llamar al endpoint de exportación
+      const response = await fetch(
+        `/api/medico/pacientes/${pacienteId}/exportar-historial`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
 
-            {/* Teclado Virtual para Confirmación */}
-            <div className="border-l-4 border-blue-500 bg-blue-50 p-4 rounded">
-              <p className="text-xs font-semibold text-blue-700 mb-3">TECLADO SEGURO - CONFIRMAR CONTRASEÑA</p>
-              <VirtualKeyboard
-                onInput={(char) => setSetupPasswordConfirm(prev => prev + char)}
-                onBackspace={() => setSetupPasswordConfirm(prev => prev.slice(0, -1))}
-                onClear={() => setSetupPasswordConfirm("")}
-                inputLength={setupPasswordConfirm.length}
-              />
-            </div>
+      if (!response.ok) {
+        throw new Error("No se pudo generar el PDF");
+      }
 
-            {/* Mensaje de Error */}
-            {passwordError && (
-              <div className="bg-red-50 border border-red-200 rounded p-3">
-                <p className="text-sm text-red-700">❌ {passwordError}</p>
-              </div>
-            )}
+      // Obtener el blob del PDF
+      const blob = await response.blob();
 
-            {/* Validación */}
-            {setupPassword && setupPasswordConfirm && (
-              <div className="space-y-2">
-                {setupPassword.length >= 6 ? (
-                  <p className="text-xs text-green-600 flex items-center gap-1">
-                    ✅ Contraseña válida ({setupPassword.length} caracteres)
-                  </p>
-                ) : (
-                  <p className="text-xs text-orange-600 flex items-center gap-1">
-                    ⚠️ Mínimo 6 caracteres ({setupPassword.length}/6)
-                  </p>
-                )}
+      // Crear un URL objeto para descargar
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      
+      const nombrePaciente = (historial.paciente?.usuario?.nombre || "Paciente") + " " + 
+                           (historial.paciente?.usuario?.apellido || "");
+      const fecha = new Date().toISOString().split("T")[0];
+      link.download = `Historial_${nombrePaciente}_${fecha}.pdf`;
+      
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
 
-                {setupPassword === setupPasswordConfirm ? (
-                  <p className="text-xs text-green-600 flex items-center gap-1">
-                    ✅ Las contraseñas coinciden
-                  </p>
-                ) : (
-                  <p className="text-xs text-red-600 flex items-center gap-1">
-                    ❌ Las contraseñas no coinciden
-                  </p>
-                )}
-              </div>
-            )}
+      toast({
+        title: "✅ Éxito",
+        description: "El PDF se ha descargado correctamente",
+      });
+    } catch (error) {
+      console.error("Error exportando PDF:", error);
+      toast({
+        title: "❌ Error",
+        description: "No se pudo generar el PDF",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExportingPDF(false);
+    }
+  };
 
-            {/* Botones de Acción */}
-            <div className="flex gap-3 pt-4 border-t">
-              <Button
-                onClick={handleSetupPassword}
-                disabled={isSettingUp || setupPassword.length < 6 || setupPassword !== setupPasswordConfirm}
-                className="flex-1 bg-green-600 hover:bg-green-700"
-              >
-                {isSettingUp ? "Creando..." : "✓ Crear Protección"}
-              </Button>
-              <Button
-                onClick={() => setShowPasswordSetup(false)}
-                variant="outline"
-                className="flex-1"
-                disabled={isSettingUp}
-              >
-                Cancelar
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-    );
-  }, [showPasswordSetup, setupPassword, setupPasswordConfirm, passwordError, isSettingUp]);
+  // ============= RENDERIZADO CONDICIONAL =============
+  if (!isOpen || !historial) return null;
 
-  // ============= CONDITIONAL RENDERING - SIN EARLY RETURNS =============
-
-  // Renderizar null si no hay datos
-  if (!historial || !isOpen) {
-    return null;
-  }
-
-  // Screen 1: Sin acceso (denegado)
+  // Pantalla 1: Acceso denegado por tiempo
   if (!canAccess && !accessGranted) {
     return (
-      <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center text-lg font-semibold">
-              <AlertCircle className="w-5 h-5 mr-2 text-red-500" />
-              Acceso Denegado
-            </DialogTitle>
-            <DialogDescription>
-              {accessDenialReason ||
-                "No tienes permiso para acceder al historial de este paciente en este momento."}
-            </DialogDescription>
-          </DialogHeader>
-
-          {citaFecha && (
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 my-4">
-              <p className="text-sm text-amber-900">
-                <strong>ℹ️ Información:</strong>
-              </p>
-              <p className="text-sm text-amber-800 mt-1">
-                El acceso al historial está disponible desde la fecha de la cita
-                hasta 7 días después.
-              </p>
-              <p className="text-sm text-amber-800 mt-2">
-                <strong>Fecha de la cita:</strong>{" "}
-                {new Date(citaFecha).toLocaleDateString("es-PE", {
-                  weekday: "long",
-                  year: "numeric",
-                  month: "long",
-                  day: "numeric",
-                })}
-              </p>
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-lg max-w-md w-full">
+          <div className="p-6">
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h2 className="text-xl font-bold text-gray-800 flex items-center">
+                  <AlertCircle className="w-5 h-5 mr-2 text-red-500" />
+                  Acceso Denegado
+                </h2>
+              </div>
+              <button
+                onClick={handleClose}
+                className="text-gray-500 hover:text-gray-700 text-xl"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
-          )}
 
-          <div className="flex gap-3 mt-6">
-            <button
-              onClick={onClose}
-              className="flex-1 px-4 py-2 bg-gray-100 text-gray-800 rounded-lg hover:bg-gray-200 transition font-medium text-sm"
-            >
-              Entendido
-            </button>
+            <div className="space-y-4">
+              <p className="text-gray-600">
+                {accessDenialReason ||
+                  "No tienes permiso para acceder al historial de este paciente en este momento."}
+              </p>
+
+              {citaFecha && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                  <p className="text-sm text-yellow-800 font-medium">
+                    ℹ️ Información:
+                  </p>
+                  <p className="text-sm text-yellow-700 mt-1">
+                    El acceso al historial está disponible desde la fecha de la
+                    cita hasta 7 días después.
+                  </p>
+                  <p className="text-sm text-yellow-700 mt-2">
+                    <strong>Fecha de la cita:</strong> {formatDate(citaFecha)}
+                  </p>
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={handleClose}
+                  className="flex-1 px-4 py-2 bg-gray-100 text-gray-800 rounded-lg hover:bg-gray-200 transition font-medium text-sm"
+                >
+                  Entendido
+                </button>
+              </div>
+            </div>
           </div>
-        </DialogContent>
-      </Dialog>
+        </div>
+      </div>
     );
   }
 
-  // Screen 2: Protección por contraseña
+  // Pantalla 2: Verificación de contraseña (CON TECLADO VIRTUAL ORIGINAL)
   if (isPasswordProtected && !accessGranted) {
     return (
-      <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="rounded-2xl max-w-lg max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center text-lg font-semibold">
-              <Lock className="w-5 h-5 mr-2 text-blue-600" />
-              Acceso a Historial Protegido
-            </DialogTitle>
-            <DialogDescription>
-              Este historial está protegido. Ingresa tu contraseña usando el teclado seguro.
-            </DialogDescription>
-          </DialogHeader>
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-lg max-w-lg w-full">
+          <div className="p-6">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h2 className="text-xl font-bold text-gray-800 flex items-center">
+                  <Lock className="w-5 h-5 mr-2 text-blue-600" />
+                  Acceso Protegido
+                </h2>
+                <p className="text-gray-600 text-sm mt-1">
+                  Ingresa tu contraseña para acceder al historial médico
+                </p>
+              </div>
+              <button
+                onClick={handleClose}
+                className="text-gray-500 hover:text-gray-700 text-xl"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
-          <div className="space-y-6 py-4">
-            {/* Campo de contraseña */}
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                Contraseña
-              </label>
-              <div className="relative">
-                <Input
-                  type="password"
-                  value={password}
-                  placeholder="Ingresa con el teclado seguro"
-                  className="pr-10 bg-gray-50"
-                  disabled
-                  readOnly
+            <div className="space-y-6">
+              {/* Campo de contraseña */}
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-2">
+                  Contraseña de protección
+                </label>
+                <div className="relative">
+                  <input
+                    type="password"
+                    value={password}
+                    placeholder="Ingresa con el teclado seguro"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white pr-10"
+                    disabled
+                    readOnly
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+                    {password.length} dígitos
+                  </span>
+                </div>
+              </div>
+
+              {/* TECLADO VIRTUAL ORIGINAL */}
+              <div className="border-l-4 border-blue-500 bg-blue-50 p-4 rounded">
+                <p className="text-xs font-semibold text-blue-700 mb-3">
+                  🔒 TECLADO SEGURO - INGRESA TU CONTRASEÑA
+                </p>
+                <VirtualKeyboard
+                  onInput={(char) => {
+                    setPassword((prev) => prev + char);
+                    setPasswordError("");
+                  }}
+                  onBackspace={() => setPassword((prev) => prev.slice(0, -1))}
+                  onClear={() => setPassword("")}
+                  inputLength={password.length}
                 />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
-                  {password.length} dígitos
-                </span>
               </div>
-            </div>
 
-            {/* Teclado Virtual para Verificación */}
-            <div className="border-l-4 border-blue-500 bg-blue-50 p-4 rounded">
-              <p className="text-xs font-semibold text-blue-700 mb-3">🔒 TECLADO SEGURO - INGRESA TU CONTRASEÑA</p>
-              <VirtualKeyboard
-                onInput={(char) => {
-                  setPassword(prev => prev + char);
-                  setPasswordError("");
-                }}
-                onBackspace={() => setPassword(prev => prev.slice(0, -1))}
-                onClear={() => setPassword("")}
-                inputLength={password.length}
-              />
-            </div>
+              {/* Mensaje de error */}
+              {passwordError && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                  <p className="text-sm text-red-700">❌ {passwordError}</p>
+                </div>
+              )}
 
-            {/* Mensaje de Error */}
-            {passwordError && (
-              <div className="bg-red-50 border border-red-200 rounded p-3">
-                <p className="text-sm text-red-700">❌ {passwordError}</p>
+              {/* Botones de acción */}
+              <div className="flex gap-3 pt-4 border-t">
+                <button
+                  onClick={handleVerifyPassword}
+                  disabled={isVerifying || password.length === 0}
+                  className="flex-1 bg-blue-600 text-white py-2 px-4 rounded text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                >
+                  {isVerifying ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Verificando...
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck className="w-4 h-4 mr-2" />
+                      Verificar Acceso
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={handleClose}
+                  disabled={isVerifying}
+                  className="flex-1 border border-gray-300 text-gray-700 py-2 px-4 rounded text-sm font-medium hover:bg-gray-50 disabled:opacity-50 flex items-center justify-center"
+                >
+                  Cancelar
+                </button>
               </div>
-            )}
-
-            {/* Botones de Acción */}
-            <div className="flex gap-3 pt-4 border-t">
-              <Button
-                onClick={handleVerifyPassword}
-                disabled={isVerifying || password.length === 0}
-                className="flex-1 bg-blue-600 hover:bg-blue-700"
-              >
-                {isVerifying ? "Verificando..." : "✓ Verificar"}
-              </Button>
-              <Button
-                onClick={onClose}
-                variant="outline"
-                className="flex-1"
-                disabled={isVerifying}
-              >
-                Cancelar
-              </Button>
             </div>
           </div>
-        </DialogContent>
-      </Dialog>
+        </div>
+      </div>
     );
   }
 
-  // Screen 3: PANTALLA PRINCIPAL - Mostrar historial completo
+  // ============= PANTALLA PRINCIPAL - HISTORIAL COMPLETO =============
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent
-        className="
-          max-w-7xl 
-          max-h-[90vh] 
-          w-full 
-          overflow-y-auto 
-          rounded-2xl 
-          p-8 
-          scrollbar-thin 
-          scrollbar-thumb-gray-300 
-          scrollbar-track-transparent
-        "
-      >
-        <DialogHeader className="pb-6 sticky top-0 bg-white z-10 border-b">
-          <div className="space-y-4">
-            {/* Título principal */}
-            <div className="flex items-center justify-between gap-4">
-              <DialogTitle className="flex items-center text-2xl font-bold">
-                <FileText className="w-6 h-6 mr-3 text-blue-600" />
-                Historial Médico de {getPacienteNombre()} {getPacienteApellido()}
-              </DialogTitle>
-            </div>
-
-            {/* Descripción y botones de protección */}
-            <div className="flex items-center justify-between">
+    <>
+      {/* Modal principal */}
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-lg max-w-6xl w-full max-h-[95vh] overflow-y-auto">
+          <div className="p-6">
+            {/* Header */}
+            <div className="flex justify-between items-start mb-6">
               <div>
-                <DialogDescription>
-                  Evolución clínica completa del paciente
-                </DialogDescription>
+                <h2 className="text-2xl font-bold text-gray-800 flex items-center">
+                  <FileText className="w-6 h-6 mr-3 text-blue-600" />
+                  Historial Médico Completo
+                </h2>
+                <p className="text-gray-600">
+                  Paciente: {getPacienteNombre()} {getPacienteApellido()}
+                </p>
               </div>
-
-              {/* Botones de protección */}
-              <div className="flex items-center gap-3">
-                {isPasswordProtected && (
-                  <div className="inline-flex items-center px-3 py-1 bg-blue-100 rounded-full">
-                    <Lock className="w-4 h-4 mr-2 text-blue-600" />
-                    <span className="text-sm font-medium text-blue-700">Protegido</span>
+              <div className="flex items-center gap-4">
+                {isPasswordProtected ? (
+                  <div className="inline-flex items-center px-3 py-1 bg-green-100 rounded-full">
+                    <ShieldCheck className="w-4 h-4 mr-2 text-green-600" />
+                    <span className="text-sm font-medium text-green-700">
+                      Protegido
+                    </span>
                   </div>
-                )}
-                {!isPasswordProtected && !loading && (
+                ) : (
                   <button
                     onClick={() => setShowPasswordSetup(true)}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors cursor-pointer"
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center"
                   >
-                    🔐 Proteger
+                    <Shield className="w-4 h-4 mr-2" />
+                    Proteger Historial
                   </button>
                 )}
-                {loading && (
-                  <span className="text-sm text-gray-500">Cargando...</span>
+                <button
+                  onClick={handleClose}
+                  className="text-gray-500 hover:text-gray-700 text-2xl"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Columna principal */}
+              <div className="lg:col-span-2 space-y-6">
+                {/* Información del paciente */}
+                <div className="border border-gray-200 rounded-lg">
+                  <div className="bg-gray-50 px-4 py-3 border-b">
+                    <h3 className="font-semibold text-gray-800 flex items-center">
+                      <User className="w-5 h-5 mr-2 text-gray-600" />
+                      Información del Paciente
+                    </h3>
+                  </div>
+                  <div className="p-4 space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="bg-blue-50 p-4 rounded-lg">
+                        <h4 className="text-sm font-semibold text-blue-800 mb-2">
+                          Datos Personales
+                        </h4>
+                        <div className="space-y-2">
+                          <p className="text-sm">
+                            <span className="font-medium">Nombre:</span>{" "}
+                            {getPacienteNombre()} {getPacienteApellido()}
+                          </p>
+                          <p className="text-sm">
+                            <span className="font-medium">DNI:</span>{" "}
+                            {getPacienteContacto().dni}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="bg-green-50 p-4 rounded-lg">
+                        <h4 className="text-sm font-semibold text-green-800 mb-2">
+                          Contacto
+                        </h4>
+                        <div className="space-y-2">
+                          <p className="text-sm">
+                            <span className="font-medium">Teléfono:</span>{" "}
+                            {getPacienteContacto().telefono}
+                          </p>
+                          <p className="text-sm">
+                            <span className="font-medium">Email:</span>{" "}
+                            {getPacienteContacto().email}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tabs de navegación */}
+                <div className="border border-gray-200 rounded-lg">
+                  <div className="bg-gray-50 px-4 py-3 border-b">
+                    <h3 className="font-semibold text-gray-800">
+                      Historial Médico Detallado
+                    </h3>
+                  </div>
+
+                  <div className="p-4">
+                    {/* Tabs personalizados */}
+                    <div className="flex border-b mb-6">
+                      <button
+                        onClick={() => setActiveTab("citas")}
+                        className={`px-4 py-2 text-sm font-medium ${
+                          activeTab === "citas"
+                            ? "border-b-2 border-blue-600 text-blue-600"
+                            : "text-gray-600 hover:text-blue-600"
+                        }`}
+                      >
+                        <Calendar className="w-4 h-4 inline mr-2" />
+                        Citas ({historial.historial_citas?.length || 0})
+                      </button>
+                      <button
+                        onClick={() => setActiveTab("recetas")}
+                        className={`px-4 py-2 text-sm font-medium ${
+                          activeTab === "recetas"
+                            ? "border-b-2 border-blue-600 text-blue-600"
+                            : "text-gray-600 hover:text-blue-600"
+                        }`}
+                      >
+                        <Pill className="w-4 h-4 inline mr-2" />
+                        Recetas ({historial.recetas?.length || 0})
+                      </button>
+                      <button
+                        onClick={() => setActiveTab("examenes")}
+                        className={`px-4 py-2 text-sm font-medium ${
+                          activeTab === "examenes"
+                            ? "border-b-2 border-blue-600 text-blue-600"
+                            : "text-gray-600 hover:text-blue-600"
+                        }`}
+                      >
+                        <FlaskConical className="w-4 h-4 inline mr-2" />
+                        Exámenes ({historial.examenes_laboratorio?.length || 0})
+                      </button>
+                    </div>
+
+                    {/* Contenido de citas */}
+                    {activeTab === "citas" && (
+                      <div className="space-y-4">
+                        {historial.historial_citas?.length > 0 ? (
+                          historial.historial_citas.map((cita) => (
+                            <div
+                              key={cita.id}
+                              className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors"
+                            >
+                              <div className="flex justify-between items-start mb-3">
+                                <div>
+                                  <h4 className="font-semibold text-gray-800">
+                                    {cita.tipo_cita || "Consulta"}
+                                  </h4>
+                                  <div className="flex items-center text-sm text-gray-600 mt-1">
+                                    <Calendar className="w-4 h-4 mr-2" />
+                                    {formatDate(cita.fecha_cita)}
+                                    {cita.hora_cita && (
+                                      <>
+                                        <Clock className="w-4 h-4 ml-4 mr-2" />
+                                        {cita.hora_cita}
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                                <BadgeEstado estado={cita.estado} />
+                              </div>
+
+                              <div className="space-y-3 text-sm">
+                                <p>
+                                  <span className="font-medium text-gray-700">
+                                    Médico:
+                                  </span>{" "}
+                                  {cita.medico.nombre} {cita.medico.apellido}
+                                  <span className="text-gray-500 ml-2">
+                                    ({cita.medico.especialidad})
+                                  </span>
+                                </p>
+
+                                <div className="bg-gray-50 p-3 rounded">
+                                  <p className="font-medium text-gray-700">
+                                    Motivo:
+                                  </p>
+                                  <p className="text-gray-800 break-words overflow-x-hidden">
+                                    {cita.motivo_consulta}
+                                  </p>
+                                </div>
+
+                                {cita.diagnostico && (
+                                  <div className="bg-green-50 p-3 rounded border-l-4 border-green-500 break-words">
+                                    <p className="font-medium text-green-700 text-xs">
+                                      DIAGNÓSTICO:
+                                    </p>
+                                    <p className="text-green-800 text-sm break-words overflow-x-hidden">
+                                      {cita.diagnostico}
+                                    </p>
+                                  </div>
+                                )}
+
+                                {cita.tratamiento && (
+                                  <div className="bg-blue-50 p-3 rounded border-l-4 border-blue-500 break-words">
+                                    <p className="font-medium text-blue-700 text-xs">
+                                      TRATAMIENTO:
+                                    </p>
+                                    <p className="text-blue-800 text-sm break-words overflow-x-hidden">
+                                      {cita.tratamiento}
+                                    </p>
+                                  </div>
+                                )}
+
+                                {cita.observaciones_medico && (
+                                  <div className="bg-purple-50 p-3 rounded border-l-4 border-purple-500 break-words">
+                                    <p className="font-medium text-purple-700 text-xs">
+                                      OBSERVACIONES:
+                                    </p>
+                                    <p className="text-purple-800 text-sm break-words overflow-x-hidden">
+                                      {cita.observaciones_medico}
+                                    </p>
+                                  </div>
+                                )}
+
+                                {cita.costo && (
+                                  <p className="text-right text-sm">
+                                    <span className="font-medium">Costo:</span>{" "}
+                                    S/ {Number(cita.costo).toFixed(2)}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <NoData
+                            text="No hay citas registradas"
+                            icon={Calendar}
+                          />
+                        )}
+                      </div>
+                    )}
+
+                    {/* Contenido de recetas */}
+                    {activeTab === "recetas" && (
+                      <div className="space-y-4">
+                        {historial.recetas?.length > 0 ? (
+                          historial.recetas.map((receta) => (
+                            <div
+                              key={receta.id}
+                              className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors"
+                            >
+                              <div className="flex justify-between items-start mb-3">
+                                <div>
+                                  <h4 className="font-semibold text-gray-800">
+                                    Receta #{receta.codigo_receta}
+                                  </h4>
+                                  <p className="text-sm text-gray-600">
+                                    Por: {receta.medico.nombre}{" "}
+                                    {receta.medico.apellido}
+                                  </p>
+                                </div>
+                                <BadgeEstado estado={receta.estado} />
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-4 text-sm mb-3">
+                                <div>
+                                  <p className="text-gray-600">
+                                    <strong>Emitida:</strong>
+                                  </p>
+                                  <p className="text-gray-900">
+                                    {formatDate(receta.fecha_emision)}
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-gray-600">
+                                    <strong>Vence:</strong>
+                                  </p>
+                                  <p className="text-gray-900">
+                                    {formatDate(receta.fecha_vencimiento)}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {receta.medicamentos && receta.medicamentos.length > 0 ? (
+                                <div className="bg-blue-50 p-3 rounded-lg border-l-4 border-blue-500 space-y-2">
+                                  <p className="text-sm">
+                                    <strong className="text-blue-700">
+                                      Medicamentos Prescritos:
+                                    </strong>
+                                  </p>
+                                  {receta.medicamentos.map((med: any, idx: number) => (
+                                    <div key={idx} className="text-xs bg-white p-2 rounded border border-gray-200">
+                                      <p className="font-semibold text-gray-800">
+                                        {med.nombre_comercial || med.nombre_generico}
+                                      </p>
+                                      {med.concentracion && <p className="text-gray-600">Concentración: {med.concentracion}</p>}
+                                      {med.laboratorio && <p className="text-gray-600">Lab: {med.laboratorio}</p>}
+                                      <div className="grid grid-cols-2 gap-2 mt-1 text-gray-700">
+                                        {med.dosis && <p><span className="font-medium">Dosis:</span> {med.dosis}</p>}
+                                        {med.frecuencia && <p><span className="font-medium">Frecuencia:</span> {med.frecuencia}</p>}
+                                        {med.cantidad && <p><span className="font-medium">Cantidad:</span> {med.cantidad}</p>}
+                                        {med.duracion_dias && <p><span className="font-medium">Duración:</span> {med.duracion_dias} días</p>}
+                                        {med.via_administracion && <p><span className="font-medium">Vía:</span> {med.via_administracion}</p>}
+                                      </div>
+                                      {med.instrucciones_especiales && <p className="text-gray-600 italic mt-1">📝 {med.instrucciones_especiales}</p>}
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="bg-gray-50 p-3 rounded-lg border-l-4 border-gray-300">
+                                  <p className="text-sm text-gray-600">No hay medicamentos registrados</p>
+                                </div>
+                              )}
+                            </div>
+                          ))
+                        ) : (
+                          <NoData
+                            text="No hay recetas registradas"
+                            icon={Pill}
+                          />
+                        )}
+                      </div>
+                    )}
+
+                    {/* Contenido de exámenes */}
+                    {activeTab === "examenes" && (
+                      <div className="space-y-4">
+                        {historial.examenes_laboratorio?.length > 0 ? (
+                          historial.examenes_laboratorio.map((examen) => (
+                            <div
+                              key={examen.id}
+                              className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors"
+                            >
+                              <div className="flex justify-between items-start mb-2">
+                                <h4 className="font-semibold text-gray-700">
+                                  Examen #{examen.codigo_solicitud}
+                                </h4>
+                                <BadgeEstado estado={examen.estado} />
+                              </div>
+                              <p className="text-sm text-gray-600 mb-2">
+                                Fecha: {formatDate(examen.fecha_solicitud)}
+                              </p>
+                              <p className="text-sm mb-2">
+                                <strong>Laboratorio:</strong>{" "}
+                                {examen.laboratorio || "No especificado"}
+                              </p>
+                              {examen.observaciones && (
+                                <div className="bg-purple-50 p-2 rounded border-l-4 border-purple-500">
+                                  <p className="text-sm">
+                                    <strong>Observaciones:</strong>{" "}
+                                    {examen.observaciones}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          ))
+                        ) : (
+                          <NoData
+                            text="No hay exámenes registrados"
+                            icon={FlaskConical}
+                          />
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Panel lateral */}
+              <div className="space-y-6">
+                {/* Antecedentes médicos */}
+                <div className="bg-white border border-gray-200 rounded-lg p-4">
+                  <h3 className="font-semibold text-gray-800 mb-3 flex items-center">
+                    <Heart className="w-5 h-5 mr-2 text-red-600" />
+                    Antecedentes Médicos
+                  </h3>
+                  <div className="space-y-3 text-sm">
+                    <div>
+                      <p className="text-gray-600">Tipo de Sangre</p>
+                      <p className="font-medium text-lg">
+                        {historial.paciente?.informacion_personal?.tipo_sangre ||
+                          "No especificado"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-gray-600">Peso / Altura</p>
+                      <p className="font-medium">
+                        {historial.paciente?.informacion_medica?.peso_kg
+                          ? `${historial.paciente.informacion_medica.peso_kg} kg`
+                          : "No especificado"}
+                        {" / "}
+                        {historial.paciente?.informacion_medica?.altura_cm
+                          ? `${historial.paciente.informacion_medica.altura_cm} cm`
+                          : "No especificado"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-gray-600">IMC</p>
+                      <p className="font-medium">
+                        {calcularIMC(
+                          historial.paciente?.informacion_medica?.peso_kg,
+                          historial.paciente?.informacion_medica?.altura_cm
+                        )}
+                      </p>
+                    </div>
+                    <div className="border-t pt-3">
+                      <p className="text-gray-600 text-xs">Alergias</p>
+                      <p className="font-medium text-sm">
+                        {historial.paciente?.informacion_medica?.alergias ||
+                          "No reportadas"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-gray-600 text-xs">Enfermedades Crónicas</p>
+                      <p className="font-medium text-sm">
+                        {historial.paciente?.informacion_medica
+                          ?.enfermedades_cronicas || "Ninguna"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Información de contacto de emergencia */}
+                {(historial.paciente?.informacion_medica?.contacto_emergencia?.nombre ||
+                  historial.paciente?.informacion_medica?.contacto_emergencia?.telefono) && (
+                  <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                    <h3 className="font-semibold text-orange-800 mb-3 flex items-center text-sm">
+                      <AlertCircle className="w-4 h-4 mr-2" />
+                      Contacto de Emergencia
+                    </h3>
+                    <div className="space-y-2 text-sm">
+                      <p className="text-gray-700">
+                        <span className="font-medium">Nombre:</span>{" "}
+                        {historial.paciente?.informacion_medica?.contacto_emergencia?.nombre ||
+                          "-"}
+                      </p>
+                      <p className="text-gray-700">
+                        <span className="font-medium">Teléfono:</span>{" "}
+                        {historial.paciente?.informacion_medica?.contacto_emergencia?.telefono ||
+                          "-"}
+                      </p>
+                    </div>
+                  </div>
                 )}
+
+                {/* Seguro Médico */}
+                {historial.paciente?.informacion_medica?.seguro_medico && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <h3 className="font-semibold text-blue-800 mb-2 text-sm flex items-center">
+                      <Shield className="w-4 h-4 mr-2" />
+                      Seguro Médico
+                    </h3>
+                    <div className="space-y-1 text-sm">
+                      <p className="text-gray-700">
+                        <span className="font-medium">Plan:</span>{" "}
+                        {historial.paciente.informacion_medica.seguro_medico}
+                      </p>
+                      {historial.paciente.informacion_medica.numero_seguro && (
+                        <p className="text-gray-700">
+                          <span className="font-medium">Nº:</span>{" "}
+                          {historial.paciente.informacion_medica.numero_seguro}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Estadísticas */}
+                <div className="bg-white border border-gray-200 rounded-lg p-4">
+                  <h3 className="font-semibold text-gray-800 mb-3 flex items-center">
+                    <BadgeCheck className="w-5 h-5 mr-2 text-blue-600" />
+                    Estadísticas
+                  </h3>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between bg-blue-50 p-2 rounded">
+                      <span>Citas Totales</span>
+                      <span className="font-bold text-blue-600">
+                        {historial.historial_citas?.length || 0}
+                      </span>
+                    </div>
+                    <div className="flex justify-between bg-green-50 p-2 rounded">
+                      <span>Citas Completadas</span>
+                      <span className="font-bold text-green-600">
+                        {historial.historial_citas?.filter(
+                          (c) => c.estado === "completada"
+                        ).length || 0}
+                      </span>
+                    </div>
+                    <div className="flex justify-between bg-purple-50 p-2 rounded">
+                      <span>Recetas Activas</span>
+                      <span className="font-bold text-purple-600">
+                        {historial.recetas?.filter((r) => r.estado === "activa")
+                          .length || 0}
+                      </span>
+                    </div>
+                    <div className="flex justify-between bg-orange-50 p-2 rounded">
+                      <span>Exámenes Realizados</span>
+                      <span className="font-bold text-orange-600">
+                        {historial.examenes_laboratorio?.length || 0}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Acciones */}
+                <div className="bg-white border border-gray-200 rounded-lg p-4">
+                  <h3 className="font-semibold text-gray-800 mb-3">Acciones</h3>
+                  <div className="space-y-2">
+                    <button
+                      onClick={handleExportarPDF}
+                      disabled={isExportingPDF}
+                      className="w-full bg-green-600 text-white py-2 px-4 rounded text-sm font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
+                    >
+                      {isExportingPDF ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Generando PDF...
+                        </>
+                      ) : (
+                        <>
+                          <Download className="w-4 h-4 mr-2" />
+                          Exportar PDF
+                        </>
+                      )}
+                    </button>
+                    <button
+                      onClick={handleClose}
+                      className="w-full border border-gray-300 text-gray-700 py-2 px-4 rounded text-sm font-medium hover:bg-gray-50 flex items-center justify-center transition-colors"
+                    >
+                      <X className="w-4 h-4 mr-2" />
+                      Cerrar Historial
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-        </DialogHeader>
+        </div>
+      </div>
 
-        <Tabs defaultValue="resumen" className="w-full mt-6">
-          <TabsList className="grid w-full grid-cols-4 bg-gray-100 p-1 rounded-lg">
-            <TabsTrigger value="resumen" className="data-[state=active]:bg-white data-[state=active]:shadow-sm">
-              Resumen
-            </TabsTrigger>
-            <TabsTrigger value="citas" className="data-[state=active]:bg-white data-[state=active]:shadow-sm">
-              Citas ({historial.historial_citas?.length || 0})
-            </TabsTrigger>
-            <TabsTrigger value="recetas" className="data-[state=active]:bg-white data-[state=active]:shadow-sm">
-              Recetas ({historial.recetas?.length || 0})
-            </TabsTrigger>
-            <TabsTrigger value="examenes" className="data-[state=active]:bg-white data-[state=active]:shadow-sm">
-              Exámenes ({historial.examenes_laboratorio?.length || 0})
-            </TabsTrigger>
-          </TabsList>
-
-          {/* 📋 Resumen Clínico */}
-          <TabsContent value="resumen" className="space-y-6 py-6">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Datos Personales */}
-              <div className="p-6 border border-blue-200 rounded-lg bg-blue-50 shadow-sm hover:shadow-md transition-shadow">
-                <h4 className="font-bold text-blue-800 mb-4 flex items-center">
-                  👤 Datos Personales
-                </h4>
-                <div className="space-y-3 text-sm text-blue-900">
-                  <p>
-                    <strong>Nombre:</strong> {getPacienteNombre()}{" "}
-                    {getPacienteApellido()}
-                  </p>
-                  <p>
-                    <strong>DNI:</strong> {getPacienteContacto().dni}
-                  </p>
-                  <p>
-                    <strong>Teléfono:</strong> {getPacienteContacto().telefono}
-                  </p>
-                  <p>
-                    <strong>Email:</strong> {getPacienteContacto().email}
+      {/* Modal para crear protección (superpuesto) CON TECLADOS VIRTUALES ORIGINALES */}
+      {showPasswordSetup && (
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-lg max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-800 flex items-center">
+                    <Key className="w-5 h-5 mr-2 text-green-600" />
+                    Crear Protección de Contraseña
+                  </h2>
+                  <p className="text-gray-600 text-sm mt-1">
+                    Protege tus historiales médicos con una contraseña
                   </p>
                 </div>
+                <button
+                  onClick={() => setShowPasswordSetup(false)}
+                  className="text-gray-500 hover:text-gray-700 text-xl"
+                >
+                  ✕
+                </button>
               </div>
 
-              {/* Antecedentes Médicos */}
-              <div className="p-6 border border-red-200 rounded-lg bg-red-50 shadow-sm hover:shadow-md transition-shadow">
-                <h4 className="font-bold text-red-800 mb-4 flex items-center">
-                  ⚕️ Antecedentes Médicos
-                </h4>
-                <div className="space-y-3 text-sm text-red-900">
-                  <p>
-                    <strong>Tipo de Sangre:</strong>{" "}
-                    {historial.paciente?.informacion_medica?.tipo_sangre ||
-                      "No especificado"}
-                  </p>
-                  <p>
-                    <strong>Alergias:</strong>{" "}
-                    {historial.paciente?.informacion_medica?.alergias ||
-                      "No reportadas"}
-                  </p>
-                  <p>
-                    <strong>Enfermedades Crónicas:</strong>{" "}
-                    {historial.paciente?.informacion_medica
-                      ?.enfermedades_cronicas || "Ninguna"}
-                  </p>
+              <div className="space-y-6">
+                {/* Campo: Nueva Contraseña */}
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Nueva Contraseña
+                  </label>
+                  <div className="relative">
+                    <Input
+                      type="password"
+                      value={setupPassword}
+                      placeholder="Ingresa con el teclado seguro"
+                      className="pr-10 bg-gray-50"
+                      disabled={isSettingUp}
+                      readOnly
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+                      {setupPassword.length}/6+
+                    </span>
+                  </div>
                 </div>
-              </div>
 
-              {/* Estadísticas */}
-              <div className="p-6 border border-green-200 rounded-lg bg-green-50 shadow-sm hover:shadow-md transition-shadow">
-                <h4 className="font-bold text-green-800 mb-4 flex items-center">
-                  📊 Estadísticas
+                {/* TECLADO VIRTUAL ORIGINAL para Primera Contraseña */}
+                <div className="border-l-4 border-green-500 bg-green-50 p-4 rounded">
+                  <p className="text-xs font-semibold text-green-700 mb-3">
+                    TECLADO SEGURO - NUEVA CONTRASEÑA
+                  </p>
+                  <VirtualKeyboard
+                    onInput={(char) => setSetupPassword((prev) => prev + char)}
+                    onBackspace={() =>
+                      setSetupPassword((prev) => prev.slice(0, -1))
+                    }
+                    onClear={() => setSetupPassword("")}
+                    inputLength={setupPassword.length}
+                  />
+                </div>
 
-                </h4>
-                <div className="space-y-2 text-sm">
-                  <p>
-                    <strong>Total de Citas:</strong>{" "}
-                    {historial.historial_citas?.length || 0}
+                {/* Campo: Confirmar Contraseña */}
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Confirmar Contraseña
+                  </label>
+                  <div className="relative">
+                    <Input
+                      type="password"
+                      value={setupPasswordConfirm}
+                      placeholder="Confirma en el teclado seguro"
+                      className="pr-10 bg-gray-50"
+                      disabled={isSettingUp}
+                      readOnly
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+                      {setupPasswordConfirm.length}/6+
+                    </span>
+                  </div>
+                </div>
+
+                {/* TECLADO VIRTUAL ORIGINAL para Confirmación */}
+                <div className="border-l-4 border-blue-500 bg-blue-50 p-4 rounded">
+                  <p className="text-xs font-semibold text-blue-700 mb-3">
+                    TECLADO SEGURO - CONFIRMAR CONTRASEÑA
                   </p>
-                  <p>
-                    <strong>Recetas Activas:</strong>{" "}
-                    {historial.recetas?.filter((r) => r.estado === "activa")
-                      .length || 0}
-                  </p>
-                  <p>
-                    <strong>Exámenes Realizados:</strong>{" "}
-                    {historial.examenes_laboratorio?.length || 0}
-                  </p>
+                  <VirtualKeyboard
+                    onInput={(char) =>
+                      setSetupPasswordConfirm((prev) => prev + char)
+                    }
+                    onBackspace={() =>
+                      setSetupPasswordConfirm((prev) => prev.slice(0, -1))
+                    }
+                    onClear={() => setSetupPasswordConfirm("")}
+                    inputLength={setupPasswordConfirm.length}
+                  />
+                </div>
+
+                {/* Mensaje de Error */}
+                {passwordError && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                    <p className="text-sm text-red-700">❌ {passwordError}</p>
+                  </div>
+                )}
+
+                {/* Validación */}
+                {setupPassword && setupPasswordConfirm && (
+                  <div className="space-y-2">
+                    {setupPassword.length >= 6 ? (
+                      <p className="text-xs text-green-600 flex items-center gap-1">
+                        ✅ Contraseña válida ({setupPassword.length} caracteres)
+                      </p>
+                    ) : (
+                      <p className="text-xs text-orange-600 flex items-center gap-1">
+                        ⚠️ Mínimo 6 caracteres ({setupPassword.length}/6)
+                      </p>
+                    )}
+
+                    {setupPassword === setupPasswordConfirm ? (
+                      <p className="text-xs text-green-600 flex items-center gap-1">
+                        ✅ Las contraseñas coinciden
+                      </p>
+                    ) : (
+                      <p className="text-xs text-red-600 flex items-center gap-1">
+                        ❌ Las contraseñas no coinciden
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Botones de Acción */}
+                <div className="flex gap-3 pt-4 border-t">
+                  <button
+                    onClick={handleSetupPassword}
+                    disabled={
+                      isSettingUp ||
+                      setupPassword.length < 6 ||
+                      setupPassword !== setupPasswordConfirm
+                    }
+                    className="flex-1 bg-green-600 text-white py-2 px-4 rounded text-sm font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                  >
+                    {isSettingUp ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Creando...
+                      </>
+                    ) : (
+                      <>
+                        <ShieldCheck className="w-4 h-4 mr-2" />
+                        Crear Protección
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setShowPasswordSetup(false)}
+                    disabled={isSettingUp}
+                    className="flex-1 border border-gray-300 text-gray-700 py-2 px-4 rounded text-sm font-medium hover:bg-gray-50 disabled:opacity-50 flex items-center justify-center"
+                  >
+                    Cancelar
+                  </button>
                 </div>
               </div>
             </div>
-          </TabsContent>
-
-          {/* 🗓️ Citas */}
-          <TabsContent value="citas" className="space-y-4 py-4">
-            {historial.historial_citas?.length > 0 ? (
-              historial.historial_citas.map((cita) => (
-                <div
-                  key={cita.id}
-                  className="border border-blue-200 rounded-lg p-4 shadow-sm bg-blue-50"
-                >
-                  <div className="flex justify-between items-start mb-3">
-                    <div>
-                      <h4 className="font-semibold text-blue-900">
-                        {cita.tipo_cita || "Cita"}
-                      </h4>
-                      <p className="text-sm text-gray-600">
-                        {new Date(cita.fecha_cita).toLocaleDateString(
-                          "es-PE",
-                          {
-                            weekday: "long",
-                            year: "numeric",
-                            month: "long",
-                            day: "numeric",
-                          }
-                        )}
-                        {cita.hora_cita && ` a las ${cita.hora_cita}`}
-                      </p>
-                    </div>
-                    <Badge
-                      variant={
-                        cita.estado === "completada" ? "default" : "secondary"
-                      }
-                    >
-                      {cita.estado}
-                    </Badge>
-                  </div>
-
-                  <div className="space-y-2 text-sm">
-                    <p>
-                      <strong>Médico:</strong> {cita.medico.nombre}{" "}
-                      {cita.medico.apellido} ({cita.medico.especialidad})
-                    </p>
-                    <p>
-                      <strong>Motivo:</strong> {cita.motivo_consulta}
-                    </p>
-                    {cita.diagnostico && (
-                      <div className="bg-white p-2 rounded border-l-4 border-green-500">
-                        <p className="text-xs text-green-700">
-                          <strong>Diagnóstico:</strong>
-                        </p>
-                        <p className="text-sm">{cita.diagnostico}</p>
-                      </div>
-                    )}
-                    {cita.tratamiento && (
-                      <div className="bg-white p-2 rounded border-l-4 border-purple-500">
-                        <p className="text-xs text-purple-700">
-                          <strong>Tratamiento:</strong>
-                        </p>
-                        <p className="text-sm">{cita.tratamiento}</p>
-                      </div>
-                    )}
-                    {cita.observaciones_medico && (
-                      <div className="bg-white p-2 rounded border-l-4 border-orange-500">
-                        <p className="text-xs text-orange-700">
-                          <strong>Observaciones:</strong>
-                        </p>
-                        <p className="text-sm">
-                          {cita.observaciones_medico}
-                        </p>
-                      </div>
-                    )}
-                    {cita.costo && (
-                      <p>
-                        <strong>Costo:</strong> S/ {Number(cita.costo).toFixed(2)}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ))
-            ) : (
-              <NoData text="No hay citas registradas" />
-            )}
-          </TabsContent>
-
-          {/* 💊 Recetas */}
-          <TabsContent value="recetas" className="space-y-4 py-4">
-            {historial.recetas?.length > 0 ? (
-              historial.recetas.map((receta) => (
-                <div
-                  key={receta.id}
-                  className="border border-green-200 rounded-lg p-4 shadow-sm bg-green-50"
-                >
-                  <div className="flex justify-between items-start mb-3">
-                    <div>
-                      <h4 className="font-semibold text-green-900">
-                        Receta #{receta.codigo_receta}
-                      </h4>
-                      <p className="text-sm text-gray-600">
-                        Por: {receta.medico.nombre} {receta.medico.apellido}
-                      </p>
-                    </div>
-                    <Badge
-                      variant={
-                        receta.estado === "completada" ? "default" : "secondary"
-                      }
-                    >
-                      {receta.estado}
-                    </Badge>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4 text-sm mb-3">
-                    <div>
-                      <p className="text-gray-600">
-                        <strong>Emitida:</strong>
-                      </p>
-                      <p className="text-gray-900">
-                        {new Date(receta.fecha_emision).toLocaleDateString(
-                          "es-PE"
-                        )}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600">
-                        <strong>Vence:</strong>
-                      </p>
-                      <p className="text-gray-900">
-                        {new Date(receta.fecha_vencimiento).toLocaleDateString(
-                          "es-PE"
-                        )}
-                      </p>
-                    </div>
-                  </div>
-
-                  {receta.observaciones && (
-                    <div className="bg-white p-3 rounded-lg border-l-4 border-green-500">
-                      <p className="text-sm">
-                        <strong className="text-green-700">Medicamentos:</strong>
-                      </p>
-                      <p className="text-sm text-gray-700 mt-1">
-                        {receta.observaciones}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              ))
-            ) : (
-              <NoData text="No hay recetas registradas" />
-            )}
-          </TabsContent>
-
-          {/* 🧪 Exámenes */}
-          <TabsContent value="examenes" className="space-y-4 py-4">
-            {historial.examenes_laboratorio?.length > 0 ? (
-              historial.examenes_laboratorio.map((examen) => (
-                <div
-                  key={examen.id}
-                  className="border border-orange-200 rounded-lg p-4 shadow-sm bg-orange-50"
-                >
-                  <div className="flex justify-between items-start mb-2">
-                    <h4 className="font-semibold text-orange-700">
-                      Examen #{examen.codigo_solicitud}
-                    </h4>
-                    <Badge
-                      variant={
-                        examen.estado === "completado" ? "default" : "secondary"
-                      }
-                    >
-                      {examen.estado}
-                    </Badge>
-                  </div>
-                  <p className="text-sm text-gray-600 mb-2">
-                    Fecha:{" "}
-                    {new Date(examen.fecha_solicitud).toLocaleDateString(
-                      "es-PE"
-                    )}
-                  </p>
-                  <p className="text-sm mb-2">
-                    <strong>Laboratorio:</strong>{" "}
-                    {examen.laboratorio || "No especificado"}
-                  </p>
-                  {examen.observaciones && (
-                    <div className="bg-white p-2 rounded border-l-4 border-orange-500">
-                      <p className="text-sm">
-                        <strong>Observaciones:</strong> {examen.observaciones}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              ))
-            ) : (
-              <NoData text="No hay exámenes registrados" />
-            )}
-          </TabsContent>
-        </Tabs>
-
-        <div className="border-t pt-4 mt-4 flex justify-end gap-3">
-          <Button
-            onClick={onClose}
-            variant="outline"
-          >
-            Cerrar
-          </Button>
+          </div>
         </div>
-
-        {/* Modal superpuesto para crear protección */}
-        <ModalCrearProteccion />
-      </DialogContent>
-    </Dialog>
+      )}
+    </>
   );
 }

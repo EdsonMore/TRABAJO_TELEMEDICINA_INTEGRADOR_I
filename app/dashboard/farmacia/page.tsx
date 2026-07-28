@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import {
   Card,
@@ -19,19 +19,12 @@ import {
   BarChart3,
   AlertCircle,
   FileText,
-  LogOut,
   Search,
   Plus,
   Warehouse,
   ClipboardList,
+  Receipt,
 } from "lucide-react";
-
-// Componentes modulares
-import GestionInventario from "@/components/farmacia/gestion-inventario";
-import AlertasSistema from "@/components/farmacia/alertas-sistema";
-import ReportesFarmacia from "@/components/farmacia/reportes-farmacia";
-import RecetasRecibidas from "@/components/farmacia/recetas-recibidas";
-import DespachoRecetas from "@/components/farmacia/despacho-recetas";
 
 interface DashboardStats {
   recetas: {
@@ -56,21 +49,11 @@ interface DashboardStats {
 
 export default function DashboardFarmacia() {
   const { usuario, logout, token } = useAuth();
-  const searchParams = useSearchParams();
-  const [moduloActivo, setModuloActivo] = useState<string>("dashboard");
+  const router = useRouter();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    // Detectar si viene de RecetasRecibidas con una receta específica
-    if (typeof window !== "undefined") {
-      const recetaParam = searchParams?.get("receta");
-      if (recetaParam) {
-        // Ir directamente al despacho con la receta especificada
-        setModuloActivo("despacho");
-      }
-    }
-  }, [searchParams]);
+  const [generandoBoletas, setGenerandoBoletas] = useState(false);
+  const [limpiandoDuplicadas, setLimpiandoDuplicadas] = useState(false);
 
   useEffect(() => {
     cargarDashboardStats();
@@ -114,57 +97,76 @@ export default function DashboardFarmacia() {
     window.location.href = "/auth/login";
   };
 
-  // Renderizar módulos específicos
-  if (moduloActivo === "recetas-recibidas") return <RecetasRecibidas />;
-  if (moduloActivo === "despacho") {
-    const recetaParam = searchParams?.get("receta");
-    return (
-      <DespachoRecetas
-        recetaPreseleccionada={recetaParam}
-        onVolver={() => setModuloActivo("dashboard")}
-      />
-    );
-  }
-  if (moduloActivo === "inventario")
-    return <GestionInventario onVolver={() => setModuloActivo("dashboard")} />;
-  if (moduloActivo === "alertas")
-    return <AlertasSistema onVolver={() => setModuloActivo("dashboard")} />;
-  if (moduloActivo === "reportes")
-    return <ReportesFarmacia onVolver={() => setModuloActivo("dashboard")} />;
+  const generarBoletasFaltantes = async () => {
+    if (!token) return;
+    setGenerandoBoletas(true);
+    try {
+      const response = await fetch("/api/farmacia/boletas/generar-faltantes", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log("✅ Boletas generadas:", data);
+        alert(
+          `✅ Proceso completado\n\nTotal procesadas: ${data.total_procesadas}\nExitosas: ${data.exitosas}\nFallidas: ${data.fallidas}`
+        );
+        // Recargar estadísticas
+        cargarDashboardStats();
+      } else {
+        alert("❌ Error al generar boletas");
+      }
+    } catch (error) {
+      console.error("Error:", error);
+      alert("❌ Error al generar boletas");
+    } finally {
+      setGenerandoBoletas(false);
+    }
+  };
+
+  const limpiarBoletasDuplicadas = async () => {
+    if (!token) return;
+    if (
+      !confirm(
+        "⚠️ Esto eliminará las boletas duplicadas (mantiene solo la más antigua). ¿Continuar?"
+      )
+    ) {
+      return;
+    }
+
+    setLimpiandoDuplicadas(true);
+    try {
+      const response = await fetch("/api/farmacia/boletas/limpiar-duplicadas", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log("✅ Duplicadas limpiadas:", data);
+        alert(
+          `✅ Proceso completado\n\nDuplicadas encontradas: ${data.duplicadas_encontradas}\nEliminadas: ${data.eliminadas}`
+        );
+        // Recargar estadísticas
+        cargarDashboardStats();
+      } else {
+        alert("❌ Error al limpiar duplicadas");
+      }
+    } catch (error) {
+      console.error("Error:", error);
+      alert("❌ Error al limpiar duplicadas");
+    } finally {
+      setLimpiandoDuplicadas(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
-        <div className="px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
-                <Pill className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h1 className="text-lg font-bold text-gray-900">
-                  Hola, {usuario?.nombre}
-                </h1>
-                <p className="text-sm text-gray-600 hidden sm:block">
-                  Panel de gestión farmacéutica
-                </p>
-              </div>
-            </div>
-
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleLogout}
-              className="border-red-200 text-red-600 hover:bg-red-50"
-            >
-              <LogOut className="w-4 h-4 mr-1" />
-              <span className="hidden md:inline">Salir</span>
-            </Button>
-          </div>
-        </div>
-      </header>
-
       {/* Contenido Principal */}
       <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="space-y-8">
@@ -179,13 +181,29 @@ export default function DashboardFarmacia() {
               </p>
             </div>
             <div className="flex items-center space-x-2">
-              <Button variant="outline" size="sm" className="hidden sm:flex">
-                <Search className="w-4 h-4 mr-2" />
-                Buscar
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="hidden sm:flex"
+                onClick={generarBoletasFaltantes}
+                disabled={generandoBoletas}
+              >
+                <FileText className="w-4 h-4 mr-2" />
+                {generandoBoletas ? "Generando..." : "Generar Boletas"}
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={limpiarBoletasDuplicadas}
+                disabled={limpiandoDuplicadas}
+                className="text-amber-600 border-amber-200 hover:bg-amber-50"
+              >
+                <AlertCircle className="w-4 h-4 mr-2" />
+                {limpiandoDuplicadas ? "Limpiando..." : "Limpiar Duplicadas"}
               </Button>
               <Button
                 size="sm"
-                onClick={() => setModuloActivo("recetas-recibidas")}
+                onClick={() => router.push('/dashboard/farmacia/recetas')}
                 className="bg-blue-600 hover:bg-blue-700"
               >
                 <Plus className="w-4 h-4 mr-2" />
@@ -300,7 +318,7 @@ export default function DashboardFarmacia() {
                 {/* Recetas Recibidas */}
                 <Card
                   className="cursor-pointer transition-all hover:shadow-lg border border-gray-200 rounded-lg shadow-sm"
-                  onClick={() => setModuloActivo("recetas-recibidas")}
+                  onClick={() => router.push('/dashboard/farmacia/recetas')}
                 >
                   <CardHeader className="p-6 pb-4">
                     <CardTitle className="flex items-center gap-2 text-base">
@@ -321,7 +339,7 @@ export default function DashboardFarmacia() {
                 {/* Despacho de Recetas */}
                 <Card
                   className="cursor-pointer transition-all hover:shadow-lg border border-gray-200 rounded-lg shadow-sm"
-                  onClick={() => setModuloActivo("despacho")}
+                  onClick={() => router.push('/dashboard/farmacia/despacho')}
                 >
                   <CardHeader className="p-6 pb-4">
                     <CardTitle className="flex items-center gap-2 text-base">
@@ -342,7 +360,7 @@ export default function DashboardFarmacia() {
                 {/* Gestión de Inventario - NUEVA TARJETA */}
                 <Card
                   className="cursor-pointer transition-all hover:shadow-lg border border-gray-200 rounded-lg shadow-sm"
-                  onClick={() => setModuloActivo("inventario")}
+                  onClick={() => router.push('/dashboard/farmacia/inventario')}
                 >
                   <CardHeader className="p-6 pb-4">
                     <CardTitle className="flex items-center gap-2 text-base">
@@ -386,7 +404,35 @@ export default function DashboardFarmacia() {
 
               {/* Módulos Secundarios */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <Card className="border border-gray-200 rounded-lg shadow-sm">
+                <Card className="border border-gray-200 rounded-lg shadow-sm cursor-pointer hover:shadow-lg transition-shadow"
+                  onClick={() => router.push('/dashboard/farmacia/boletas')}>
+                  <CardHeader className="p-6 pb-4">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Receipt className="w-5 h-5 text-amber-600" />
+                      Gestión de Boletas
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="px-6 pb-6">
+                    <div className="space-y-2 text-sm">
+                      <p className="text-gray-600">
+                        Ver y descargar todas las boletas generadas
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        Filtra por estado, fecha y descarga en PDF
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      className="w-full mt-4 h-10"
+                      onClick={() => router.push('/dashboard/farmacia/boletas')}
+                    >
+                      Gestionar Boletas
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                <Card className="border border-gray-200 rounded-lg shadow-sm cursor-pointer hover:shadow-lg transition-shadow"
+                  onClick={() => router.push('/dashboard/farmacia/reportes')}>
                   <CardHeader className="p-6 pb-4">
                     <CardTitle className="flex items-center gap-2 text-base">
                       <BarChart3 className="w-5 h-5 text-purple-600" />
@@ -417,14 +463,14 @@ export default function DashboardFarmacia() {
                     <Button
                       variant="outline"
                       className="w-full mt-4 h-10"
-                      onClick={() => setModuloActivo("reportes")}
                     >
                       Ver Reportes Detallados
                     </Button>
                   </CardContent>
                 </Card>
 
-                <Card className="border border-gray-200 rounded-lg shadow-sm">
+                <Card className="border border-gray-200 rounded-lg shadow-sm cursor-pointer hover:shadow-lg transition-shadow"
+                  onClick={() => router.push('/dashboard/farmacia/alertas')}>
                   <CardHeader className="p-6 pb-4">
                     <CardTitle className="flex items-center gap-2 text-base">
                       <AlertCircle className="w-5 h-5 text-orange-600" />
@@ -455,7 +501,6 @@ export default function DashboardFarmacia() {
                     <Button
                       variant="outline"
                       className="w-full mt-4 h-10"
-                      onClick={() => setModuloActivo("alertas")}
                     >
                       Ver Alertas Completas
                     </Button>
@@ -476,7 +521,7 @@ export default function DashboardFarmacia() {
                       <Button
                         variant="outline"
                         className="h-14 flex flex-col bg-white hover:bg-gray-50 border-2"
-                        onClick={() => setModuloActivo("recetas-recibidas")}
+                        onClick={() => router.push('/dashboard/farmacia/recetas')}
                       >
                         <ClipboardList className="w-5 h-5 mb-1 text-purple-600" />
                         <span className="text-xs">Recetas</span>
@@ -484,7 +529,7 @@ export default function DashboardFarmacia() {
                       <Button
                         variant="outline"
                         className="h-14 flex flex-col bg-white hover:bg-gray-50 border-2"
-                        onClick={() => setModuloActivo("despacho")}
+                        onClick={() => router.push('/dashboard/farmacia/despacho')}
                       >
                         <Package className="w-5 h-5 mb-1 text-green-600" />
                         <span className="text-xs">Despacho</span>
@@ -492,7 +537,7 @@ export default function DashboardFarmacia() {
                       <Button
                         variant="outline"
                         className="h-14 flex flex-col bg-white hover:bg-gray-50 border-2"
-                        onClick={() => setModuloActivo("inventario")}
+                        onClick={() => router.push('/dashboard/farmacia/inventario')}
                       >
                         <Warehouse className="w-5 h-5 mb-1 text-blue-600" />
                         <span className="text-xs">Inventario</span>
@@ -500,10 +545,10 @@ export default function DashboardFarmacia() {
                       <Button
                         variant="outline"
                         className="h-14 flex flex-col bg-white hover:bg-gray-50 border-2"
-                        onClick={() => setModuloActivo("reportes")}
+                        onClick={() => router.push('/dashboard/farmacia/boletas')}
                       >
-                        <BarChart3 className="w-5 h-5 mb-1 text-purple-600" />
-                        <span className="text-xs">Reportes</span>
+                        <Receipt className="w-5 h-5 mb-1 text-amber-600" />
+                        <span className="text-xs">Boletas</span>
                       </Button>
                     </div>
                   </CardContent>

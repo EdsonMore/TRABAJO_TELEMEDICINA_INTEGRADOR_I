@@ -115,7 +115,7 @@ export async function POST(
       const pacienteId = recetaData.paciente_id;
 
       // Obtener usuario_id del paciente
-      const usuarioIdResult = await pool.query(
+      const usuarioIdResult = await client.query(
         "SELECT id_usuario FROM pacientes WHERE id = $1",
         [pacienteId]
       );
@@ -125,20 +125,55 @@ export async function POST(
         const titulo = "🏥 Receta Lista en Farmacia";
         const mensaje = `Tu receta (${codigoReceta}) está lista para retirar en la farmacia`;
 
-        const notifResult = await pool.query(
+        const notifResult = await client.query(
           `INSERT INTO notificaciones (id_usuario, titulo, mensaje, tipo, id_relacionado, leida, created_at)
            VALUES ($1, $2, $3, 'farmacia', $4, false, NOW())
            RETURNING id`,
           [usuarioId, titulo, mensaje, recetaId]
         );
 
-        console.log("✅ Notificación de receta en farmacia creada:", {
+        console.log("✅ Notificación de receta en farmacia (paciente) creada:", {
           id: notifResult.rows[0].id,
           titulo,
         });
       }
     } catch (notifError) {
-      console.error("❌ Error al crear notificación:", notifError);
+      console.error("❌ Error al crear notificación para paciente:", notifError);
+      // No fallar la operación si la notificación falla
+    }
+
+    // 🆕 Crear notificación para la FARMACIA
+    try {
+      const recetaData = recetaResult.rows[0];
+      const codigoReceta = recetaData.codigo_receta;
+      const nombrePaciente = recetaData.nombre_paciente || "Paciente";
+
+      // Obtener usuario_id de la farmacia
+      const farmaciaUsuarioResult = await client.query(
+        "SELECT id_usuario FROM farmacias WHERE id = $1",
+        [farmacia_id]
+      );
+
+      if (farmaciaUsuarioResult.rows.length > 0) {
+        const farmaciaUsuarioId = farmaciaUsuarioResult.rows[0].id_usuario;
+        const titulo = "📋 Nueva Receta Recibida";
+        const mensaje = `Has recibido una nueva receta (${codigoReceta}) del paciente ${nombrePaciente}`;
+
+        const notifResult = await client.query(
+          `INSERT INTO notificaciones (id_usuario, titulo, mensaje, tipo, id_relacionado, leida, created_at)
+           VALUES ($1, $2, $3, 'receta_nueva', $4, false, NOW())
+           RETURNING id`,
+          [farmaciaUsuarioId, titulo, mensaje, recetaId]
+        );
+
+        console.log("✅ Notificación de receta nueva (farmacia) creada:", {
+          id: notifResult.rows[0].id,
+          titulo,
+          farmacia_id,
+        });
+      }
+    } catch (farmaciaNotifError) {
+      console.error("❌ Error al crear notificación para farmacia:", farmaciaNotifError);
       // No fallar la operación si la notificación falla
     }
 

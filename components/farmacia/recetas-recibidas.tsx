@@ -5,7 +5,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import {
   Pill,
@@ -88,8 +87,11 @@ interface Notificacion {
   mensaje: string;
 }
 
-export default function RecetasRecibidas() {
-  const router = useRouter();
+interface RecetasRecibidaProps {
+  onAceptarReceta?: () => void;
+}
+
+export default function RecetasRecibidas({ onAceptarReceta }: RecetasRecibidaProps) {
   const { token } = useAuth();
   const [recetas, setRecetas] = useState<Receta[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -250,10 +252,10 @@ export default function RecetasRecibidas() {
         cargarRecetas();
       }, 800);
 
-      // Si fue aceptada, redirigir a despacho
-      if (accion === "aceptar") {
+      // Si fue aceptada, llamar al callback para cambiar de módulo
+      if (accion === "aceptar" && onAceptarReceta) {
         setTimeout(() => {
-          router.push("/dashboard/farmacia/despacho-recetas");
+          onAceptarReceta();
         }, 1500);
       }
     } catch (error) {

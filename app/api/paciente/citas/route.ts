@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
 
     // Separar citas por estado temporal
     const hoy = new Date()
-    const citas = citasResult.rows.map((cita) => {
+    const citas = citasResult.rows.map((cita: any) => {
       const fechaCita = new Date(cita.fecha_cita)
       let estadoTemporal = "pasada"
 
@@ -89,10 +89,10 @@ export async function GET(request: NextRequest) {
     // Estadísticas de citas
     const estadisticas = {
       total: citas.length,
-      completadas: citas.filter((c) => c.estado === "completada").length,
-      programadas: citas.filter((c) => c.estado === "programada" || c.estado === "confirmada").length,
-      canceladas: citas.filter((c) => c.estado === "cancelada").length,
-      proxima_cita: citas.find((c) => c.estado_temporal === "futura" && c.estado === "programada"),
+      completadas: citas.filter((c: any) => c.estado === "completada").length,
+      programadas: citas.filter((c: any) => c.estado === "programada" || c.estado === "confirmada").length,
+      canceladas: citas.filter((c: any) => c.estado === "cancelada").length,
+      proxima_cita: citas.find((c: any) => c.estado_temporal === "futura" && c.estado === "programada"),
     }
 
     return NextResponse.json({

@@ -162,7 +162,7 @@ export async function GET(
       [pacienteId]
     );
 
-    // Obtener recetas del paciente
+    // Obtener recetas del paciente CON MEDICAMENTOS DESGLOSADOS
     const recetasResult = await query(
       `
       SELECT 
@@ -178,6 +178,28 @@ export async function GET(
       `,
       [pacienteId]
     );
+
+    // Obtener medicamentos detallados para cada receta
+    let recetasConMedicamentos = [];
+    for (const receta of recetasResult.rows) {
+      const medicamentosResult = await query(
+        `
+        SELECT 
+          rd.id, rd.medicamento_id, rd.cantidad, rd.dosis, rd.frecuencia, 
+          rd.duracion_dias, rd.via_administracion, rd.instrucciones_especiales,
+          m.nombre_comercial, m.nombre_generico, m.forma_farmaceutica, 
+          m.concentracion, m.laboratorio, m.principio_activo
+        FROM receta_detalle rd
+        JOIN medicamentos m ON rd.medicamento_id = m.id
+        WHERE rd.id_receta = $1
+        `,
+        [receta.id]
+      );
+      recetasConMedicamentos.push({
+        ...receta,
+        medicamentos: medicamentosResult.rows,
+      });
+    }
 
     // Obtener resultados de laboratorio
     const resultadosResult = await query(
@@ -238,7 +260,7 @@ export async function GET(
           },
         },
       },
-      historial_citas: citasResult.rows.map((cita) => ({
+      historial_citas: citasResult.rows.map((cita: any) => ({
         id: cita.id,
         fecha_cita: cita.fecha_cita,
         hora_cita: cita.hora_cita,
@@ -255,20 +277,20 @@ export async function GET(
           especialidad: cita.especialidad_nombre,
         },
       })),
-      recetas: recetasResult.rows.map((receta) => ({
+      recetas: recetasConMedicamentos.map((receta) => ({
         id: receta.id,
         codigo_receta: receta.codigo_receta,
         fecha_emision: receta.fecha_emision,
         fecha_vencimiento: receta.fecha_vencimiento,
         estado: receta.estado,
-        observaciones: receta.observaciones,
+        medicamentos: receta.medicamentos,
         fecha_cita: receta.fecha_cita,
         medico: {
           nombre: receta.medico_nombre,
           apellido: receta.medico_apellido,
         },
       })),
-      examenes_laboratorio: resultadosResult.rows.map((examen) => ({
+      examenes_laboratorio: resultadosResult.rows.map((examen: any) => ({
         id: examen.id,
         codigo_solicitud: examen.codigo_solicitud,
         fecha_solicitud: examen.fecha_solicitud,
