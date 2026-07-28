@@ -2,11 +2,7 @@
 // Endpoint para verificar y cambiar automáticamente citas a "en_curso" cuando llega la hora
 
 import { NextRequest, NextResponse } from "next/server";
-import { Pool } from "pg";
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
+import { pool } from "@/lib/database";
 
 export async function POST(request: NextRequest) {
   const client = await pool.connect();
@@ -95,11 +91,19 @@ export async function POST(request: NextRequest) {
       try {
         await client.query("BEGIN");
 
-        // Validar transición usando la máquina de estados
-        // (programada -> en_curso) y (confirmada -> en_curso) son válidas
-        const transicionesValidas =
-          (cita.estado === "programada" && "en_curso") ||
-          (cita.estado === "confirmada" && "en_curso");
+        // Validar transición: solo virtual pasa por en_curso
+        const esVirtual = cita.tipo_cita === "virtual";
+        if (!esVirtual) {
+          console.warn(`⚠️ [AUTO-STATE] Cita ${cita.id} no es virtual (${cita.tipo_cita}), saltando en_curso`);
+          await client.query("BEGIN");
+          await client.query(
+            `UPDATE citas SET estado = 'completada', fecha_actualizacion = NOW() WHERE id = $1`,
+            [cita.id]
+          );
+          await client.query("COMMIT");
+          continue;
+        }
+        const transicionesValidas = cita.estado === "programada" || cita.estado === "confirmada";
 
         if (!transicionesValidas) {
           console.warn(

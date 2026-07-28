@@ -45,7 +45,8 @@ import {
   Download,
   Calendar,
   Pill,
-  User, // AÑADIDO: Importar el ícono User que faltaba
+  User,
+  Truck,
 } from "lucide-react";
 
 interface Medicamento {
@@ -94,8 +95,10 @@ interface Receta {
   medicamentos_con_stock?: number;
   medicamentos: Medicamento[];
   tiene_stock_completo?: boolean;
-  tipo_entrega?: "farmacia" | "domicilio"; // AÑADIDO
-  direccion_entrega?: string; // AÑADIDO
+  tipo_entrega?: "farmacia" | "domicilio";
+  direccion_entrega?: string;
+  fecha_confirmacion_envio?: string | null;
+  fecha_confirmacion_recepcion?: string | null;
 }
 
 interface DespachoRecetasProps {
@@ -479,6 +482,48 @@ export default function DespachoRecetas({
     } finally {
       setProcesando(false);
       setAccionConfirmada(null);
+    }
+  };
+
+  const confirmarEntregaDomicilio = async () => {
+    if (!recetaSeleccionada || !token) return;
+
+    try {
+      setProcesando(true);
+
+      const response = await fetch(
+        `/api/farmacia/recetas/${recetaSeleccionada.id}/confirmar-entrega`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ rol: "farmacia" }),
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || `Error ${response.status}`);
+      }
+
+      setMostrarDetalles(false);
+      setRecetaSeleccionada(null);
+
+      setNotificacion({
+        tipo: "exito",
+        mensaje: "Envío a domicilio confirmado. Paciente notificado.",
+      });
+
+      setTimeout(() => cargarRecetas("dispensadas"), 800);
+    } catch (error) {
+      setNotificacion({
+        tipo: "error",
+        mensaje: error instanceof Error ? error.message : "Error al confirmar envío",
+      });
+    } finally {
+      setProcesando(false);
     }
   };
 
@@ -1394,10 +1439,40 @@ export default function DespachoRecetas({
                   )}
 
                   {recetaSeleccionada.estado === "dispensada" && (
-                    <div className="md:col-span-2 flex items-center gap-2 text-green-700 bg-green-100 border border-green-300 p-3 rounded font-semibold">
-                      <CheckCircle2 className="w-5 h-5" />
-                      <span>Receta ya fue dispensada</span>
-                    </div>
+                    <>
+                      {tipoEntrega === "domicilio" && !recetaSeleccionada.fecha_confirmacion_envio && (
+                        <Button
+                          onClick={() => confirmarEntregaDomicilio()}
+                          disabled={procesando}
+                          className="bg-orange-600 hover:bg-orange-700 text-white text-base h-10 font-semibold"
+                        >
+                          {procesando ? (
+                            <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                          ) : (
+                            <Truck className="w-4 h-4 mr-2" />
+                          )}
+                          Confirmar Envío a Domicilio
+                        </Button>
+                      )}
+                      {tipoEntrega === "domicilio" && recetaSeleccionada.fecha_confirmacion_envio && !recetaSeleccionada.fecha_confirmacion_recepcion && (
+                        <div className="md:col-span-2 flex items-center gap-2 text-orange-700 bg-orange-100 border border-orange-300 p-3 rounded font-semibold">
+                          <Truck className="w-5 h-5" />
+                          <span>Envío confirmado — esperando confirmación del paciente</span>
+                        </div>
+                      )}
+                      {tipoEntrega === "domicilio" && recetaSeleccionada.fecha_confirmacion_recepcion && (
+                        <div className="md:col-span-2 flex items-center gap-2 text-green-700 bg-green-100 border border-green-300 p-3 rounded font-semibold">
+                          <CheckCircle2 className="w-5 h-5" />
+                          <span>Entrega completada — paciente recibió</span>
+                        </div>
+                      )}
+                      {tipoEntrega !== "domicilio" && (
+                        <div className="md:col-span-2 flex items-center gap-2 text-green-700 bg-green-100 border border-green-300 p-3 rounded font-semibold">
+                          <CheckCircle2 className="w-5 h-5" />
+                          <span>Receta ya fue dispensada</span>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>

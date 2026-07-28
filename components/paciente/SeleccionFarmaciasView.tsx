@@ -139,11 +139,22 @@ export default function SeleccionFarmaciasView({
     farmaciaId: string;
     nombreFarmacia: string;
   } | null>(null);
-  const [costoEntrega, setCostoEntrega] = useState(0);
+  const [costoEntrega, setCostoEntrega] = useState(15);
+  const [ubicacionUsuario, setUbicacionUsuario] = useState<{ lat: number; lng: number } | null>(null);
+
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => setUbicacionUsuario({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => {},
+        { enableHighAccuracy: true, timeout: 5000 }
+      );
+    }
+  }, []);
 
   useEffect(() => {
     cargarFarmaciasDisponibles();
-  }, []);
+  }, [ubicacionUsuario]);
 
   useEffect(() => {
     aplicarFiltrosYBusqueda();
@@ -158,8 +169,15 @@ export default function SeleccionFarmaciasView({
         localStorage.getItem("medilink_token") ||
         localStorage.getItem("token");
 
+      const params = new URLSearchParams();
+      if (ubicacionUsuario) {
+        params.set("lat", ubicacionUsuario.lat.toString());
+        params.set("lng", ubicacionUsuario.lng.toString());
+      }
+      const qs = params.toString();
+
       const response = await fetch(
-        `/api/recetas/${recetaId}/farmacias-disponibles`,
+        `/api/recetas/${recetaId}/farmacias-disponibles${qs ? `?${qs}` : ""}`,
         {
           headers: { Authorization: `Bearer ${token}` },
         }
@@ -370,6 +388,10 @@ export default function SeleccionFarmaciasView({
             body: JSON.stringify({
               farmacia_id: item.farmacia_id,
               medicamentos: item.medicamentos,
+              tipo_entrega: tipoEntregaSeleccionado,
+              direccion_entrega:
+                tipoEntregaSeleccionado === "domicilio" ? direccionEntrega : null,
+              costo_entrega: costoEntrega,
             }),
           }
         );
@@ -997,6 +1019,34 @@ export default function SeleccionFarmaciasView({
 
                       <Separator />
 
+                      {carrito.length > 0 && (
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <label className="text-sm font-medium">Tipo de entrega</label>
+                            <select
+                              value={tipoEntregaSeleccionado}
+                              onChange={(e) => {
+                                const val = e.target.value as "recojo" | "domicilio";
+                                setTipoEntregaSeleccionado(val);
+                                setCostoEntrega(val === "domicilio" ? 15 : 0);
+                              }}
+                              className="text-sm border rounded px-2 py-1"
+                            >
+                              <option value="recojo">Recoger en farmacia</option>
+                              <option value="domicilio">Envío a domicilio</option>
+                            </select>
+                          </div>
+                          {tipoEntregaSeleccionado === "domicilio" && (
+                            <Input
+                              placeholder="Dirección de entrega"
+                              value={direccionEntrega}
+                              onChange={(e) => setDireccionEntrega(e.target.value)}
+                              className="text-sm"
+                            />
+                          )}
+                        </div>
+                      )}
+
                       <div className="space-y-2">
                         <div className="flex justify-between text-sm">
                           <span>Total medicamentos:</span>
@@ -1006,10 +1056,18 @@ export default function SeleccionFarmaciasView({
                           <span>Farmacias:</span>
                           <span>{carrito.length}</span>
                         </div>
+                        <div className="flex justify-between text-sm">
+                          <span>Costo de envío:</span>
+                          <span className="text-orange-600">
+                            {tipoEntregaSeleccionado === "domicilio"
+                              ? `S/ ${costoEntrega.toFixed(2)}`
+                              : "Gratis"}
+                          </span>
+                        </div>
                         <div className="flex justify-between text-lg font-bold pt-2 border-t">
                           <span>Total a pagar:</span>
                           <span className="text-green-600">
-                            S/. {totalCarrito.toFixed(2)}
+                            S/. {(totalCarrito + costoEntrega).toFixed(2)}
                           </span>
                         </div>
                       </div>
